@@ -194,6 +194,7 @@ namespace HZ
 	void L10nLoadOnce();
 	void L10nReloadIfLanguage(const std::string& a_v);
 	void PushL10n();
+	void PushL10nFavorites();
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -2859,6 +2860,8 @@ namespace HZ
 
 	// Purpose: one Scaleform Invoke of hzSetL10n per table generation (movie
 	// load or Language reload). Not on the 5s movie-build timer. No disk.
+	// FavoritesMenu is a separate movie, so chrome is pushed from
+	// PushL10nFavorites on open (and here if that menu is already live).
 	// Inputs: HUD AdvanceFrame / F11 key. Outputs: one payload string.
 	// Author: Moragar. Last modified: 2026-11-27.
 	void PushL10n()
@@ -2886,6 +2889,28 @@ namespace HZ
 		GValue arg(payload.c_str());
 		if (!menu->menuObj.Invoke("hzSetL10n", nullptr, &arg, 1)) return;
 		g_l10nPushed.store(gen, std::memory_order_release);
+		try { PushL10nFavorites(); } catch (...) {}
+	}
+
+	// Purpose: push the same l10n payload to FavoritesMenu.hzqSetL10n when that
+	// movie is live. Called from PushL10n (language reload) and from
+	// QmOnFavoritesMovie (menu open). Not on a timer. No disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nFavorites()
+	{
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = MenuLive(ui, "FavoritesMenu", "hzqSetL10n");
+		if (!menu || !menu->menuObj.HasMember("hzqSetL10n")) return;
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) return;
+		GValue arg(payload.c_str());
+		menu->menuObj.Invoke("hzqSetL10n", nullptr, &arg, 1);
 	}
 
 	// Purpose: job / load thread preload of versionlib and the DLL file

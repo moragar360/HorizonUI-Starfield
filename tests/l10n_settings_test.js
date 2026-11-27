@@ -38,14 +38,21 @@ const sys = fnText(as, "hz51System").body;
 expect(/id == "loc"/.test(sys), "hz51System builds the loc page");
 expect(/_l10nGame/.test(sys) && /GAME LANGUAGE/.test(sys) && /dis":true/.test(sys.replace(/\s/g, "")), "detected language is a read-only row");
 expect(/"k":"Language"/.test(sys) && /HORIZON LANGUAGE/.test(sys) && /"t":"l"/.test(sys), "override is a list dropdown bound to Language");
-expect(/AUTO \(GAME\)/.test(as) && /hz51LangOpts/.test(sys), "dropdown starts with Auto and is filled from available JSON files");
+expect(/Auto \(game\)/.test(as) && /hz51LangOpts/.test(sys), "dropdown starts with Auto and is filled from the DLL file list");
 const locZh = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "zh-cn.json");
+const locDe = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "de.json");
 expect(fs.existsSync(locZh), "shipped zh-cn.json is present so the Language dropdown can list it");
+expect(fs.existsSync(locDe), "shipped de.json is present");
 const langName = fnText(as, "hz51LangName").body;
-expect(/zh-cn/.test(langName) && /zhhans/.test(langName) && /CHINESE \(SIMPLIFIED\)/.test(langName),
-	"dropdown names zh-cn / zhhans as Chinese (Simplified)");
+expect(/zh-cn/.test(langName) && /zhhans/.test(langName) && /Simplified Chinese/.test(langName),
+	"dropdown names zh-cn / zhhans as Simplified Chinese");
+expect(/Deutsch \(German\)/.test(langName) && /es-mx/.test(langName) && /Latinoam/.test(langName) && /pt-br/.test(langName),
+	"dropdown names German, Latin American Spanish, and Brazilian Portuguese");
+expect(!/\bc == "ko"/.test(langName), "Korean is not a first-class Language option");
 expect(/hzL10nFiles/.test(fnText(as, "hz51LangOpts").body),
-	"dropdown options are the Localization/*.json stems the DLL listed at load");
+	"dropdown options are the stems the DLL listed at load");
+expect(/Detected at start/.test(fnText(as, "hz51Line").body), "GAME LANGUAGE row line is short enough to fit");
+expect(/function hz51LocRows/.test(as) || /function hz51LocRows/.test(insert), "Settings rows are localized at catalog finish");
 
 const help = fnText(as, "hz51Help").body;
 expect(help.indexOf("Language for Horizon labels") >= 0, "Language Setting Details exist");

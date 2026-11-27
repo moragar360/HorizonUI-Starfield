@@ -48,9 +48,21 @@ inline std::string Trim(std::string_view a_s)
 	return std::string(a_s.substr(b, e - b));
 }
 
+// Official Steam interface languages (Starfield app 1716740). File stems
+// match Localization/<stem>.json. Korean and Greek are not Steam UI languages
+// for Starfield and are not listed here.
+inline constexpr const char* kSteamLangs[] = {
+	"en", "de", "fr", "it", "es", "es-mx", "ja", "pl", "pt-br", "zh-cn"
+};
+
 // Map a game or INI language token to a Localization file stem.
-// jp/ja -> ja, zhhans/zh-cn -> zh-cn. Unknown codes stay as lowercased
-// tokens so a community file can still match. auto and empty stay auto.
+// Steam / sLanguage (PCGamingWiki, LOOT libloadorder, Starfield_<lang>.ini):
+//   en, de, fr, it, es, jp, pl, ptbr, zhhans
+// LocalEnvironmentData also uses ja for Japanese.
+// Steam "latam" (Spanish - Latin America) is mapped to sLanguage=es by the
+// game / LOOT. Horizon still accepts esmx / latam / es-mx as stem es-mx so a
+// translator can ship es-mx.json; Auto+es uses es.json (Spain).
+// Unknown codes stay as lowercased tokens so a community file can still match.
 // Path separators, drive letters, and '..' are rejected (become auto)
 // so Language= cannot walk out of the Localization folder.
 inline std::string MapCode(std::string_view a_raw)
@@ -62,48 +74,53 @@ inline std::string MapCode(std::string_view a_raw)
 	if (s.find_first_of("/\\:") != std::string::npos || s.find("..") != std::string::npos)
 		return "auto";
 	if (s.empty() || s == "auto") return "auto";
-	if (s == "jp" || s == "ja") return "ja";
-	if (s == "zhhans" || s == "zh-cn" || s == "zhcn" || s == "zh_cn" || s == "zh") return "zh-cn";
-	if (s == "ptbr" || s == "pt-br" || s == "pt_br") return "ptbr";
+	if (s == "en" || s == "english" || s == "en-us" || s == "en_us" || s == "enus") return "en";
+	if (s == "de" || s == "german" || s == "de-de" || s == "de_de") return "de";
+	if (s == "fr" || s == "french" || s == "fr-fr" || s == "fr_fr") return "fr";
+	if (s == "it" || s == "italian" || s == "it-it" || s == "it_it") return "it";
+	if (s == "esmx" || s == "es-mx" || s == "es_mx" || s == "esla" || s == "es-419"
+			|| s == "latam" || s == "es-latam" || s == "es_latam")
+		return "es-mx";
+	if (s == "es" || s == "spanish" || s == "es-es" || s == "es_es" || s == "eses") return "es";
+	if (s == "jp" || s == "ja" || s == "japanese") return "ja";
+	if (s == "pl" || s == "polish" || s == "pl-pl" || s == "pl_pl") return "pl";
+	if (s == "ptbr" || s == "pt-br" || s == "pt_br" || s == "brazilian" || s == "pt-brz")
+		return "pt-br";
+	if (s == "zhhans" || s == "zh-cn" || s == "zhcn" || s == "zh_cn" || s == "zh"
+			|| s == "zh-hans" || s == "schinese")
+		return "zh-cn";
 	return s;
 }
 
+// Native name with English in parentheses (Settings 2.0 dropdown).
 inline const char* DisplayName(std::string_view a_code)
 {
 	const auto c = MapCode(a_code);
 	if (c == "auto") return "Auto (game)";
 	if (c == "en") return "English";
-	if (c == "de") return "German";
-	if (c == "fr") return "French";
-	if (c == "es") return "Spanish";
-	if (c == "it") return "Italian";
-	if (c == "ja") return "Japanese";
-	if (c == "ko") return "Korean";
-	if (c == "pl") return "Polish";
-	if (c == "zh-cn") return "Chinese (Simplified)";
-	if (c == "ptbr") return "Portuguese (Brazil)";
+	if (c == "de") return "Deutsch (German)";
+	if (c == "fr") return "Fran\xC3\xA7" "ais (French)";
+	if (c == "es") return "Espa\xC3\xB1" "ol (Spanish)";
+	if (c == "es-mx") return "Espa\xC3\xB1" "ol de Latinoam\xC3\xA9" "rica (Spanish, Latin America)";
+	if (c == "it") return "Italiano (Italian)";
+	if (c == "ja") return "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E (Japanese)";
+	if (c == "pl") return "Polski (Polish)";
+	if (c == "pt-br") return "Portugu\xC3\xAA" "s do Brasil (Portuguese, Brazil)";
+	if (c == "zh-cn") return "\xE7\xAE\x80\xE4\xBD\x93\xE4\xB8\xAD\xE6\x96\x87 (Simplified Chinese)";
 	return "Unknown";
 }
 
-// Uppercase Settings 2.0 label for a file code (ENGLISH, GERMAN, ...).
 inline std::string MenuName(std::string_view a_code)
 {
-	const auto c = MapCode(a_code);
-	if (c == "auto") return "AUTO (GAME)";
-	if (c == "en") return "ENGLISH";
-	if (c == "de") return "GERMAN";
-	if (c == "fr") return "FRENCH";
-	if (c == "es") return "SPANISH";
-	if (c == "it") return "ITALIAN";
-	if (c == "ja") return "JAPANESE";
-	if (c == "ko") return "KOREAN";
-	if (c == "pl") return "POLISH";
-	if (c == "zh-cn") return "CHINESE (SIMPLIFIED)";
-	if (c == "ptbr") return "PORTUGUESE (BRAZIL)";
-	std::string o = Lower(c);
-	for (char& ch : o)
-		if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
-	return o;
+	return DisplayName(a_code);
+}
+
+// es-mx overlays es.json then es-mx.json, then English. Other stems overlay
+// only themselves on English. Missing files are skipped (English remains).
+inline const char* FallbackStem(std::string_view a_code)
+{
+	if (a_code == "es-mx") return "es";
+	return nullptr;
 }
 
 // Last sLanguage under [General] in a Starfield INI body. Empty if none.
@@ -346,8 +363,21 @@ inline std::vector<std::string> ListLangFiles(const std::filesystem::path& a_dir
 	}
 	std::sort(out.begin(), out.end());
 	out.erase(std::unique(out.begin(), out.end()), out.end());
-	// English first so the Settings dropdown is Auto, English, then the rest.
+	// English first so extra community files stay after the official list.
 	std::stable_partition(out.begin(), out.end(), [](const std::string& c) { return c == "en"; });
+	return out;
+}
+
+// Auto is prepended in ActionScript. Official Steam stems always appear so a
+// missing fr.json still shows Français (French) and falls back to English.
+inline std::vector<std::string> DropdownCodes(const std::filesystem::path& a_dir)
+{
+	std::vector<std::string> out;
+	out.reserve(16);
+	for (const char* s : kSteamLangs) out.emplace_back(s);
+	for (const auto& f : ListLangFiles(a_dir)) {
+		if (std::find(out.begin(), out.end(), f) == out.end()) out.push_back(f);
+	}
 	return out;
 }
 
@@ -423,8 +453,7 @@ inline Table Load(const std::filesystem::path& a_dir, std::string_view a_overrid
 	t.gameCode = MapCode(a_game);
 	if (t.gameCode == "auto" || t.gameCode.empty()) t.gameCode = "en";
 	t.gameName = DisplayName(t.gameCode);
-	const auto files = ListLangFiles(a_dir);
-	t.filesCsv = JoinCsv(files);
+	t.filesCsv = JoinCsv(DropdownCodes(a_dir));
 
 	std::string want = t.overrideCode == "auto" ? t.gameCode : t.overrideCode;
 	if (want == "auto" || want.empty()) want = "en";
@@ -438,15 +467,29 @@ inline Table Load(const std::filesystem::path& a_dir, std::string_view a_overrid
 	t.usedCode = "en";
 	t.notice = "en";
 	if (want != "en") {
-		std::unordered_map<std::string, std::string> over;
-		std::string ob;
-		const auto langPath = a_dir / (want + ".json");
-		if (ReadUtf8File(langPath, ob) && ParseFlat(ob, over) && !over.empty()) {
-			for (auto& kv : over) {
-				if (!kv.second.empty()) t.keys[kv.first] = std::move(kv.second);
+		std::vector<std::string> chain;
+		if (const char* fb = FallbackStem(want)) chain.emplace_back(fb);
+		chain.push_back(want);
+		std::string loaded;
+		bool wantHit = false;
+		for (const auto& code : chain) {
+			if (code == "en") continue;
+			std::unordered_map<std::string, std::string> over;
+			std::string ob;
+			const auto langPath = a_dir / (code + ".json");
+			if (ReadUtf8File(langPath, ob) && ParseFlat(ob, over) && !over.empty()) {
+				for (auto& kv : over) {
+					if (!kv.second.empty()) t.keys[kv.first] = std::move(kv.second);
+				}
+				if (!loaded.empty()) loaded += '+';
+				loaded += code;
+				t.usedCode = code;
+				if (code == want) wantHit = true;
 			}
-			t.usedCode = want;
-			t.notice = std::string("en+") + want;
+		}
+		if (!loaded.empty()) {
+			t.notice = std::string("en+") + loaded;
+			if (!wantHit) t.notice += std::string(" (") + want + " missing)";
 		} else {
 			t.notice = std::string("en (") + want + " missing)";
 		}

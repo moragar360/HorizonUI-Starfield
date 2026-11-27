@@ -331,7 +331,7 @@
          this.hzCardBodies.push({"s":body,"w":w,"h":h,"k":"card"});
          this.hzDrawBody(body,w,h);
          if(icon != null) { this.hzIcon(p,icon,11,8,HZ_ACCENT); }
-         if(title != null) { this.hzText(p,title,icon != null ? 29 : 12,7,150,12,HZ_LABEL,false,"hdr"); }
+         if(title != null) { this.hzText(p,this.hzLt(title),icon != null ? 29 : 12,7,150,12,HZ_LABEL,false,"hdr"); }
          var dot:Sprite = new Sprite();
          dot.x = w - 12; dot.y = HZ_HDR / 2;
          p.addChild(dot);
@@ -2277,9 +2277,9 @@
          if(this.hzHsSt == 0) { return; }   // the fade (hzShow) takes the card away; nothing to draw
          var txt:String;
          if(this.hzHsSrc == 1) { txt = this.hzHsAlTxt; }
-         else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? "HAZARD" : this.hzHsWord + " HAZARD"; }
-         else if(this.hzHsSrc == 4) { txt = "RADIATION HAZARD"; }
-         else { txt = "SUIT PROTECTION RESTORING"; }
+         else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? this.hzLt("HAZARD") : this.hzLt(this.hzHsWord) + " " + this.hzLt("HAZARD"); }
+         else if(this.hzHsSrc == 4) { txt = this.hzLt("RADIATION HAZARD"); }
+         else { txt = this.hzLt("SUIT PROTECTION RESTORING"); }
          txt = this.hzUC(txt);
          var cm:int = this.hzHsCmp();
          var h:Number = cm == 1 ? HZ_HS_H : HZ_HS_HS;
@@ -4780,12 +4780,13 @@
       private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       private var hz51OpenFolder:String = "";     // one-shot folder request for the DLL (Message Log SHOW)
       private var hzSetWinMask:Sprite = null;     // rounded clip for the settings window body
-      // P0 localization: filled once by hzSetL10n from the DLL. hzL is unused on HUD ticks.
+      // Localization: filled once by hzSetL10n from the DLL. Lookups at build / language change only.
       private var hzL10n:Object = null;
       private var hzL10nGame:String = "";
       private var hzL10nGameName:String = "";
       private var hzL10nFiles:Array = null;
       private var hzLanguage:String = "auto";
+      private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -4993,24 +4994,24 @@
       private function hz51LangName(code:String) : String
       {
          var c:String = code != null ? String(code).toLowerCase() : "";
-         if(c == "auto" || c.length == 0) { return "AUTO (GAME)"; }
-         if(c == "en") { return "ENGLISH"; }
-         if(c == "de") { return "GERMAN"; }
-         if(c == "fr") { return "FRENCH"; }
-         if(c == "es") { return "SPANISH"; }
-         if(c == "it") { return "ITALIAN"; }
-         if(c == "ja" || c == "jp") { return "JAPANESE"; }
-         if(c == "ko") { return "KOREAN"; }
-         if(c == "pl") { return "POLISH"; }
-         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return "CHINESE (SIMPLIFIED)"; }
-         if(c == "ptbr" || c == "pt-br") { return "PORTUGUESE (BRAZIL)"; }
+         if(c == "auto" || c.length == 0) { return this.hzL("settings.language.auto", "Auto (game)"); }
+         if(c == "en") { return this.hzL("settings.language.en", "English"); }
+         if(c == "de") { return this.hzL("settings.language.de", "Deutsch (German)"); }
+         if(c == "fr") { return this.hzL("settings.language.fr", "Français (French)"); }
+         if(c == "es-mx" || c == "esmx" || c == "es_mx" || c == "latam" || c == "esla" || c == "es-419") { return this.hzL("settings.language.es-mx", "Español de Latinoamérica (Spanish, Latin America)"); }
+         if(c == "es") { return this.hzL("settings.language.es", "Español (Spanish)"); }
+         if(c == "it") { return this.hzL("settings.language.it", "Italiano (Italian)"); }
+         if(c == "ja" || c == "jp") { return this.hzL("settings.language.ja", "日本語 (Japanese)"); }
+         if(c == "pl") { return this.hzL("settings.language.pl", "Polski (Polish)"); }
+         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return this.hzL("settings.language.zh-cn", "简体中文 (Simplified Chinese)"); }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br") { return this.hzL("settings.language.pt-br", "Português do Brasil (Portuguese, Brazil)"); }
          return c.toUpperCase();
       }
       // Purpose: Auto plus one option per Localization/*.json the DLL listed at load.
       private function hz51LangOpts() : Object
       {
          var vals:Array = ["auto"];
-         var names:Array = ["AUTO (GAME)"];
+         var names:Array = [this.hz51LangName("auto")];
          var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
          var i:int = 0;
          while(i < files.length)
@@ -5026,8 +5027,9 @@
          return {"vals":vals,"names":names};
       }
       // Purpose: cache the localization snapshot from HorizonUI.dll. One Invoke
-      // per movie load or Language reload. No file I/O. Does not change HUD card
-      // text in P0 (hzL is unused on ticks). Author: Moragar. Last modified: 2026-11-27.
+      // per movie load or Language reload. No file I/O. Lookups run when a menu
+      // is built or the language changes, never from a HUD tick.
+      // Author: Moragar. Last modified: 2026-11-27.
       public function hzSetL10n(s:String) : void
       {
          try
@@ -5056,11 +5058,17 @@
             }
             this.hzL10n = tab;
             this.hzL10nFiles = files;
-            if(this.hzSetIsOpen) { this.hzSetDraw(); }
+            this.hzL10nApplyHud();
+            if(this.hzSetIsOpen)
+            {
+               try { this.hz51IndexBuild(); } catch(eIdxL:Error) { }
+               this.hzSetDraw();
+            }
          }
          catch(err:Error) { }
       }
-      // Purpose: look up a cached label. HUD ticks must not call this in P0.
+      // Purpose: look up a cached dotted key. Call from build / language change
+      // only. Inputs: table key and English fallback. Outputs: overlay or fallback.
       private function hzL(key:String, fb:String) : String
       {
          if(this.hzL10n != null)
@@ -5073,6 +5081,134 @@
             }
          }
          return fb != null ? fb : key;
+      }
+      // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
+      // stays on Latin and $MAIN_Font is chosen per field, never per frame.
+      private function hzHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      // Purpose: slug used by en.json hud.hud_label / hud.help / settings.ui keys.
+      private function hzLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var c:String = s.charAt(i);
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += c.toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      // Purpose: overlay-on-English lookup from a visible English literal.
+      // Tries dotted prefixes the English table already uses. Missing key = English.
+      private function hzLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var hit:String = this.hzL(en, "");
+         if(hit.length > 0 && hit != en && this.hzL10n != null && this.hzL10n[en] != undefined) { return hit; }
+         var slug:String = this.hzLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","settings.language.","settings.tabs.","hud.hud_label.","hud.option.","hud.help.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var k:String = String(pfx[i]) + slug;
+            var v:String = this.hzL(k, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         if(slug.length > 48) { slug = slug.substr(0, 48); }
+         var h:String = this.hzL("hud.help." + slug, "");
+         if(h.length > 0) { return h; }
+         return en;
+      }
+      private function hz51LocArr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
+      }
+      // Purpose: stamp translated labels onto a Settings row at catalog finish
+      // (F11 build / language change), not per HUD frame.
+      private function hz51LocOne(r:Object) : void
+      {
+         if(r == null) { return; }
+         if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
+         if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
+         if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
+         if(r.note != undefined) { r.note = this.hzLt(String(r.note)); }
+         if(r.inote != undefined) { r.inote = this.hzLt(String(r.inote)); }
+         if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
+         if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
+         if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(r.t == "p" || r.t == "c") { return; }
+         this.hz51LocArr(r.opts as Array);
+         this.hz51LocArr(r.names as Array);
+      }
+      private function hz51LocRows(rows:Array) : Array
+      {
+         var i:int = 0;
+         while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
+         return rows;
+      }
+      private function hzL10nTf(tf:TextField, en:String) : void
+      {
+         if(tf == null || en == null) { return; }
+         tf.text = this.hzLt(en);
+         var o:Object = this.hzTxtObj(tf);
+         if(o != null) { this.hzApplyFmt(o); }
+      }
+      // Purpose: refresh HUD chrome that was stamped at card build. Called from
+      // hzSetL10n only. Ticks keep using the TextField text already set here.
+      private function hzL10nApplyHud() : void
+      {
+         try
+         {
+            if(this.hzVnLbl != null)
+            {
+               if(this.hzVnLbl.length > 0) { this.hzL10nTf(TextField(this.hzVnLbl[0]), "HEALTH"); }
+               if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
+            }
+            this.hzL10nTf(this.hzJ19Title, "JETPACK");
+            this.hzL10nTf(this.hz26ChName, "CHARACTER");
+            this.hzL10nTf(this.hz26ChML, "MASS");
+            this.hzL10nTf(this.hz26PowL, "POWER");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL");
+            this.hzL10nTf(this.hz43DayT, "DAY");
+            this.hzL10nTf(this.hzE19RelT, "RELOAD");
+            this.hzHsWordLoc = this.hzLt("HAZARD");
+         }
+         catch(eApp:Error) { }
       }
 
       private function hz51Side(tab:int) : Array
@@ -5140,9 +5276,9 @@
             }
             g++;
          }
-         if(lab.length == 0) { return t; }
-         if(gname.length > 0 && gname != lab) { return t + " > " + gname + " > " + lab; }
-         return t + " > " + lab;
+         if(lab.length == 0) { return this.hzLt(t); }
+         if(gname.length > 0 && gname != lab) { return this.hzLt(t) + " > " + this.hzLt(gname) + " > " + this.hzLt(lab); }
+         return this.hzLt(t) + " > " + this.hzLt(lab);
       }
       private function hz51Copy(r:Object) : Object
       {
@@ -5174,12 +5310,18 @@
       private function hz51HelpOf(k:String, r:Object) : String
       {
          var h:String = this.hz51Help(k);
-         if(h != null && h.length > 0) { return h; }
-         if(r != null && r.inote != undefined) { return String(r.inote); }
-         if(r != null && r.info != undefined) { return String(r.info); }
-         if(r != null && r.note != undefined) { return String(r.note); }
-         var lab:String = r != null && r.l != undefined ? String(r.l) : k;
-         return "Changes " + lab.toLowerCase() + " on your HUD.";
+         if(h == null || h.length == 0)
+         {
+            if(r != null && r.inote != undefined) { h = String(r.inote); }
+            else if(r != null && r.info != undefined) { h = String(r.info); }
+            else if(r != null && r.note != undefined) { h = String(r.note); }
+            else
+            {
+               var lab:String = r != null && r.l != undefined ? String(r.l) : k;
+               h = "Changes " + lab.toLowerCase() + " on your HUD.";
+            }
+         }
+         return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
       private function hz51Line(k:String, r:Object) : String
@@ -5187,7 +5329,7 @@
          switch(k)
          {
             case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.";
-            case "_l10nGame": return "The interface language Starfield was using when Horizon started.";
+            case "_l10nGame": return "Detected at start. Does not follow the override.";
             case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
             case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
             case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
@@ -5311,7 +5453,7 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
-            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. HUD card words still use English until later localization work.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language.";
             case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
@@ -5429,7 +5571,7 @@
             out.push(r);
             i++;
          }
-         return this.hz51Mute(out);
+         return this.hz51LocRows(this.hz51Mute(out));
       }
       private function hz51On(k:String) : Boolean
       {
@@ -6163,8 +6305,8 @@
          if(id == "ml") { return this.hz51Msglog(); }
          if(id == "loc")
          {
-            var detected:String = this.hzL10nGameName != null && this.hzL10nGameName.length > 0 ? this.hzL10nGameName.toUpperCase() : this.hz51LangName(this.hzL10nGame);
-            if(detected == "AUTO (GAME)" || detected.length == 0) { detected = "—"; }
+            var detected:String = this.hz51LangName(this.hzL10nGame);
+            if(detected == this.hzL("settings.language.auto", "Auto (game)") || detected.length == 0) { detected = "—"; }
             var opts:Object = this.hz51LangOpts();
             return [{"k":"_l10nGame","l":"GAME LANGUAGE","t":"x","btn":detected,"h":"DETECTION","dis":true,"dv":true},
                {"k":"Language","l":"HORIZON LANGUAGE","t":"l","vals":opts.vals,"names":opts.names,"h":"OVERRIDE"}];
@@ -6548,9 +6690,9 @@
          else if(paused) { this.hz51T(b,"!",ccx,ccy - 7,16,11,"bd",warn,0,"center"); }
          else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
          var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","comms_dialogue":"COMMS DIALOGUE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
-         var title:String = names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE");
-         var stx:String = on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED"));
-         this.hz51T(b,"MODULE",x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
+         var title:String = this.hzLt(names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE"));
+         var stx:String = this.hzLt(on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED")));
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,title,x0 + 38,y0 + 18,Math.max(80,w * 0.55),11,"bd",uint(T.txt),1.4);
          this.hz51T(b,stx,x0 + w - 16,y0 + 16,150,11,"sb",paused ? warn : (on ? acc : uint(T.lab)),1.2,"right");
          if(body.length > 0)
@@ -6629,7 +6771,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(rows.length == 0) { rows = [{"k":"_empty","l":"NO SETTINGS IN THIS SECTION","t":"x","btn":"—","h":"THIS SECTION","dis":true}]; }
          if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
          try { this.hzSetFollow(rows); } catch(eFol:Error) { }
-         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,"This page could not be drawn.",HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
+         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,this.hzLt("This page could not be drawn."),HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
          this.hz51DrawRight(b,g,T,acc,rows,H);
          this.hz51DrawFooter(b,g,T,acc,W,H);
          // Row labels are TextFields (children). body.graphics is behind them, so a
@@ -6661,8 +6803,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          this.hz51Hair(g,0,HZ51_HEAD - 1,W,1,uint(T.txt),0.10);
-         this.hz51T(b,"HORIZON UI",16,14,150,16,"bd",uint(T.txt),2.4);
-         this.hz51T(b,"SETTINGS",16 + 128,18,90,11,"sb",uint(T.lab),2.0);
+         this.hz51T(b,this.hzLt("HORIZON UI"),16,14,150,16,"bd",uint(T.txt),2.4);
+         this.hz51T(b,this.hzLt("SETTINGS"),16 + 128,18,90,11,"sb",uint(T.lab),2.0);
          var hv:String = HZ_BUILD;
          if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
          var pillW:Number = 78;
@@ -6686,7 +6828,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          {
             var sel:Boolean = i == this.hzSetTab;
             var hov:Boolean = this.hzSetHover == "tab" + i;
-            var tb:TextField = this.hz51T(b,String(HZ_SET_TABS[i]),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
+            var tb:TextField = this.hz51T(b,this.hzLt(String(HZ_SET_TABS[i])),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
             tabTf.push(tb);
             tabSum += Math.round(this.hzTW(tb));
             i++;
@@ -6720,7 +6862,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(px0,py0,pw,ph,15,15);
          g.endFill();
          this.hz51Stroke(g,px0,py0,pw,ph,uint(T.txt),psel ? 0.28 : 0.16,15);
-         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
+         this.hz51T(b,this.hzLt("COMPACT MODE (STRIPS)"),px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
          this.hz51Switch(b,g,px0 + pw - 8,py0 + ph / 2,pon,T);
          this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":ph});
       }
@@ -6728,7 +6870,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          var lay:Object = this.hz51HeadSlots();
          if(Number(lay.arrW) <= 0) { return; }
-         var alab:String = this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS";
+         var alab:String = this.hzLt(this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS");
          var aid:String = this.hzSetTab == 2 ? "arrscan" : "arrange";
          var aw:Number = Number(lay.arrW);
          var ax:Number = Number(lay.ax);
@@ -6747,7 +6889,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.endFill();
          this.hz34Ring(b,bx,by,bw,HZ51_FIND_H,HZ51_BOX_R,on ? acc : uint(T.txt),on ? 0.70 : 0.28,1);
          var typed:Boolean = this.hz51FindOpen();
-         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : "Search settings...");
+         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : this.hzLt("Search settings..."));
          var col:uint = this.hzSetFind.length > 0 ? uint(T.txt) : uint(T.lab);
          var textW:Number = typed ? bw - 36 : bw - 18;
          this.hz51T(b,txt,bx + 10,by + 8,textW,12,"sb",col,0.2);
@@ -6770,7 +6912,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sh:Number = HZ51_SW_H;
          var sx:Number = Math.round(R - sw);
          var sy:Number = Math.round(cy - sh / 2);
-         this.hz51T(b,on ? "ON" : "OFF",sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
+         this.hz51T(b,this.hzLt(on ? "ON" : "OFF"),sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
          g.beginFill(on ? acc : uint(T.off),on ? 0.92 : 1);
          g.drawRoundRect(sx,sy,sw,sh,sh,sh);
          g.endFill();
@@ -6795,7 +6937,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          while(gi < groups.length)
          {
             var grp:Object = groups[gi];
-            this.hz51T(b,String(grp.g),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
+            this.hz51T(b,this.hzLt(String(grp.g)),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
             this.hz51Hair(g,x0 + 16,y + 18,w - 32,1,acc,HZ51_SH_A);
             y += 22;
             var items:Array = grp.items as Array;
@@ -6813,8 +6955,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                   g.beginFill(acc,1); g.drawRoundRect(x0,y + 6,3,ih - 12,2,2); g.endFill();
                }
                else { this.hz51Hair(g,x0 + 16,y + ih - 1,w - 16,1,uint(T.txt),0.04); }
-               this.hz51T(b,String(it.l),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
-               this.hz51T(b,String(it.s),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
+               this.hz51T(b,this.hzLt(String(it.l)),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
+               this.hz51T(b,this.hzLt(String(it.s)),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
                this.hzSetHits.push({"id":"side" + pi,"x":x0,"y":y,"w":w,"h":ih});
                if(sel) { this.hz34Ring(b,x0 + 4,y + 2,w - 8,ih - 4,HZ51_BOX_R,acc,0.55,1); }
                y += ih;
@@ -6874,7 +7016,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz51T(b,this.hz51Crumb(this.hzSetTab, this.hz51PageClamp(this.hzSetTab)),x0,HZ_SET_TOP + 10,crumbW,10,"sb",uint(T.mut),1.2);
          var pages:Array = this.hz51Pages(this.hzSetTab);
          var pobj:Object = pages[this.hz51PageClamp(this.hzSetTab)];
-         var title:String = pobj != null ? String(pobj.l) : "";
+         var title:String = pobj != null ? this.hzLt(String(pobj.l)) : "";
          this.hz51T(b,title,x0,HZ_SET_TOP + 24,crumbW,16,"bd",uint(T.txt),1.8);
          var list:Array = [];
          var ri:int = 0;
@@ -6897,7 +7039,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var firstSec:Boolean = true;
          if(list.length == 0)
          {
-            this.hz51T(b,"No settings in this section.",x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings in this section."),x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
          }
          while(li < list.length)
          {
@@ -7320,13 +7462,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var ph:Number = H - HZ51_FOOT - py;
          this.hz51Hair(g,px,py,1,ph,uint(T.txt),HZ51_DIV_A);
          var inn:Number = HZ51_PREV_W - 24;
-         this.hz51T(b,"LIVE PREVIEW",px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("LIVE PREVIEW"),px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
          var pvcX:Number = px + 12;
          var pvcY:Number = py + 30;
          var pvcW:Number = inn;
          var r:Object = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? rows[this.hzSetRow] : null;
          this.hz51PvPaint(b,g,T,acc,pvcX,pvcY,pvcW,HZ51_PVC_H,r);
-         var cap:String = r != null && r.l != undefined ? String(r.l) : "Pick a setting.";
+         var cap:String = r != null && r.l != undefined ? String(r.l) : this.hzLt("Pick a setting.");
          var pvn:TextField = this.hz51T(b,cap,px + 12,pvcY + HZ51_PVC_H + 8,inn,11,"rg",uint(T.mut),0.1);
          pvn.wordWrap = true; pvn.multiline = true; pvn.width = inn;
          var dy:Number = pvcY + HZ51_PVC_H + 36;
@@ -7335,9 +7477,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,HZ51_BOX_R);
          g.endFill();
          this.hz34Ring(b,px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,uint(T.txt),0.14,1);
-         this.hz51T(b,"SETTING DETAILS",px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
          this.hz51Hair(g,px + 12 + 118,dy + 12,Math.max(8,inn - 118),1,acc,HZ51_SH_A);
-         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : "Pick a setting to see what it does.";
+         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : this.hzLt("Pick a setting to see what it does.");
          var title:String = r != null && r.l != undefined ? String(r.l) : "";
          if(title.length > 0) { this.hz51T(b,title,px + 12,dy + 20,inn,HZ51_TITLE_PX,"bd",uint(T.txt),0.8); }
          var tf:TextField = this.hz51T(b,help,px + 12,dy + 40,inn,HZ51_HELP_PX,"rg",uint(T.lab),0.1);
@@ -7432,7 +7574,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          var help:String = this.hz51HelpOf(k, r);
          if(help == null || help.length == 0) { help = r != null && r.note != undefined ? String(r.note) : "This setting has no separate HUD picture. The details below describe what it does."; }
-         this.hz51T(b,"SETTING DETAILS",x + 10,y + 10,w - 20,8,"sb",acc,0.8);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),x + 10,y + 10,w - 20,8,"sb",acc,0.8);
          var tf:TextField = this.hz51T(b,help,x + 10,y + 26,w - 20,10,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = w - 20;
          this.hzMsglogWrap(tf,w - 20,h - 36);
@@ -7956,29 +8098,29 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var by:Number = fy + 12;
          if(this.hz51Pad)
          {
-            this.hz51T(b,"CONTROLLER",hx,by + 2,88,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("CONTROLLER"),hx,by + 2,88,9,"bd",uint(T.mut),1.2);
             hx = 108;
             for each(var ck:Array in [["LB/RB","TABS"],["D-PAD","MOVE"],["A","SELECT"],["B","BACK"]])
             {
                var ckw:Number = this.hzSetKey(b,g,hx,by,String(ck[0]),acc,16,7,9);
-               var cl:TextField = this.hz51T(b,String(ck[1]),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
+               var cl:TextField = this.hz51T(b,this.hzLt(String(ck[1])),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + ckw + 4 + this.hzTW(cl) + 10);
             }
          }
          else
          {
-            this.hz51T(b,"KEYBOARD",hx,by + 2,80,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("KEYBOARD"),hx,by + 2,80,9,"bd",uint(T.mut),1.2);
             hx = 100;
             for each(var hk:Array in [["UP/DN","SELECT"],["L/R","CHANGE"],["ENTER","OK"],["ESC","CANCEL"],["/","SEARCH"]])
             {
                var hkw:Number = this.hzSetKey(b,g,hx,by,String(hk[0]),uint(T.mut),16,7,9);
-               var hl:TextField = this.hz51T(b,String(hk[1]),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
+               var hl:TextField = this.hz51T(b,this.hzLt(String(hk[1])),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + hkw + 4 + this.hzTW(hl) + 10);
             }
          }
          var bxr:Number = W - 16;
-         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,"CANCEL",false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
-         this.hzSetBtn(b,g,bxr,fy + 9,"OK",true,false,this.hzSetHover == "ok",T,"ok",11,10);
+         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("CANCEL"),false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
+         this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("OK"),true,false,this.hzSetHover == "ok",T,"ok",11,10);
       }
       private function hz51DrawFind(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
       {
@@ -8001,7 +8143,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(!this.hzSetFindOn && this.hzSetFind.length == 0) { return; }
          if(hits.length == 0)
          {
-            this.hz51T(b,"No settings match",x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings match"),x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
             return;
          }
          if(this.hzSetFindHi >= hits.length) { this.hzSetFindHi = 0; }
@@ -10701,9 +10843,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
          if(minPx > sz) { sz = minPx; }   // v0.42.0.4: the version label passes 13 so TextScale 0.9 cannot round it to 12
          if(face == "rg" && sz <= 12) { face = "sb"; }
-         var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
+         var cjk:Boolean = this.hzHasCjk(txt);
+         var f:TextFormat = new TextFormat(cjk ? "$MAIN_Font" : this.hzFontName(face),sz,col);
          f.align = align;
-         f.letterSpacing = ls;
+         f.letterSpacing = cjk ? 0 : ls;
          t.defaultTextFormat = f;
          t.width = Math.round(w);
          t.height = sz + 10;
@@ -11567,12 +11710,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                var lcs:Array = this.hzLayClips(k);
                var c:Sprite = this.hz34C("Quests") && k == "Quests" ? this.HorizonCompactQuest_mc : (lcs.length > 0 ? Sprite(lcs[0]) : null);
-               if(c) { r.push({"k":k,"n":HZ_LAY_NAMES[i],"c":c}); }
+               if(c) { r.push({"k":k,"n":this.hzLt(HZ_LAY_NAMES[i]),"c":c}); }
             }
             i++;
          }
-         try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":"SCOPE: HOLD BREATH","c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
-         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":"VEHICLE EXIT PILL","c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
+         try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":this.hzLt("SCOPE: HOLD BREATH"),"c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
+         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":this.hzLt("VEHICLE EXIT PILL"),"c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
          return r;
       }
 
@@ -12983,9 +13126,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzPpDet = this.hzT(p,"",86,60,180,10,"rg","dim",1);
          var r:Number = HZ_PP_W - 16;
          this.hzPpLocT = this.hzT(p,"",r - 34 - 90,17,90,13,"sb","mut",0.6,"right");
-         this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");
+         this.hzPpLocL = this.hzT(p,this.hzLt("LOCAL/GAME"),r - 80,21,80,8,"sb","dim",0.8,"right");
          this.hzPpRealT = this.hzT(p,"",r - 34 - 90,42,90,12,"rg","dim",0.4,"right");
-         this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");
+         this.hzPpRealL = this.hzT(p,this.hzLt("PC/REAL"),r - 62,45,64,8,"sb","dim",0.8,"right");
          this.hzPpLocG = new Sprite(); p.addChild(this.hzPpLocG);
          this.hzPpRealG = new Sprite(); p.addChild(this.hzPpRealG);
          this.hzSetSz(this.HorizonEnv_mc,HZ_PP_W,84);
@@ -13363,7 +13506,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             p.addChild(ic);
             this.hzIcons.push({"s":ic,"k":(i == 0 ? "vnheart" : "vno2"),"c":HZ_ACCENT,"acc":true});   // v0.35: icon + label follow the accent
             this.hzVnIc.push(ic);
-            var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);
+            var lab:TextField = this.hzT(p,this.hzLt(i == 0 ? "HEALTH" : "OXYGEN"),50,y + 9,150,13,"sb","acc",2);
             this.hzHdr19(lab);
             this.hzVnLbl.push(lab);
             var v:TextField = this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");
@@ -13585,13 +13728,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var face:String = String(o.face);
          if(face == "rg" && sz <= 12) { face = "sb"; } // small labels never thinner than SemiBold
          o.szAp = sz;   // 0.43.5 (PR #12 cache key): the applied pixel size, which HudScale / HoverScale floors change without o.fs changing
-         var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
+         var tf:TextField = TextField(o.tf);
+         var keepTxt:String = o.hdr19 ? this.hzUC(tf.text) : tf.text;
+         var cjk19:Boolean = this.hzHasCjk(keepTxt);
+         var f:TextFormat = new TextFormat(cjk19 ? "$MAIN_Font" : this.hzFontName(face),sz,col);
          if(o.right) { f.align = "right"; }
          if(o.center) { f.align = "center"; }
          // HeaderStyle 0: CAPS + letter-spaced titles; 1: Title Case, tight tracking
-         f.letterSpacing = (o.hdr19 && this.hzHeaderStyle == 1) ? Math.min(Number(o.ls),0.2) : Number(o.ls);
-         var tf:TextField = TextField(o.tf);
-         var keepTxt:String = o.hdr19 ? this.hzUC(tf.text) : tf.text;
+         // CJK skips tracking so glyphs are not pulled apart.
+         f.letterSpacing = cjk19 ? 0 : ((o.hdr19 && this.hzHeaderStyle == 1) ? Math.min(Number(o.ls),0.2) : Number(o.ls));
          tf.filters = [];
          tf.text = "";
          tf.defaultTextFormat = f;
@@ -13636,6 +13781,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzUC(s:String) : String
       {
          if(s == null) { return ""; }
+         if(this.hzHasCjk(s)) { return s; }
          if(this.hzHeaderStyle == 0) { return s.toUpperCase(); }
          var w:Array = s.split(" ");
          var i:int = 0;
@@ -14664,7 +14810,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.HorizonCard_mc.addChild(p);
          this.hzJ19Body = new Sprite(); p.addChild(this.hzJ19Body);
          this.hzJ19Glyph = new Sprite(); this.hzJ19Glyph.x = 40; this.hzJ19Glyph.y = 34; p.addChild(this.hzJ19Glyph);
-         this.hzJ19Title = this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2);
+         this.hzJ19Title = this.hzT(p,this.hzLt("JETPACK"),78,9,170,14,"sb","main",2);
          this.hzHdr19(this.hzJ19Title);
          this.hzChip13(this.hzJ19Title,"Jetpack");
          this.hzJ19Bolt = new Sprite(); this.hzJ19Bolt.x = 83; this.hzJ19Bolt.y = 39; p.addChild(this.hzJ19Bolt);
@@ -15114,7 +15260,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzE19Cnt = this.hzT(p,"--",0,36,140,28,"bd","main",0.5,"right");
          this.hzE19Res = this.hzT(p,"",0,54,120,14,"rg","dim",0.4);
          this.hzE19Chip = new Sprite(); p.addChild(this.hzE19Chip);
-         this.hzE19RelT = this.hzT(this.hzE19Chip,"RELOAD",0,0,80,10,"sb","col",1.2,"left",HZ_AMB);
+         this.hzE19RelT = this.hzT(this.hzE19Chip,this.hzLt("RELOAD"),0,0,80,10,"sb","col",1.2,"left",HZ_AMB);
          this.hzE19Chip.visible = false;
          this.hzE19Draw();
       }
@@ -19079,7 +19225,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var f:Sprite = new Sprite(); c.addChild(f); this.hz26ChF = f;
          this.hz26ChG = new Sprite(); f.addChild(this.hz26ChG);
          var W:Number = HZ_CH_W;
-         this.hz26ChName = this.hzT(f,"CHARACTER",76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
+         this.hz26ChName = this.hzT(f,this.hzLt("CHARACTER"),76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
          this.hz26ChSpT = this.hzT(f,"",0,0,100,10,"bd","col",0.8,"left",0xFFFFFF);
          this.hz26ChSpT.visible = false;
          this.hz26ChCr = this.hzT(f,"",W - 14 - 150,15,150,14,"sb","main",0.5,"right");
@@ -19087,7 +19233,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz26ChXpT = this.hzT(f,"",W - 14 - 200,46,200,12,"sb","mut",0.4,"right");
          this.hz26ChXpBar = new Sprite(); this.hz26ChXpBar.x = 76; this.hz26ChXpBar.y = 70; f.addChild(this.hz26ChXpBar);
          this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
-         this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
+         this.hz26ChML = this.hzT(f,this.hzLt("MASS"),44,114,160,11,"sb","mut",1.6);
          this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
          // 0.43.6 (round 3 C): the compact strip is built the first time the card is drawn in compact form (hz26CharSync)
          addChild(c);
@@ -19462,7 +19608,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz26PowGly = new Sprite(); r.addChild(this.hz26PowGly);
          this.hz26PowHold = new Sprite(); r.addChild(this.hz26PowHold);
          this.hz26GrenT = this.hzT(r,"",0,0,60,12,"bd","main",0.5);   // v0.28: grenade chip text
-         this.hz26PowL = this.hzT(r,"POWER",0,0,80,12,"sb","mut",1.6);
+         this.hz26PowL = this.hzT(r,this.hzLt("POWER"),0,0,80,12,"sb","mut",1.6);
          this.hz26PowP = this.hzT(r,"",0,0,60,14,"sb","main",0.5,"right");
          r.visible = false;
       }
@@ -27742,13 +27888,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz43O2L = this.hzT(this.hz43Face,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
          this.hz43CO2L = this.hzT(this.hz43Face,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
          this.hz43LocT = this.hzT(this.hz43Face,"12:00",-90,-6,180,16,"sb","main",0,"center");
-         this.hz43LocL = this.hzT(this.hz43Face,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43LocL = this.hzT(this.hz43Face,this.hzLt("LOCAL/GAME"),-90,22,180,13,"sb","dim",0.6,"center");
          this.hz43RealT = this.hzT(this.hz43Face,"12:00",-80,40,160,13,"rg","mut",0,"center");
-         this.hz43RealL = this.hzT(this.hz43Face,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43RealL = this.hzT(this.hz43Face,this.hzLt("PC/REAL"),-70,60,140,13,"sb","dim",0.6,"center");
          this.hz43BodyT = this.hzT(this.hz43Face,"--",-100,84,200,14,"sb","main",1.2,"center");
          this.hz43TempT = this.hzT(this.hz43Face,"--",-80,104,160,13,"sb","acc",0.4,"center");
          this.hz43PmT = this.hzT(this.hz43Face,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
-         this.hz43DayT = this.hzT(this.hz43Face,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
+         this.hz43DayT = this.hzT(this.hz43Face,this.hzLt("DAY"),-22,-40,48,13,"sb","main",0.6,"center");
          this.hz43AttT = this.hzT(this.hz43Face,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
          this.hz43AttT.visible = false;
          this.hz43Cards = [];

@@ -81,6 +81,7 @@
       private var hzqInfY:Number = 0;
       private var hzqInfObj:Object = null;      // what the info card shows (selected entry, or the item being assigned)
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
+      private var hzqL10n:Object = null;        // dotted-key table from DLL hzqSetL10n (FavoritesMenu movie)
       private var hzqCtA:ColorTransform = null; // reused: accent multiply tint for non-weapon symbol icons
       private var hzqCtM:ColorTransform = null; // reused: main text tint for non-weapon symbol icons
       private var hzqCtN:ColorTransform = null; // reused: identity (non-weapon pictures)
@@ -525,11 +526,114 @@
          g.lineTo(cx + sx * r,cy);
          g.endFill();
       }
-      // hzUC: CAPS, or Title Case when HeaderStyle = 1
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per FavoritesMenu open / language reload. No file I/O.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzqSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = ln.substr(tabAt + 1);
+                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzqL10n = tab;
+            if(this.hzqOn)
+            {
+               try { this.hzqHeader(); } catch(eHdr:Error) { }
+               try { this.hzqInfo(); } catch(eInf:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzqL(key:String, fb:String) : String
+      {
+         if(this.hzqL10n != null)
+         {
+            var v:* = this.hzqL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzqHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzqLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzqLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var slug:String = this.hzqLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","hud.hud_label.","hud.option.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var v:String = this.hzqL(String(pfx[i]) + slug, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         return en;
+      }
+      // hzUC: CAPS, or Title Case when HeaderStyle = 1. CJK is left as-is.
       private function hzqUC(s:String) : String
       {
          if(s == null) { return ""; }
-         if(int(this.hzqS.HeaderStyle) == 0) { return s.toUpperCase(); }
+         if(this.hzqHasCjk(s)) { return s; }
+         if(this.hzqS != null && int(this.hzqS.HeaderStyle) == 0) { return s.toUpperCase(); }
          var w:Array = s.split(" ");
          var i:int = 0;
          while(i < w.length)
@@ -631,8 +735,9 @@
       private function hzqSet(t:TextField, s:String, size:Number, col:uint, w:String, tr:Number, hdr:Boolean) : void
       {
          var fs:Number = this.hzqFs(size);
-         var f:TextFormat = new TextFormat(this.hzqFace(w),fs,col);
-         f.letterSpacing = hdr && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10;
+         var cjk:Boolean = this.hzqHasCjk(s);
+         var f:TextFormat = new TextFormat(cjk ? "$MAIN_Font" : this.hzqFace(w),fs,col);
+         f.letterSpacing = cjk ? 0 : (hdr && this.hzqS != null && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10);
          t.embedFonts = true;
          t.defaultTextFormat = f;
          t.text = s;
@@ -1025,7 +1130,7 @@
          var r:Rectangle = this.hzqCards[6].r;
          var g:* = this.hzqHdr.graphics;
          g.clear();
-         this.hzqSet(this.hzqHdrT,this.hzqUC("Quick Menu"),13,this.hzqTextAccent(),"bd",0.14,true);
+         this.hzqSet(this.hzqHdrT,this.hzqUC(this.hzqLt("Quick Menu")),13,this.hzqTextAccent(),"bd",0.14,true);
          var kt:String = "";
          var kf:String = "";
          if(this.hzqKb) { kt = this.hzqKey("Cancel"); }
@@ -1166,7 +1271,7 @@
          if(!empty && o.bIsEquippable && o.sAmmoName != null && String(o.sAmmoName).length > 0)
          {
             var n:uint = uint(o.uAmmoCount);
-            rows.push(["AMMO",String(o.sAmmoName) + "  " + (n > 999 ? "999+" : String(n))]);
+            rows.push([this.hzqLt("AMMO"),String(o.sAmmoName) + "  " + (n > 999 ? "999+" : String(n))]);
          }
          if(!empty && o.bIsEquippable && o.aElementalStats != null && o.aElementalStats.length > 0)
          {
@@ -1178,7 +1283,7 @@
                if(lb.length > 0) { d.push(lb + " " + Math.floor(Number(o.aElementalStats[q].fValue))); }
                q++;
             }
-            if(d.length > 0) { rows.push(["DAMAGE",d.join("   ")]); }
+            if(d.length > 0) { rows.push([this.hzqLt("DAMAGE"),d.join("   ")]); }
          }
          if(this.hzqInfSel && this.hzqKb)
          {
@@ -1188,7 +1293,7 @@
                sk = this.hzqExtKeyShort(String(this.hzqS.Keys[this.hzqExtSel - 13] != null ? this.hzqS.Keys[this.hzqExtSel - 13] : ""));
             }
             else { sk = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1)); }
-            if(sk.length > 0) { rows.push(["SLOT",sk]); }
+            if(sk.length > 0) { rows.push([this.hzqLt("SLOT"),sk]); }
          }
          var y:Number = (extEmpty ? 10 : nt.y + nt.height) + (rows.length > 0 ? 8 : 4);
          var div:Number = y - 4;
@@ -2483,7 +2588,7 @@
          }
          if(this.hzqExtFrameT != null)
          {
-            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED FAVORITES"),13,this.hzqTextAccent(),"bd",0.18,true);
+            this.hzqSet(this.hzqExtFrameT,this.hzqUC(this.hzqLt("EXTENDED FAVORITES")),13,this.hzqTextAccent(),"bd",0.18,true);
             this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
             this.hzqExtFrameT.y = fy + 6;
             this.hzqExtFrameT.visible = true;

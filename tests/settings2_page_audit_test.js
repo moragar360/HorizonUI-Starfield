@@ -148,7 +148,12 @@ const host = {
 	hz40ScanRows() { return dummyFrom(as, "hz40ScanRows"); },
 	hz40PopupRows() { return dummyFrom(as, "hz40PopupRows"); },
 	hz31CommsRows() { return dummyFrom(as, "hz31CommsRows"); },
-	hz37Rows() { return dummyFrom(as, "hz37Rows"); }
+	hz37Rows() { return dummyFrom(as, "hz37Rows"); },
+	hzLt(en) { return String(en); },
+	hzL(k, d) { return d != null && String(d).length ? String(d) : String(k); },
+	hz51LocArr(a) { return a; },
+	hz51LocOne(r) { return r; },
+	hz51LocRows(out) { return out; }
 };
 
 for (const n of [

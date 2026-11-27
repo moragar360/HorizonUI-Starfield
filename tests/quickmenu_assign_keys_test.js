@@ -415,7 +415,7 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		const frame = fnText(qm, "hzqExtFrameDraw").body;
 		const setb = fnText(qm, "hzqSet").body;
 		const face = fnText(qm, "hzqFace").body;
-		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\),13,this\.hzqTextAccent\(\),"bd",0\.18,true\)/.test(frame)
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\(this\.hzqLt\("EXTENDED FAVORITES"\)\),13,this\.hzqTextAccent\(\),"bd",0\.18,true\)/.test(frame)
 			&& /this\.hzqFace\(w\)/.test(setb) && /t\.embedFonts = true/.test(setb)
 			&& /\$Horizon_Font/.test(face) && !/new TextFormat\(\s*["']/.test(frame)
 			&& !/_sans|Arial|Times|Courier|Exo 2|Exo2/.test(frame)
@@ -432,8 +432,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 			&& /this\.hzqExtFrameDraw\(this\.hzqExtLastBox\)/.test(fnText(qm, "hzqRedraw").body)
 			&& /this\.hzqExtSlots\[i\]\.cKey = null/.test(fnText(qm, "hzqExtFontTouch").body),
 			"I: after font.marker, redraw retitles the extra frame and re-sets extra key chips through hzqFace");
-		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimp)
-			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimpL)
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\(this\.hzqLt\("EXTENDED FAVORITES"\)\)/.test(pimp)
+			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\(this\.hzqLt\("EXTENDED FAVORITES"\)\)/.test(pimpL)
 			&& /t\.embedFonts = true/.test(fnText(pimp, "hzqSet").body)
 			&& /t\.embedFonts = true/.test(fnText(pimpL, "hzqSet").body),
 			"I: both movies apply the shared Horizon font helper to the extra frame title");

@@ -110,7 +110,7 @@ expect(/_empty/.test(fnText(as, "hz51Rows").body) && /NO SETTINGS IN THIS SECTIO
 const side = fnText(as, "hz51Side").body;
 const pageIds = [];
 side.replace(/\"id\":\"([a-z]+)\"/g, (_, id) => { pageIds.push(id); return ""; });
-expect(pageIds.length === 35, "five tabs expose 35 sidebar pages (found " + pageIds.length + ")");
+expect(pageIds.length === 36, "five tabs expose 36 sidebar pages including Language (found " + pageIds.length + ")");
 expect(/hz51Cards/.test(fnText(as, "hz51Rows").body) && /hz51Appear/.test(fnText(as, "hz51Rows").body) && /hz51Scan/.test(fnText(as, "hz51Rows").body) && /hz51Comms/.test(fnText(as, "hz51Rows").body) && /hz51System/.test(fnText(as, "hz51Rows").body), "every tab has a row builder");
 
 // 5. Preview inside the panel

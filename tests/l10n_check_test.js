@@ -1,8 +1,9 @@
 // Horizon localization checker: missing / duplicate / obsolete keys, and
 // placeholder parity. Run from the repo root: node tests/l10n_check_test.js
-// Optional overlays (de.json and the rest) may be absent: that is English
-// fallback, not a failure. Fixtures that must fail write under test_scratch,
-// never /tmp. Author: Moragar. Last modified: 2026-11-27.
+// de.json and zh-cn.json are required. Other Steam stems (fr, es, es-mx, it,
+// ja, pl, pt-br) may be absent: that is English fallback, not a failure.
+// Fixtures that must fail write under test_scratch, never the system temp folder.
+// Author: Moragar. Last modified: 2026-11-27.
 "use strict";
 
 const fs = require("fs");
@@ -10,7 +11,7 @@ const path = require("path");
 
 const root = path.join(__dirname, "..");
 const locDir = path.join(root, "Data", "SFSE", "Plugins", "HorizonUI", "Localization");
-const langs = ["en", "de", "fr", "es", "it", "ja", "ko", "pl", "zh-cn"];
+const langs = ["en", "de", "fr", "es", "es-mx", "it", "ja", "pl", "pt-br", "zh-cn"];
 const PLACEHOLDER = /\{[A-Za-z0-9_]+\}/g;
 
 let failed = 0, passed = 0;
@@ -67,6 +68,8 @@ function checkPair(enFlat, other, code) {
 expect(fs.existsSync(path.join(root, "tools", "scan_l10n_strings.js")), "tools/scan_l10n_strings.js is committed");
 expect(fs.existsSync(path.join(locDir, "en.json")), "shipped Localization/en.json is present");
 expect(fs.existsSync(path.join(locDir, "zh-cn.json")), "shipped Localization/zh-cn.json is present");
+expect(fs.existsSync(path.join(locDir, "de.json")), "shipped Localization/de.json is present");
+expect(!fs.existsSync(path.join(locDir, "ko.json")), "Korean is not a shipped table");
 
 const en = loadLang(locDir, "en");
 expect(!!en, "English table parses");
@@ -81,14 +84,24 @@ expect(enKeys.length > 0, "English table has keys (" + enKeys.length + ")");
 expect(uniqueKeys(enFlat) === 0, "no duplicate flattened keys in English");
 expect(enFlat["hud.health"] === "HEALTH", "hud.health is HEALTH");
 expect(enFlat["settings.tabs.cards"] === "CARDS", "settings.tabs.cards is CARDS");
-expect(String(enFlat["settings.language.auto"] || "").indexOf("AUTO") >= 0, "settings.language.auto names Auto");
+expect(String(enFlat["settings.language.auto"] || "").indexOf("Auto") >= 0, "settings.language.auto names Auto");
+expect(enFlat["settings.language.de"] === "Deutsch (German)", "German dropdown label is native plus English");
+expect(enFlat["settings.language.es-mx"] && String(enFlat["settings.language.es-mx"]).indexOf("Latinoam") >= 0,
+	"Latin American Spanish has its own stem");
+expect(enFlat["settings.language.pt-br"] && String(enFlat["settings.language.pt-br"]).indexOf("Brasil") >= 0,
+	"Portuguese Brazil uses pt-br");
+expect(enFlat["settings.language.ko"] === undefined, "Korean is not in the English table");
 expect(!JSON.stringify(en).includes("$HEALTH"), "Horizon-owned strings are not wrapped in $ tokens");
 
 for (const code of langs) {
 	if (code === "en") continue;
 	const table = loadLang(locDir, code);
-	if (!table) {
+	if (code !== "de" && code !== "zh-cn" && !table) {
 		expect(true, code + ": optional until a translator ships it (missing is English fallback)");
+		continue;
+	}
+	if ((code === "de" || code === "zh-cn") && !table) {
+		expect(false, code + ": shipped overlay is required");
 		continue;
 	}
 	const r = checkPair(enFlat, table, code);
@@ -121,7 +134,22 @@ expect(fxFr.phBad === 1, "checker flags a placeholder mismatch");
 
 const as = fs.readFileSync(path.join(root, "actionscript", "horizon_block.as"), "utf8");
 expect(as.indexOf("function hzSetL10n") >= 0 && as.indexOf("function hzL(") >= 0, "HUD receiver is present");
-expect(as.indexOf("function hzVitTick") < 0 || as.split("function hzVitTick")[1].indexOf("this.hzL(") < 0, "P0 does not look up translations from a vitals tick helper");
+{
+	const i = as.indexOf("function hzVitTick");
+	if (i < 0) {
+		expect(true, "no vitals tick helper to pin");
+	} else {
+		const brace = as.indexOf("{", i);
+		let d = 0;
+		let body = "";
+		for (let p = brace; p < as.length && p < brace + 8000; p++) {
+			if (as[p] === "{") d++;
+			else if (as[p] === "}") { d--; if (d === 0) { body = as.slice(brace, p + 1); break; } }
+		}
+		expect(body.indexOf("this.hzL(") < 0 && body.indexOf("hzLt(") < 0, "vitals tick does not look up translations");
+	}
+}
+expect(as.indexOf("function hzLt(") >= 0 && as.indexOf("function hzL10nApplyHud") >= 0, "P1 lookup helpers are on the HUD");
 expect(!/HUSD|SCHROPE|rschr/i.test(as.slice(as.indexOf("function hzSetL10n"), as.indexOf("function hzSetL10n") + 1200)), "l10n receiver has no box paths or usernames");
 
 if (failed) {

@@ -26,12 +26,13 @@
       private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       private var hz51OpenFolder:String = "";     // one-shot folder request for the DLL (Message Log SHOW)
       private var hzSetWinMask:Sprite = null;     // rounded clip for the settings window body
-      // P0 localization: filled once by hzSetL10n from the DLL. hzL is unused on HUD ticks.
+      // Localization: filled once by hzSetL10n from the DLL. Lookups at build / language change only.
       private var hzL10n:Object = null;
       private var hzL10nGame:String = "";
       private var hzL10nGameName:String = "";
       private var hzL10nFiles:Array = null;
       private var hzLanguage:String = "auto";
+      private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -239,24 +240,24 @@
       private function hz51LangName(code:String) : String
       {
          var c:String = code != null ? String(code).toLowerCase() : "";
-         if(c == "auto" || c.length == 0) { return "AUTO (GAME)"; }
-         if(c == "en") { return "ENGLISH"; }
-         if(c == "de") { return "GERMAN"; }
-         if(c == "fr") { return "FRENCH"; }
-         if(c == "es") { return "SPANISH"; }
-         if(c == "it") { return "ITALIAN"; }
-         if(c == "ja" || c == "jp") { return "JAPANESE"; }
-         if(c == "ko") { return "KOREAN"; }
-         if(c == "pl") { return "POLISH"; }
-         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return "CHINESE (SIMPLIFIED)"; }
-         if(c == "ptbr" || c == "pt-br") { return "PORTUGUESE (BRAZIL)"; }
+         if(c == "auto" || c.length == 0) { return this.hzL("settings.language.auto", "Auto (game)"); }
+         if(c == "en") { return this.hzL("settings.language.en", "English"); }
+         if(c == "de") { return this.hzL("settings.language.de", "Deutsch (German)"); }
+         if(c == "fr") { return this.hzL("settings.language.fr", "Français (French)"); }
+         if(c == "es-mx" || c == "esmx" || c == "es_mx" || c == "latam" || c == "esla" || c == "es-419") { return this.hzL("settings.language.es-mx", "Español de Latinoamérica (Spanish, Latin America)"); }
+         if(c == "es") { return this.hzL("settings.language.es", "Español (Spanish)"); }
+         if(c == "it") { return this.hzL("settings.language.it", "Italiano (Italian)"); }
+         if(c == "ja" || c == "jp") { return this.hzL("settings.language.ja", "日本語 (Japanese)"); }
+         if(c == "pl") { return this.hzL("settings.language.pl", "Polski (Polish)"); }
+         if(c == "zh-cn" || c == "zhhans" || c == "zh") { return this.hzL("settings.language.zh-cn", "简体中文 (Simplified Chinese)"); }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br") { return this.hzL("settings.language.pt-br", "Português do Brasil (Portuguese, Brazil)"); }
          return c.toUpperCase();
       }
       // Purpose: Auto plus one option per Localization/*.json the DLL listed at load.
       private function hz51LangOpts() : Object
       {
          var vals:Array = ["auto"];
-         var names:Array = ["AUTO (GAME)"];
+         var names:Array = [this.hz51LangName("auto")];
          var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
          var i:int = 0;
          while(i < files.length)
@@ -272,8 +273,9 @@
          return {"vals":vals,"names":names};
       }
       // Purpose: cache the localization snapshot from HorizonUI.dll. One Invoke
-      // per movie load or Language reload. No file I/O. Does not change HUD card
-      // text in P0 (hzL is unused on ticks). Author: Moragar. Last modified: 2026-11-27.
+      // per movie load or Language reload. No file I/O. Lookups run when a menu
+      // is built or the language changes, never from a HUD tick.
+      // Author: Moragar. Last modified: 2026-11-27.
       public function hzSetL10n(s:String) : void
       {
          try
@@ -302,11 +304,17 @@
             }
             this.hzL10n = tab;
             this.hzL10nFiles = files;
-            if(this.hzSetIsOpen) { this.hzSetDraw(); }
+            this.hzL10nApplyHud();
+            if(this.hzSetIsOpen)
+            {
+               try { this.hz51IndexBuild(); } catch(eIdxL:Error) { }
+               this.hzSetDraw();
+            }
          }
          catch(err:Error) { }
       }
-      // Purpose: look up a cached label. HUD ticks must not call this in P0.
+      // Purpose: look up a cached dotted key. Call from build / language change
+      // only. Inputs: table key and English fallback. Outputs: overlay or fallback.
       private function hzL(key:String, fb:String) : String
       {
          if(this.hzL10n != null)
@@ -319,6 +327,134 @@
             }
          }
          return fb != null ? fb : key;
+      }
+      // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
+      // stays on Latin and $MAIN_Font is chosen per field, never per frame.
+      private function hzHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      // Purpose: slug used by en.json hud.hud_label / hud.help / settings.ui keys.
+      private function hzLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var c:String = s.charAt(i);
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += c.toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      // Purpose: overlay-on-English lookup from a visible English literal.
+      // Tries dotted prefixes the English table already uses. Missing key = English.
+      private function hzLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var hit:String = this.hzL(en, "");
+         if(hit.length > 0 && hit != en && this.hzL10n != null && this.hzL10n[en] != undefined) { return hit; }
+         var slug:String = this.hzLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","settings.language.","settings.tabs.","hud.hud_label.","hud.option.","hud.help.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var k:String = String(pfx[i]) + slug;
+            var v:String = this.hzL(k, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         if(slug.length > 48) { slug = slug.substr(0, 48); }
+         var h:String = this.hzL("hud.help." + slug, "");
+         if(h.length > 0) { return h; }
+         return en;
+      }
+      private function hz51LocArr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
+      }
+      // Purpose: stamp translated labels onto a Settings row at catalog finish
+      // (F11 build / language change), not per HUD frame.
+      private function hz51LocOne(r:Object) : void
+      {
+         if(r == null) { return; }
+         if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
+         if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
+         if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
+         if(r.note != undefined) { r.note = this.hzLt(String(r.note)); }
+         if(r.inote != undefined) { r.inote = this.hzLt(String(r.inote)); }
+         if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
+         if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
+         if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(r.t == "p" || r.t == "c") { return; }
+         this.hz51LocArr(r.opts as Array);
+         this.hz51LocArr(r.names as Array);
+      }
+      private function hz51LocRows(rows:Array) : Array
+      {
+         var i:int = 0;
+         while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
+         return rows;
+      }
+      private function hzL10nTf(tf:TextField, en:String) : void
+      {
+         if(tf == null || en == null) { return; }
+         tf.text = this.hzLt(en);
+         var o:Object = this.hzTxtObj(tf);
+         if(o != null) { this.hzApplyFmt(o); }
+      }
+      // Purpose: refresh HUD chrome that was stamped at card build. Called from
+      // hzSetL10n only. Ticks keep using the TextField text already set here.
+      private function hzL10nApplyHud() : void
+      {
+         try
+         {
+            if(this.hzVnLbl != null)
+            {
+               if(this.hzVnLbl.length > 0) { this.hzL10nTf(TextField(this.hzVnLbl[0]), "HEALTH"); }
+               if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
+            }
+            this.hzL10nTf(this.hzJ19Title, "JETPACK");
+            this.hzL10nTf(this.hz26ChName, "CHARACTER");
+            this.hzL10nTf(this.hz26ChML, "MASS");
+            this.hzL10nTf(this.hz26PowL, "POWER");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL");
+            this.hzL10nTf(this.hz43DayT, "DAY");
+            this.hzL10nTf(this.hzE19RelT, "RELOAD");
+            this.hzHsWordLoc = this.hzLt("HAZARD");
+         }
+         catch(eApp:Error) { }
       }
 
       private function hz51Side(tab:int) : Array
@@ -386,9 +522,9 @@
             }
             g++;
          }
-         if(lab.length == 0) { return t; }
-         if(gname.length > 0 && gname != lab) { return t + " > " + gname + " > " + lab; }
-         return t + " > " + lab;
+         if(lab.length == 0) { return this.hzLt(t); }
+         if(gname.length > 0 && gname != lab) { return this.hzLt(t) + " > " + this.hzLt(gname) + " > " + this.hzLt(lab); }
+         return this.hzLt(t) + " > " + this.hzLt(lab);
       }
       private function hz51Copy(r:Object) : Object
       {
@@ -420,12 +556,18 @@
       private function hz51HelpOf(k:String, r:Object) : String
       {
          var h:String = this.hz51Help(k);
-         if(h != null && h.length > 0) { return h; }
-         if(r != null && r.inote != undefined) { return String(r.inote); }
-         if(r != null && r.info != undefined) { return String(r.info); }
-         if(r != null && r.note != undefined) { return String(r.note); }
-         var lab:String = r != null && r.l != undefined ? String(r.l) : k;
-         return "Changes " + lab.toLowerCase() + " on your HUD.";
+         if(h == null || h.length == 0)
+         {
+            if(r != null && r.inote != undefined) { h = String(r.inote); }
+            else if(r != null && r.info != undefined) { h = String(r.info); }
+            else if(r != null && r.note != undefined) { h = String(r.note); }
+            else
+            {
+               var lab:String = r != null && r.l != undefined ? String(r.l) : k;
+               h = "Changes " + lab.toLowerCase() + " on your HUD.";
+            }
+         }
+         return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
       private function hz51Line(k:String, r:Object) : String
@@ -433,7 +575,7 @@
          switch(k)
          {
             case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.";
-            case "_l10nGame": return "The interface language Starfield was using when Horizon started.";
+            case "_l10nGame": return "Detected at start. Does not follow the override.";
             case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
             case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
             case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
@@ -557,7 +699,7 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
-            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. HUD card words still use English until later localization work.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language.";
             case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
@@ -675,7 +817,7 @@
             out.push(r);
             i++;
          }
-         return this.hz51Mute(out);
+         return this.hz51LocRows(this.hz51Mute(out));
       }
       private function hz51On(k:String) : Boolean
       {
@@ -1409,8 +1551,8 @@
          if(id == "ml") { return this.hz51Msglog(); }
          if(id == "loc")
          {
-            var detected:String = this.hzL10nGameName != null && this.hzL10nGameName.length > 0 ? this.hzL10nGameName.toUpperCase() : this.hz51LangName(this.hzL10nGame);
-            if(detected == "AUTO (GAME)" || detected.length == 0) { detected = "—"; }
+            var detected:String = this.hz51LangName(this.hzL10nGame);
+            if(detected == this.hzL("settings.language.auto", "Auto (game)") || detected.length == 0) { detected = "—"; }
             var opts:Object = this.hz51LangOpts();
             return [{"k":"_l10nGame","l":"GAME LANGUAGE","t":"x","btn":detected,"h":"DETECTION","dis":true,"dv":true},
                {"k":"Language","l":"HORIZON LANGUAGE","t":"l","vals":opts.vals,"names":opts.names,"h":"OVERRIDE"}];
@@ -1794,9 +1936,9 @@
          else if(paused) { this.hz51T(b,"!",ccx,ccy - 7,16,11,"bd",warn,0,"center"); }
          else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
          var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","comms_dialogue":"COMMS DIALOGUE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
-         var title:String = names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE");
-         var stx:String = on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED"));
-         this.hz51T(b,"MODULE",x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
+         var title:String = this.hzLt(names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE"));
+         var stx:String = this.hzLt(on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED")));
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,title,x0 + 38,y0 + 18,Math.max(80,w * 0.55),11,"bd",uint(T.txt),1.4);
          this.hz51T(b,stx,x0 + w - 16,y0 + 16,150,11,"sb",paused ? warn : (on ? acc : uint(T.lab)),1.2,"right");
          if(body.length > 0)

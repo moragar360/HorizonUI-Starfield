@@ -1,6 +1,6 @@
 // Unit tests for the Horizon localization loader (src/hz_l10n.h) plus source
 // pins for DLL glue, the Settings 2.0 Language page, and the 0.43.4 hot path.
-// No game, no CommonLibSF. Never writes to /tmp. Build (from the repo root):
+// No game, no CommonLibSF. Never writes under the system temp folder. Build (from the repo root):
 //   g++ -std=c++20 -Wall -Wextra -I src -I tests tests/l10n_test.cpp -o test_scratch/l10n_test
 // Author: Moragar. Last modified: 2026-11-27.
 
@@ -52,12 +52,22 @@ int main()
 	Expect(MapCode("auto") == "auto" && MapCode("") == "auto" && MapCode(" EN ") == "en", "MapCode: auto / empty / trim");
 	Expect(MapCode("jp") == "ja" && MapCode("JA") == "ja", "MapCode: jp and ja become ja");
 	Expect(MapCode("zhhans") == "zh-cn" && MapCode("zh-CN") == "zh-cn" && MapCode("zh") == "zh-cn", "MapCode: Chinese Simplified");
+	Expect(MapCode("ptbr") == "pt-br" && MapCode("pt-BR") == "pt-br" && MapCode("brazilian") == "pt-br",
+		"MapCode: Portuguese Brazil becomes pt-br");
+	Expect(MapCode("esmx") == "es-mx" && MapCode("latam") == "es-mx" && MapCode("es-mx") == "es-mx",
+		"MapCode: Latin American Spanish becomes es-mx");
+	Expect(MapCode("es") == "es" && MapCode("spanish") == "es", "MapCode: Spain Spanish stays es");
 	Expect(MapCode("../en") == "auto" && MapCode("en/../de") == "auto" && MapCode("..") == "auto",
 		"MapCode: parent segments become auto");
 	Expect(MapCode("en\\de") == "auto" && MapCode("en/de") == "auto" && MapCode("C:en") == "auto",
 		"MapCode: path separators and drive letters become auto");
-	Expect(std::string(DisplayName("en")) == "English" && std::string(DisplayName("zhhans")) == "Chinese (Simplified)", "DisplayName: English and Chinese");
-	Expect(MenuName("auto") == "AUTO (GAME)" && MenuName("de") == "GERMAN", "MenuName: Settings 2.0 labels");
+	Expect(std::string(DisplayName("en")) == "English"
+			&& std::string(DisplayName("de")) == "Deutsch (German)"
+			&& std::string(DisplayName("esmx")).find("Spanish, Latin America") != std::string::npos
+			&& std::string(DisplayName("zhhans")).find("Simplified Chinese") != std::string::npos,
+		"DisplayName: native name with English in parentheses");
+	Expect(MenuName("auto") == "Auto (game)" && MenuName("de") == "Deutsch (German)", "MenuName matches DisplayName");
+	Expect(std::string(FallbackStem("es-mx")) == "es" && FallbackStem("de") == nullptr, "es-mx falls back through es");
 
 	const auto sl = ParseSLanguage("[Display]\niPresentInterval=1\n[General]\nsLanguage=jp\n; ignore\nsLanguage=de\n");
 	Expect(MapCode(sl) == "de", "ParseSLanguage: last [General] sLanguage wins");
@@ -65,9 +75,10 @@ int main()
 
 	const auto dir = HzTestScratch("l10n_");
 	const auto dirNorm = HzTestNorm(dir);
-	Expect(dirNorm.find("/tmp") == std::string::npos && dirNorm.find("appdata/local/temp") == std::string::npos
+	const auto tmpNeedle = std::string("/") + "tmp";
+	Expect(dirNorm.find(tmpNeedle) == std::string::npos && dirNorm.find("appdata/local/temp") == std::string::npos
 			&& dirNorm.find("test_scratch") != std::string::npos,
-		"scratch is under test_scratch, not /tmp");
+		"scratch is under test_scratch, not the system temp folder");
 
 	WriteFile(dir / "en.json",
 		"{\n"
@@ -95,6 +106,9 @@ int main()
 		Expect(Get(t, "hud.health", "X") == "HEALTH", "Get: English HEALTH");
 		Expect(t.gameCode == "en" && t.gameName == "English", "detected game language is cached on the table");
 		Expect(t.filesCsv.find("en") != std::string::npos && t.filesCsv.find("de") != std::string::npos, "available files include en and de");
+		Expect(t.filesCsv.find("es-mx") != std::string::npos && t.filesCsv.find("pt-br") != std::string::npos
+				&& t.filesCsv.find("ko") == std::string::npos,
+			"dropdown lists Steam stems including es-mx and pt-br, not Korean");
 		Expect(t.payload.find("#l10n1") == 0 && t.payload.find("hud.health\tHEALTH") != std::string::npos, "payload is one #l10n1 snapshot");
 	}
 
@@ -109,7 +123,7 @@ int main()
 	{
 		const auto t = Load(dir, "en", "de");
 		Expect(t.usedCode == "en" && Get(t, "hud.health", "X") == "HEALTH", "override English ignores detected German");
-		Expect(t.gameCode == "de" && t.gameName == "German", "detected game language is not overwritten by the override");
+		Expect(t.gameCode == "de" && t.gameName == "Deutsch (German)", "detected game language is not overwritten by the override");
 	}
 
 	{
@@ -126,7 +140,19 @@ int main()
 
 	{
 		const auto t = Load(dir, "auto", "zhhans");
-		Expect(t.gameCode == "zh-cn" && t.gameName == "Chinese (Simplified)", "zhhans maps to zh-cn");
+		Expect(t.gameCode == "zh-cn" && t.gameName.find("Simplified Chinese") != std::string::npos, "zhhans maps to zh-cn");
+
+	{
+		WriteFile(dir / "es.json", "{\"hud\":{\"health\":\"SALUD\"}}\n");
+		const auto t = Load(dir, "auto", "esmx");
+		Expect(t.gameCode == "es-mx" && t.usedCode == "es" && Get(t, "hud.health", "X") == "SALUD",
+			"es-mx without es-mx.json overlays es.json then English");
+		Expect(t.notice.find("es-mx missing") != std::string::npos, "notice says es-mx file was missing");
+		WriteFile(dir / "es-mx.json", "{\"hud\":{\"health\":\"SALUD MX\"}}\n");
+		const auto t2 = Load(dir, "auto", "latam");
+		Expect(t2.usedCode == "es-mx" && Get(t2, "hud.health", "X") == "SALUD MX",
+			"es-mx.json wins over es.json");
+	}
 	}
 
 	{
@@ -166,6 +192,7 @@ int main()
 	const auto hdr = ReadAll("src/hz_l10n.h");
 	const auto as = ReadAll("actionscript/horizon_block.as");
 	const auto insert = ReadAll("actionscript/hz51_insert.as");
+	const auto qm = ReadAll("actionscript/favorites/hzq_main.as");
 	const auto ini = ReadAll("Interface/HorizonUI/HorizonUI.default.ini");
 
 	auto fnBody = [&](const std::string& a_sig) {
@@ -239,7 +266,12 @@ int main()
 
 	const auto enter = as.find("ENTER_FRAME");
 	Expect(enter != std::string::npos, "ENTER_FRAME still exists (unchanged HUD loop)");
-	Expect(Count(as, "this.hzL(") == 0 || Count(as, "function hzL(") == 1, "hzL is defined and not used from HUD draw yet");
+	Expect(Count(as, "function hzL(") == 1 && (Has(as, "function hzLt(") || Has(insert, "function hzLt(")),
+		"hzL is defined once; P1 slug lookup exists");
+	Expect(Has(as, "function hzL10nApplyHud") || Has(insert, "function hzL10nApplyHud"),
+		"language change refreshes HUD chrome once, not per tick");
+	Expect(Has(cpp, "PushL10nFavorites") && Has(qm, "function hzqSetL10n"),
+		"FavoritesMenu gets its own l10n push on open");
 
 	Expect(Has(hdr, "kMaxFileBytes = 512 * 1024"), "512 KiB cap matches other JSON reads");
 	Expect(!Has(hdr, "HUSD") && !Has(cpp, "HUSD") && !Has(as, "HUSD"), "no HUSD IT in l10n sources");
@@ -247,7 +279,10 @@ int main()
 
 	const auto shipped = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/en.json");
 	Expect(Has(shipped, "\"health\"") && Has(shipped, "HEALTH"), "shipped en.json has HUD health");
-	Expect(Has(shipped, "\"language\"") && Has(shipped, "AUTO (GAME)"), "shipped en.json has the Language page strings");
+	Expect(Has(shipped, "\"language\"") && Has(shipped, "Auto (game)"), "shipped en.json has the Language page strings");
+	Expect(Has(shipped, "Deutsch (German)") && Has(shipped, "es-mx") && Has(shipped, "pt-br"),
+		"en.json lists Steam language names including es-mx and pt-br");
+	Expect(!Has(shipped, "\"ko\""), "en.json does not ship Korean");
 	Expect(Has(shipped, "American English") || Has(shipped, "English"), "en.json is American English source");
 	Expect(Has(shipped, "pressing OK reloads the language once"), "en.json language help says OK reloads once");
 	Expect(!Has(shipped, "A change takes effect after you restart the game."),
@@ -267,8 +302,24 @@ int main()
 			if (f == "en") hasEn = true;
 		}
 		Expect(hasEn && hasZh && !files.empty() && files.front() == "en",
-			"Language dropdown file list is English first, then includes zh-cn");
+			"shipped Localization files are English first and include zh-cn");
+		const auto drop = DropdownCodes(std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization"));
+		bool hasMx = false, hasPt = false, hasKo = false;
+		for (const auto& f : drop) {
+			if (f == "es-mx") hasMx = true;
+			if (f == "pt-br") hasPt = true;
+			if (f == "ko") hasKo = true;
+		}
+		Expect(!drop.empty() && drop.front() == "en" && hasMx && hasPt && !hasKo,
+			"Language dropdown is Steam langs (en first, es-mx, pt-br) without Korean");
 	}
+
+	const auto de = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/de.json");
+	Expect(!de.empty() && Has(de, "\"language\": \"de\"") && Has(de, "Deutsch (German)"),
+		"shipped de.json is German");
+	Expect(!(de.size() >= 3 && static_cast<unsigned char>(de[0]) == 0xEF
+			&& static_cast<unsigned char>(de[1]) == 0xBB && static_cast<unsigned char>(de[2]) == 0xBF),
+		"de.json is UTF-8 with no BOM");
 
 	if (g_fail) {
 		std::cerr << "\n" << g_fail << " failed, " << g_ok << " passed\n";

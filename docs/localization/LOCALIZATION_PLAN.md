@@ -79,13 +79,8 @@ ActionScript hzL10n["hud.health"] → "HEALTH"
 Data/SFSE/Plugins/HorizonUI/Localization/
   en.json
   de.json
-  fr.json
-  es.json
-  it.json
-  ja.json
-  ko.json
-  pl.json
   zh-cn.json
+  (fr, it, es, es-mx, ja, pl, pt-br fall back to English until a translator ships them)
 ```
 
 The DLL is already the file owner for Message Log JSON and Quick Slots JSON. Localization is the same idea: read once, off the UI thread, cache forever.
@@ -96,7 +91,7 @@ Alternate path `Data/Interface/HorizonUI/Localization/` would match StarUI/Astra
 
 ```
 [General]
-; Horizon UI language. auto = follow the game. en, de, fr, es, it, ja, ko, pl, zh-cn
+; Horizon UI language. auto = follow the game. en, de, fr, it, es, es-mx, ja, pl, pt-br, zh-cn
 ; take effect after you restart the game. Default auto.
 Language=auto
 ```
@@ -113,17 +108,20 @@ Settings 2.0: SYSTEM → CONTROLS & WINDOW → LANGUAGE, same options as the INI
 
 Starfield’s UI is Scaleform GFx. Interface language is `sLanguage` under `[General]` in `Starfield.ini` / `StarfieldPrefs.ini` / `StarfieldCustom.ini`. Official codes:
 
-| Language | INI `sLanguage` | Notes |
-|---|---|---|
-| English | `en` | |
-| German | `de` | |
-| French | `fr` | |
-| Spanish | `es` | |
-| Italian | `it` | |
-| Japanese | `jp` | Horizon HUD already sees `ja` on `LocalEnvironmentData.sLanguage` |
-| Polish | `pl` | |
-| Portuguese (Brazil) | `ptbr` | official; not in the v1 file set |
-| Chinese (Simplified) | `zhhans` | Horizon already branches on this for the watch location name |
+| Language | INI `sLanguage` / HUD | Horizon file stem | Notes |
+|---|---|---|---|
+| English | `en` | `en` | |
+| German | `de` | `de` | |
+| French | `fr` | `fr` | |
+| Italian | `it` | `it` | |
+| Spanish (Spain) | `es` | `es` | |
+| Spanish (Latin America) | Steam `latam`; game INI is `es` (LOOT). Horizon also accepts `esmx`, `latam`, `es-mx` | `es-mx` | Own stem. Overlay: `es-mx.json` → `es.json` → `en.json`. Auto+`es` uses Spain. |
+| Japanese | `jp` (INI), `ja` (`LocalEnvironmentData`) | `ja` | |
+| Polish | `pl` | `pl` | |
+| Portuguese (Brazil) | `ptbr` | `pt-br` | |
+| Chinese (Simplified) | `zhhans` | `zh-cn` | Horizon already branches on this for the watch location name |
+
+Korean and Greek are not Starfield Steam interface languages and are not in v1.
 
 Sources:
 
@@ -258,19 +256,20 @@ Order:
 
 Map:
 
-| File | Accept from INI / HUD |
+| File | Accept from INI / HUD / Steam |
 |---|---|
-| `en.json` | `en`, empty, unknown |
-| `de.json` | `de` |
-| `fr.json` | `fr` |
-| `es.json` | `es` |
-| `it.json` | `it` |
-| `ja.json` | `ja`, `jp` |
-| `ko.json` | `ko` (not an official Starfield UI language) |
-| `pl.json` | `pl` |
-| `zh-cn.json` | `zh-cn`, `zhhans`, `zh` |
+| `en.json` | `en`, `english` |
+| `de.json` | `de`, `german` |
+| `fr.json` | `fr`, `french` |
+| `it.json` | `it`, `italian` |
+| `es.json` | `es`, `spanish`, `es-es` |
+| `es-mx.json` | `esmx`, `es-mx`, `latam`, `esla` (then `es.json`, then English) |
+| `ja.json` | `ja`, `jp`, `japanese` |
+| `pl.json` | `pl`, `polish` |
+| `pt-br.json` | `ptbr`, `pt-br`, `brazilian` |
+| `zh-cn.json` | `zh-cn`, `zhhans`, `zh`, `schinese` |
 
-Unknown → English, one log line.
+Missing overlay → English. Unknown token stays as a lowercased community stem. Korean and Greek are not listed. Dropdown labels are native names with English in parentheses (`Deutsch (German)`). The Language list is the ten Steam stems even when only `en` / `de` / `zh-cn` files exist.
 
 **Cost vs 0.43.4:** a few INI string reads at init. **Pass.**
 
@@ -321,11 +320,11 @@ Rules for implementers:
 1. If the game already gave a display string (`sName`, quest `strText`, GMST phrase, `$TOKEN`), **draw that**. Do not look it up in Horizon JSON.
 2. Horizon JSON is only for chrome Horizon invented: card headers, Settings copy, “NO AFFLICTIONS”, “EXTENDED FAVORITES”, reaction titles LIKED/BUSY, F11 tabs.
 3. Keep `GlobalFunc.SetText` + `hzsTrC` memoization. Do not add a second translator.
-4. Header style (`hzHdrCase` / `hzUC`) still runs on Horizon chrome **after** lookup, so German translators can ship already-cased strings and we document whether the movie will upper-case them. **Recommendation:** do not `toUpperCase()` translator strings in v1 for CJK/Korean; keep the current caps style for Latin only (`hz43EnvLang` already knows `ja`/`zhhans`). Cost: a language branch at **build** time, not per frame.
+4. Header style (`hzHdrCase` / `hzUC`) still runs on Horizon chrome **after** lookup, so German translators can ship already-cased strings and we document whether the movie will upper-case them. **Recommendation:** do not `toUpperCase()` translator strings in v1 for CJK; keep the current caps style for Latin only (`hz43EnvLang` already knows `ja`/`zhhans`). Cost: a language branch at **build** time, not per frame.
 
 ---
 
-## 8. Fonts, Exo 2, CJK / Korean
+## 8. Fonts, Exo 2, CJK
 
 ### Exo 2 stays for Latin
 
@@ -358,11 +357,11 @@ Greek is **below** `0x52F`, so Greek still hits Exo 2 and can tofu. P4 may tight
 
 **Cost vs 0.43.4:** same as today for Comms. Extending the helper to HUD/QM is one extra scan of a string **when the field is set**. **Pass** if it stays on set, not on tick.
 
-### CJK / Korean
+### CJK
 
-- Japanese / Simplified Chinese: official. Game fontconfig and `fonts_<lang>` already carry the glyphs. Horizon must use `$MAIN_Font` (or `$NB_Grotesk_*`) for those languages’ Horizon chrome **or** per-string `hzcFits`.
+- Japanese / Simplified Chinese: official Steam UI languages. Game fontconfig and `fonts_<lang>` already carry the glyphs. Horizon must use `$MAIN_Font` (or `$NB_Grotesk_*`) for those languages’ Horizon chrome **or** per-string `hzcFits`.
 - Per-string is better: a Japanese install still shows Exo 2 for ASCII “12:00” and game font for 日本語. That is what Comms already does.
-- Korean: **not** an official Starfield UI language. `ko.json` is community. Glyphs depend on a font mod. v1: same `hzcFits` fallback; no extra SWF. If the game font has no Hangul, the line is the game’s problem, not a Horizon pack.
+- Korean is not a Starfield Steam interface language. v1 does not ship `ko.json`.
 
 **P4 ships `fontconfig_de.txt` (and the other official suffixes) only if research confirms the game does not read `fontconfig_en.txt` when `sLanguage=de`.** Today the FOMOD installs **only** `fontconfig_en.txt`. That is an existing Latin-language risk, not introduced by l10n. P4 is the place to copy Horizon’s `$Horizon_Font*` mappings into each `fontconfig_<lang>.txt` (merge, do not replace the whole vanilla file blindly). Until that is proven, Exo 2 on a German install may already be falling back to the game font. **Gate:** one in-game check on `sLanguage=de` with FontFace=1 before writing extra fontconfig files.
 
@@ -433,9 +432,9 @@ No usernames, machine paths, or bot names in shipped files.
 
 ## 11. Automated checker
 
-Match existing tests: Node, `expect()`, repo-relative paths, **no `/tmp`**.
+Match existing tests: Node, `expect()`, repo-relative paths, never the system temp folder.
 
-**P0 file:** `tests/l10n_check_test.js` (draft lives at `tools/l10n_check_test.draft.js`, uncommitted).
+**P0 file:** `tests/l10n_check_test.js`.
 
 Checks:
 
@@ -605,16 +604,16 @@ This is the bar. If a phase misses it, that phase does not ship.
 
 ### P4 — Fonts / CJK / expansion pass
 
-**Goal:** Latin keeps Exo 2; Japanese/Chinese/Korean readable without SWF bloat; German layouts signed off.
+**Goal:** Latin keeps Exo 2; Japanese/Simplified Chinese readable without SWF bloat; German layouts signed off.
 
 **Work**
 
 - Shared `hzFitsFace(s)` (today’s `hzcFits`) on HUD and Quick Menu set-text helpers
-- Optional: skip `toUpperCase` for `ja`/`zhhans`/`ko`
+- Optional: skip `toUpperCase` for `ja`/`zhhans`
 - Research gate: `fontconfig_<lang>.txt` for official languages (merge `$Horizon_Font*` only)
 - No CJK glyphs in `fonts_horizon.swf`
 - Layout pass on the hotspot table with German `de.json` (can be a stub 30% longer English for tests)
-- Korean: ship `ko.json` when a translator exists; font remains fallback-only
+- Do not ship Korean or Greek tables; they are not Steam interface languages for Starfield
 
 **Affected files:** font helpers in each movie, FOMOD font optional files, tests for `hzFitsFace`, maybe `planet_alert_test.js` font-face expects
 
@@ -630,7 +629,7 @@ This is the bar. If a phase misses it, that phase does not ship.
 
 - FOMOD installer localization (Vortex/MO2 language)
 - Full INI comment translation
-- `ptbr.json` (official game language, not in the requested set)
+- Shipping `fr.json` / `es.json` / `es-mx.json` / `it.json` / `ja.json` / `pl.json` / `pt-br.json` when translators arrive (stems and fallback already exist; missing file is English)
 - Live language switch without restart
 - Native `$HZ_` export
 - Papyrus (none)
@@ -703,4 +702,4 @@ No ActionScript, C++, SWF, or INI gameplay defaults were changed in the mainline
 
 ## 19. Recommendation (short)
 
-Use the **DLL JSON cache**, not native `translate_*.txt`, for Horizon chrome. Keep native `$` and GMSTs for the game. One init read, one batch push per movie, lookups only when UI is built. Language follows the game, with an F11/INI override that **restarts**. Exo 2 stays for Latin; CJK/Korean use the game font per line; do not bloat SWFs. Settings 2.0 first (most strings, not the HUD tick), then HUD chrome, then Quick Menu and other modules, then fonts.
+Use the **DLL JSON cache**, not native `translate_*.txt`, for Horizon chrome. Keep native `$` and GMSTs for the game. One init read, one batch push per movie, lookups only when UI is built. Language follows the game, with an F11/INI override that **reloads the table once**. Exo 2 stays for Latin; CJK uses the game font per line; do not bloat SWFs. Settings 2.0 first (most strings, not the HUD tick), then HUD chrome, then Quick Menu and other modules, then fonts. Starfield Steam languages only (no Korean, no Greek).

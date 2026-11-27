@@ -29,16 +29,17 @@
     "language": {
       "label": "LANGUAGE",
       "help": "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language. Changing this and pressing OK reloads the language once. Game item names and the game's own $ tokens stay in the game language.",
-      "auto": "AUTO (GAME)",
-      "en": "ENGLISH",
-      "de": "GERMAN",
-      "fr": "FRENCH",
-      "es": "SPANISH",
-      "it": "ITALIAN",
-      "ja": "JAPANESE",
-      "ko": "KOREAN",
-      "pl": "POLISH",
-      "zh-cn": "CHINESE (SIMPLIFIED)"
+      "auto": "Auto (game)",
+      "en": "English",
+      "de": "Deutsch (German)",
+      "fr": "Français (French)",
+      "es": "Español (Spanish)",
+      "es-mx": "Español de Latinoamérica (Spanish, Latin America)",
+      "it": "Italiano (Italian)",
+      "ja": "日本語 (Japanese)",
+      "pl": "Polski (Polish)",
+      "pt-br": "Português do Brasil (Portuguese, Brazil)",
+      "zh-cn": "简体中文 (Simplified Chinese)"
     },
     "QuickMenuHorizon": {
       "label": "HORIZON STYLE",
