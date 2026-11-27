@@ -4,7 +4,9 @@
 // Evidence (public, not a guess):
 //   Papyrus / console player.IsWeaponOut (Creation Kit wiki; Starfield Community Patch issue 866):
 //     0 = holstered, 1 = fists only, 2 = a weapon in either hand. Spells do not count.
-//   A check of == 1 misses a drawn gun (that is the Community Patch dialog bug). Horizon must treat 1 and 2 as out.
+//   A check of == 1 misses a drawn gun (that is the Community Patch dialog bug). The HUD card does not poll
+//   IsWeaponOut: Equipment "Weapon drawn only" follows a weapon reticle, so unarmed / fists (Papyrus 1) are not out.
+//   OutFromPapyrus matches that path: only 2 (a weapon in hand) is out.
 //   TES WEAPON_STATE (CommonLibSSE ActorState / CommonLibF4 ActorState):
 //     0 sheathed, 1 want-to-draw, 2 drawing, 3 drawn, 4 want-to-sheathe, 5 sheathing.
 //   Papyrus 2 is NOT WEAPON_STATE::kDrawing. Mixing the two enums is how a "drawn == 2" check can fail.
@@ -32,11 +34,12 @@ enum class WeaponState : int
 	kSheathing = 5
 };
 
-// Papyrus / console IsWeaponOut. 1 (fists) and 2 (weapon) are out; 0 is holstered.
-// Never `== 1` only: a drawn gun returns 2.
+// Shipping HUD path: Equipment "Weapon drawn only" follows a weapon reticle (pistol / cutter / shotgun /
+// rifle / laser). Unarmed is not out, so Papyrus fists (1) is not out either. Only 2 (a weapon in hand) is out.
+// Never `== 1` only: a drawn gun returns 2, and 1 is fists, not a gun.
 inline bool OutFromPapyrus(int a_v)
 {
-	return a_v == kFists || a_v == kWeapon;
+	return a_v == kWeapon;
 }
 
 // TES WEAPON_STATE: anything except sheathed counts as out (drawing and sheathing included).

@@ -34,9 +34,9 @@ bool Has(const std::string& a_s, const std::string& a_n) { return a_s.find(a_n) 
 int main()
 {
 	using namespace hzwpnout;
-	Expect(!OutFromPapyrus(kHolstered) && OutFromPapyrus(kFists) && OutFromPapyrus(kWeapon),
-		"Papyrus IsWeaponOut: 0 holstered, 1 fists and 2 weapon are out");
-	Expect(!OutFromPapyrus(1) == false && OutFromPapyrus(2), "a drawn gun (2) is out; never == 1 only");
+	Expect(!OutFromPapyrus(kHolstered) && !OutFromPapyrus(kFists) && OutFromPapyrus(kWeapon),
+		"Papyrus helper matches the HUD: 0 holstered and 1 fists are not out; 2 weapon is out");
+	Expect(!OutFromPapyrus(1) && OutFromPapyrus(2), "a drawn gun (2) is out; fists (1) are not");
 	Expect(!OutFromPapyrus(-1) && !OutFromPapyrus(3) && !OutFromPapyrus(5), "unknown Papyrus values are not out");
 
 	Expect(!OutFromWeaponState(static_cast<int>(WeaponState::kSheathed)), "TES sheathed is not out");

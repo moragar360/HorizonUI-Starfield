@@ -717,10 +717,20 @@
       {
          return Math.round(this.hzsFs(size) * 1.25 + 4);
       }
-      // extra pixels a wrapped field grew below one line (0 when it fit)
+      // extra pixels a wrapped field grew below one line (0 when it fit). Uses the field's own numLines /
+      // textHeight after wrap (no throwaway clip).
       private function hzsTExtra(t:TextField, size:Number) : Number
       {
-         return t == null ? 0 : Math.max(0,Math.round(t.height - this.hzsTOne(size)));
+         if(t == null) { return 0; }
+         var one:Number = this.hzsTOne(size);
+         var n:int = 1;
+         try { n = int(t.numLines); } catch(e0:Error) { n = 1; }
+         if(n < 1) { n = 1; }
+         if(n > 1) { return Math.round((n - 1) * one); }
+         var th:Number = 0;
+         try { th = Number(t.textHeight); } catch(e1:Error) { th = 0; }
+         if(!(th > 0)) { th = t.height; }
+         return Math.max(0,Math.round(th - one));
       }
       // 0.43.4: "..." shortening by halving instead of one character at a time. The old loop tried n = length - 1, length - 2,
       // ... 2 (each "the first n characters, trailing spaces cut, then ...") and kept the first that fit, or n = 2 when none
@@ -1822,28 +1832,33 @@
          var w:Number = HZS_CW;
          var x0:Number = HZS_PAD + 2;
          var iw:Number = w - HZS_PAD - x0;
+         var pt:TextField = this.hzsT(p,m.pct + "%",w - HZS_PAD,28,30,HZS_WHITE,"bd",0,"r");
+         this.hzsT(p,this.hzsCs("SURVEYED"),w - HZS_PAD,52,13,HZS_LABEL,"sb",0.12,"r");
+         var nmax:Number = pt.x - (x0 + 50) - 12;
+         var nt:TextField = this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax,null,true);
+         var extra:Number = this.hzsTExtra(nt,22);
+         if(String(m.sys).length > 0)
+         {
+            var st:TextField = this.hzsT(p,String(m.sys),x0 + 50,50 + extra,13,HZS_MUTED,"sb",0.08,"l",1,nmax,null,true);
+            extra += this.hzsTExtra(st,13);
+         }
          var nrow:int = int(Math.ceil(m.cond.length / 2));
-         var hy:Number = 118 + nrow * 42 + 6;
+         var hy:Number = 118 + extra + nrow * 42 + 6;
          var haz:Array = m.haz as Array;
          var h:Number = haz == null ? hy - 10 : (haz.length == 0 ? hy + 22 : hy + 24 + haz.length * 40);
          this.hzsCard(g,w,h,HZS_R_CARD,acc);
          this.hzsTile(g,x0 + 20,36,20,acc,0.55);
          this.hzsIcon(g,"planet",x0 + 20,36,acc);
-         var pt:TextField = this.hzsT(p,m.pct + "%",w - HZS_PAD,28,30,HZS_WHITE,"bd",0,"r");
-         this.hzsT(p,this.hzsCs("SURVEYED"),w - HZS_PAD,52,13,HZS_LABEL,"sb",0.12,"r");
-         var nmax:Number = pt.x - (x0 + 50) - 12;
-         this.hzsT(p,String(m.name),x0 + 50,26,22,HZS_WHITE,"sb",0.08,"l",1,nmax,null,true);
-         if(String(m.sys).length > 0) { this.hzsT(p,String(m.sys),x0 + 50,50,13,HZS_MUTED,"sb",0.08,"l",1,nmax,null,true); }
-         this.hzsBar(g,x0,68,iw,6,int(m.pct) / 100,acc);
+         this.hzsBar(g,x0,68 + extra,iw,6,int(m.pct) / 100,acc);
          if(m.cond.length > 0)
          {
-            this.hzsSection(p,x0,94,iw,"CONDITIONS",null,acc);
+            this.hzsSection(p,x0,94 + extra,iw,"CONDITIONS",null,acc);
             var cw:Number = iw / 2;
             var i:int = 0;
             while(i < m.cond.length)
             {
                var cx:Number = x0 + i % 2 * cw;
-               var cy:Number = 118 + int(i / 2) * 42;
+               var cy:Number = 118 + extra + int(i / 2) * 42;
                this.hzsT(p,this.hzsCs(String(m.cond[i][0])),cx,cy,13,HZS_LABEL,"sb",0.1,"l",1,cw - 8);
                this.hzsT(p,String(m.cond[i][1]),cx,cy + 19,17,HZS_WHITE,"sb",0.02,"l",1,cw - 8);
                i++;
@@ -1887,7 +1902,7 @@
          }
          var lim:Number = w - 16 - nh * 30 - 10;
          var pct:String = m.pct + "%";
-         var nt:TextField = this.hzsT(p,String(m.name),48,22,15,HZS_WHITE,"sb",0.08,"l",1,Math.max(60,lim - 48 - 160),null,true);
+         var nt:TextField = this.hzsT(p,String(m.name),48,22,15,HZS_WHITE,"sb",0.08,"l",1,Math.max(60,lim - 48 - 160));
          var e:Number = this.hzsRight(nt);
          var pt:TextField = this.hzsT(p,pct,e + 10,22,16,HZS_WHITE,"bd");
          e = this.hzsRight(pt);
@@ -1908,7 +1923,23 @@
          var by:Number = ly >= 0 ? yy + 38 : yy + 12;
          var bio:Boolean = m.hasFl || m.hasFa;
          var nk:int = (m.hasFl ? 1 : 0) + (m.hasFa ? 1 : 0);
-         var h:Number = bio ? by + 22 * nk + 30 : (ly >= 0 ? ly + 26 : yy + 4);
+         var extraH:Number = 0;
+         var bioRows:Array = [];
+         if(bio)
+         {
+            var bl0:Number = by + 22;
+            var kinds:Array = [[m.hasFl,"FLORA",m.bfl,int(m.flc)],[m.hasFa,"FAUNA",m.bfa,int(m.fac)]];
+            for each(var bk0:Array in kinds)
+            {
+               if(!bk0[0]) { continue; }
+               var bwt:TextField = this.hzsT(p,this.hzsBiomeWord(Boolean(bk0[2]),int(bk0[3])),x0 + 88,bl0,13,bk0[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88,null,true);
+               var bex:Number = this.hzsTExtra(bwt,13);
+               bioRows.push([bk0,bl0,bex]);
+               extraH += bex;
+               bl0 += 22 + bex;
+            }
+         }
+         var h:Number = (bio ? by + 22 * nk + 30 : (ly >= 0 ? ly + 26 : yy + 4)) + extraH;
          var fl:Number = Number(m.fl);
          var full:Boolean = int(m.tot) >= int(m.mx);
          this.hzsCard(g,w,h,HZS_R_CARD,full ? HZS_GRN : acc,fl > 0 ? HZS_GRN : 0xFFFFFF,fl > 0 ? (90 + 150 * fl) / 255 : 0.1);
@@ -1943,16 +1974,15 @@
          }
          if(bio)
          {
-            // v0.40.2: "IN THIS BIOME" + one plain line per kind (planet counts stay in the rows above)
+            // v0.40.2: "IN THIS BIOME" + one plain line per kind (planet counts stay in the rows above).
+            // The biome word was placed before the card so wrap extra could grow h; only the FLORA/FAUNA label is new here.
             this.hzsT(p,this.hzsCs("IN THIS BIOME"),x0,by,13,HZS_MUTED,"sb",0.1);
-            var bl:Number = by + 22;
-            for each(var bk:Array in [[m.hasFl,"FLORA",m.bfl,int(m.flc)],[m.hasFa,"FAUNA",m.bfa,int(m.fac)]])
+            for each(var br:Array in bioRows)
             {
-               if(!bk[0]) { continue; }
+               var bk:Array = br[0];
+               var bl:Number = Number(br[1]);
                var kt:TextField = this.hzsT(p,this.hzsCs(String(bk[1])),x0,bl,13,bk[2] ? HZS_GRN : HZS_LABEL,"sb",0.1);
                if(bk[2]) { this.hzsCheck(g,x0 + 72,bl,HZS_GRN,0.8); }
-               this.hzsT(p,this.hzsBiomeWord(Boolean(bk[2]),int(bk[3])),x0 + 88,bl,13,bk[2] ? HZS_GRN : HZS_WHITE,"rg",0.02,"l",1,iw - 88,null,true);
-               bl += 22;
             }
          }
          if(fl > 0)
@@ -2016,42 +2046,47 @@
          var x0:Number = HZS_PAD + 2;
          var iw:Number = w - HZS_PAD - x0;
          var rows:Array = m.rows as Array;
-         var extraH:Number = 0;
-         var scratch:Sprite = new Sprite();
-         for each(var r0:Object in rows)
-         {
-            var dt0:TextField = this.hzsT(scratch,String(r0.d),w - HZS_PAD,0,16,HZS_WHITE,"sb",0.02,"r");
-            var lim0:Number = dt0.x - (x0 + 42) - 10;
-            extraH += this.hzsTExtra(this.hzsT(scratch,String(r0.n),0,0,14,HZS_WHITE,"sb",0.1,"l",1,lim0,null,true),14);
-            extraH += this.hzsTExtra(this.hzsT(scratch,String(r0.sub),0,0,13,HZS_WHITE,"rg",0,"l",1,lim0,null,true),13);
-         }
-         var h:Number = 44 + rows.length * 48 + extraH + 12;
-         this.hzsCard(g,w,h,HZS_R_CARD,acc);
-         this.hzsSection(p,x0,18,iw,"SIGNALS",m.inr + " " + this.hzsCs("IN RANGE"),acc);
+         // pooled row fields first: wrap extra comes from each row's own TextField (numLines / textHeight), no throwaway clips
+         var boxes:Array = [];
          var yy:Number = 44;
          for each(var r:Object in rows)
          {
             var hl:Boolean = r.hl == true;
             var c:uint = uint(r.col);
             var undisc:Boolean = !hl && c == HZS_POI;
-            if(hl)
-            {
-               this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,acc,34 / 255);
-               this.hzsRR(g,x0 - 8,yy + 8,3,30,1.5,acc,1);
-            }
-            else if(undisc)
-            {
-               this.hzsRR(g,x0 - 8,yy,iw + 14,46,10,HZS_BG,0.55);
-            }
             var cy:Number = yy + 23;
-            this.hzsTile(g,x0 + 16,cy,16,hl ? acc : c,0.47);
-            this.hzsIcon(g,String(r.ic),x0 + 16,cy,hl ? acc : c,1);
             var dt:TextField = this.hzsT(p,String(r.d),w - HZS_PAD,cy,16,r.ic == "ship" || r.ic == "vehicle" ? acc : uint(r.dc),"sb",0.02,"r",r.ic == "ship" || r.ic == "vehicle" ? 0.67 : 1);
             var lim:Number = dt.x - (x0 + 42) - 10;
             var ntf:TextField = this.hzsT(p,String(r.n),x0 + 42,cy - 9,14,c != HZS_MUTED || hl ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",1,lim,null,true);
             var nExtra:Number = this.hzsTExtra(ntf,14);
             var stf:TextField = hl ? this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,acc,"bd",0.1,"l",1,lim,null,true) : this.hzsT(p,String(r.sub),x0 + 42,cy + 10 + nExtra,13,undisc ? HZS_LABEL : HZS_MUTED,"rg",0,"l",1,lim,null,true);
-            yy += 48 + nExtra + this.hzsTExtra(stf,13);
+            var rowH:Number = 48 + nExtra + this.hzsTExtra(stf,13);
+            boxes.push([yy,rowH,hl,undisc,c,String(r.ic)]);
+            yy += rowH;
+         }
+         var h:Number = yy + 12;
+         this.hzsCard(g,w,h,HZS_R_CARD,acc);
+         this.hzsSection(p,x0,18,iw,"SIGNALS",m.inr + " " + this.hzsCs("IN RANGE"),acc);
+         for each(var b:Array in boxes)
+         {
+            var y0:Number = Number(b[0]);
+            var rowH2:Number = Number(b[1]);
+            var hl2:Boolean = b[2] == true;
+            var undisc2:Boolean = b[3] == true;
+            var c2:uint = uint(b[4]);
+            var boxH:Number = rowH2 - 2;
+            if(hl2)
+            {
+               this.hzsRR(g,x0 - 8,y0,iw + 14,boxH,10,acc,34 / 255);
+               this.hzsRR(g,x0 - 8,y0 + 8,3,rowH2 - 18,1.5,acc,1);
+            }
+            else if(undisc2)
+            {
+               this.hzsRR(g,x0 - 8,y0,iw + 14,boxH,10,HZS_BG,0.55);
+            }
+            var cy2:Number = y0 + 23;
+            this.hzsTile(g,x0 + 16,cy2,16,hl2 ? acc : c2,0.47);
+            this.hzsIcon(g,String(b[5]),x0 + 16,cy2,hl2 ? acc : c2,1);
          }
          return [w,h];
       }
@@ -2065,7 +2100,7 @@
          var c:uint = m.near.hl ? acc : HZS_LABEL;
          this.hzsIcon(g,"hex",24,22,c);
          var dt:TextField = this.hzsT(p,String(m.near.d),w - 16,22,16,acc,"sb",0.02,"r");
-         this.hzsT(p,String(m.near.n),40,22,13,c,"bd",0.1,"l",1,dt.x - 50,null,true);
+         this.hzsT(p,String(m.near.n),40,22,13,c,"bd",0.1,"l",1,dt.x - 50);
          return [w,44];
       }
       // chips "Fe Iron" in rows; wraps inside the column
@@ -2090,7 +2125,7 @@
                var cc:uint = dis ? HZS_MUTED : c;
                var st:TextField = this.hzsT(p,String(it[0]),0,yy,13,cc,"bd",0,"l",1,60);
                var sw:Number = Math.max(26,this.hzsTw(st) + 10);
-               var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180,null,true);
+               var nt:TextField = this.hzsT(p,String(it[1]),0,yy,13,dis ? HZS_MUTED : HZS_LABEL,"rg",0,"l",1,180);
                var need:Number = sw + 5 + this.hzsTw(nt);
                if(cx > x0 + col && cx + need > x0 + iw) { yy += 28; cx = x0 + col; st.y = Math.round(yy - st.height / 2); nt.y = Math.round(yy - nt.height / 2); }
                g.lineStyle(1.2,cc,0.67,true); g.beginFill(cc,34 / 255); g.drawRoundRect(cx,yy - 11,sw,22,12,12); g.endFill(); g.lineStyle();
@@ -2134,8 +2169,8 @@
             if(m.sites != null)
             {
                var sx:Number = nt > 0 ? tx - 8 : x0;
-               this.hzsT(p,this.hzsCs("TRAIT SITES"),sx,44,13,HZS_MUTED,"sb",0.1,"l",1,w - HZS_PAD - sx,null,true);
-               this.hzsT(p,m.sites[0] + " / " + m.sites[1] + " " + this.hzsCs("SCANNED"),sx,62,14,HZS_WHITE,"sb",0.04,"l",1,w - HZS_PAD - sx,null,true);
+               this.hzsT(p,this.hzsCs("TRAIT SITES"),sx,44,13,HZS_MUTED,"sb",0.1,"l",1,w - HZS_PAD - sx);
+               this.hzsT(p,m.sites[0] + " / " + m.sites[1] + " " + this.hzsCs("SCANNED"),sx,62,14,HZS_WHITE,"sb",0.04,"l",1,w - HZS_PAD - sx);
             }
          }
          this.hzsSection(p,x0,ry,iw,"RESOURCES",String(m.lbl),acc);
@@ -2178,7 +2213,7 @@
          {
             this.hzsCard(g,w,52,HZS_R_STRIP,-1,acc,100 / 255);
             this.hzsT(p,this.hzsCs("PERSON"),x0,26,13,acc,"sb",0.1);
-            this.hzsT(p,String(m.note),w - HZS_PAD,26,13,HZS_LABEL,"rg",0.02,"r",1,iw - 70,null,true);
+            this.hzsT(p,String(m.note),w - HZS_PAD,26,13,HZS_LABEL,"rg",0.02,"r",1,iw - 70);
             return [w,52];
          }
          var yy:Number = 46 + rows.length * 32;
@@ -2199,7 +2234,7 @@
                   this.hzsRR(g,x0 - 8,y - 9,3,18,1.5,acc,1);
                }
                var rt:TextField = this.hzsT(p,int(r[1]) + "%" + (int(r[2]) > 0 ? "  " + String.fromCharCode(0xB7) + "  " + this.hzsDur(int(r[2])) : ""),w - HZS_PAD,y,14,sel ? acc : HZS_MUTED,"sb",0.04,"r",a);
-               this.hzsT(p,this.hzsGs(String(r[0])),x0 + 4,y,14,sel ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",a,rt.x - x0 - 14,null,true);
+               this.hzsT(p,this.hzsGs(String(r[0])),x0 + 4,y,14,sel ? HZS_WHITE : HZS_LABEL,"sb",0.1,"l",a,rt.x - x0 - 14);
                y += 32;
             }
             if(b != null) { g.beginFill(0xFFFFFF,0.086); g.drawRect(x0,yy - 10,iw,1); g.endFill(); }
@@ -2216,13 +2251,13 @@
                var rx:Number = w - HZS_PAD;
                if(String(b.key).length > 0)
                {
-                  var lt:TextField = this.hzsT(p,this.hzsGs(String(b.lab)),w - HZS_PAD,by,14,HZS_WHITE,"sb",0.14,"r",1,120,null,true);
+                  var lt:TextField = this.hzsT(p,this.hzsGs(String(b.lab)),w - HZS_PAD,by,14,HZS_WHITE,"sb",0.14,"r",1,120);
                   var kw:TextField = this.hzsT(new Sprite(),String(b.key),0,by,13,HZS_AMB,"bd",0.08,"l",1,0,b.font != null ? String(b.font) : null);
                   var kcw:Number = Math.max(26,this.hzsTw(kw) + 16);
                   rx = this.hzsKeycap(p,lt.x - 10 - kcw,by,String(b.key),HZS_AMB,false,b.font != null ? String(b.font) : null) - kcw - 10;
                }
                var e:Number = this.hzsRight(this.hzsT(p,this.hzsCs("BOUNTY"),x0,by,13,HZS_AMB,"bd",0.14));
-               if(String(b.amt).length > 0) { this.hzsT(p,String(b.amt),e + 12,by,17,HZS_AMB,"bd",0.02,"l",1,rx - e - 22,null,true); }
+               if(String(b.amt).length > 0) { this.hzsT(p,String(b.amt),e + 12,by,17,HZS_AMB,"bd",0.02,"l",1,rx - e - 22); }
             }
          }
          return [w,h];
@@ -2251,7 +2286,7 @@
          for each(var h0:Object in m.h)
          {
             x = this.hzsKeycap(probe,x,20,String(h0.k),acc,int(h0.en) != 1,h0.f != null ? String(h0.f) : null) + 8;
-            x = this.hzsRight(this.hzsT(probe,String(h0.l),x,20,14,HZS_LABEL,"sb",0.14,"l",1,220,null,true)) + 22;
+            x = this.hzsRight(this.hzsT(probe,String(h0.l),x,20,14,HZS_LABEL,"sb",0.14,"l",1,220)) + 22;
          }
          var w:Number = x - 22 + 16;
          this.hzsCard(p.graphics,w,40,HZS_R_STRIP,-1);
@@ -2260,7 +2295,7 @@
          {
             var dis:Boolean = int(h.en) != 1;
             x = this.hzsKeycap(p,x,20,String(h.k),acc,dis,h.f != null ? String(h.f) : null) + 8;
-            x = this.hzsRight(this.hzsT(p,String(h.l),x,20,14,HZS_LABEL,"sb",0.14,"l",dis ? 0.63 : 1,220,null,true)) + 22;
+            x = this.hzsRight(this.hzsT(p,String(h.l),x,20,14,HZS_LABEL,"sb",0.14,"l",dis ? 0.63 : 1,220)) + 22;
          }
          return [w,40];
       }
