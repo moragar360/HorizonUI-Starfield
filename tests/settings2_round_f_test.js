@@ -120,8 +120,8 @@ expect(!/ENTER_FRAME|setInterval/.test(fnText(as, "hz51PvPaint").body),
 expect(/function hz51UnavailChip/.test(as) && /chip == "unavail"/.test(fnText(as, "hz51DrawList").body),
 	"17/20: locked module rows draw an UNAVAILABLE chip and keep saved values");
 
-expect(/drawRoundRect\(x0,y,boxW,HZ51_ROW,HZ51_BOX_R/.test(fnText(as, "hz51DrawList").body),
-	"18: selected rows use the shared card radius");
+expect(/hz51FillGroup/.test(fnText(as, "hz51DrawList").body) && /drawRoundRect\(x0,y \+ 8,3,HZ51_ROW - 16/.test(fnText(as, "hz51DrawList").body),
+	"18: section groups are rounded panels; the selected row uses the cyan left bar");
 expect(/hz34Ring\(b,0,0,W,H,HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /b.mask = this.hzSetWinMask/.test(fnText(as, "hz51Draw").body),
 	"24: the settings window uses a rounded ring and clips its body to that shape");
 
@@ -135,10 +135,10 @@ expect(/ALREADY-SAID STYLE/.test(comms) && /PERSUASION TAG COLOR/.test(comms) &&
 const mods = fnText(as, "hz51Modules").body;
 expect(/STATUS DIRECTORY/.test(mods) && /SHOW WHEN/.test(mods) && /t":"mc"/.test(mods),
 	"22: Modules page has the status directory, Show when, and per-module cards");
-expect(/CORE HUD/.test(mods) && /QUICK MENU/.test(mods) && /COMMS AND DIALOGUE/.test(mods) && /NOTIFICATIONS/.test(mods),
-	"22: module cards cover Core, Font, Quick Menu, Comms, Scanner, Scope, Notifications");
-expect(/modqh/.test(fnText(as, "hz51DrawModCard").body) && /QuickMenuHorizon/.test(fnText(as, "hz51Mute").body),
-	"22: Quick Menu card has Horizon Style inline; Extended Mode mutes while it is off");
+expect(/CORE HUD/.test(mods) && /QUICK MENU/.test(mods) && /COMMS DIALOGUE/.test(mods) && /NOTIFICATIONS/.test(mods),
+	"22: module cards cover Core, Font, Quick Menu, Comms, Comms Dialogue, Scanner, Scope, Notifications");
+expect(/swk/.test(fnText(as, "hz51DrawModCard").body) && /QuickMenuHorizon/.test(fnText(as, "hz51Mute").body),
+	"22: runtime-disableable module cards have a working Enable switch; Extended Mode mutes while Horizon Style is off");
 
 expect(/SubAutoPause/.test(comms) && /DlgAutoPause/.test(comms) && /USE HORIZON/.test(comms) && /PAUSED - CONFLICT/.test(fnText(as, "hz51ModBanner").body),
 	"23: Compatibility has auto-pause, Use Horizon, and a paused-conflict banner");

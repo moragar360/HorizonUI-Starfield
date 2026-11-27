@@ -56,7 +56,7 @@ expect(constN("HZ51_FIND_W") === mock.findW && constN("HZ51_FIND_H") === mock.fi
 expect(constN("HZ51_DD_H") === mock.ddH && constN("HZ51_PVC_H") === mock.pvcH, "dropdown 28 and preview card 120 / implemented " + constN("HZ51_DD_H") + " / " + constN("HZ51_PVC_H"));
 expect(constN("HZ51_DIV_A") === mock.divA && constN("HZ51_BOX_A") === mock.boxA && constN("HZ51_SEL_A") === mock.selA, "divider 0.08 / box 0.18 / sel 0.10 mockup alphas kept");
 expect(/HZ_SET_W:Number = 1260/.test(as) && /HZ_SET_H:Number = 726/.test(as) && /HZ_SET_TOP:Number = 90/.test(as), "window 1260x726, body top 90 (52+38)");
-expect(/hz51Stroke/.test(fnText(as, "hz51DrawList").body) && /HZ51_DIV_A/.test(fnText(as, "hz51DrawList").body), "list rows use filled-rect box stroke and 8% dividers");
+expect(/hz51FillGroup/.test(fnText(as, "hz51DrawList").body) && /HZ51_DIV_A/.test(fnText(as, "hz51DrawList").body), "list sections use a rounded group panel and 8% dividers");
 expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body) && !/drawRoundRect/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is four 1px bars inside the box; never lineStyle or even-odd roundRect");
 expect(/HZ51_TITLE_PX/.test(fnText(as, "hz51DrawList").body), "row title 12px");
 expect(/HZ51_HELP_PX/.test(fnText(as, "hz51DrawList").body), "row help 11px");
@@ -95,7 +95,7 @@ const typeChar = toJs(as, "hz51TypeChar");
 expect(typeChar("ch:v") === "v" && typeChar("bind:V") === "" && typeChar("ok") === "", "ch:v yields v; bind:V is not a typed character");
 const drawBody = fnText(as, "hz51Draw").body;
 expect(/drawRoundRect\(0,12,W,H/.test(drawBody) && !/while\(i < 5\)/.test(drawBody), "window shadow is one 12px-offset fill (mockup 0 12px 48px), not a 5-layer blur");
-expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnText(as, "hz51DrawList").body), "window and box still use the mockup corner radii on their fills");
+expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnText(as, "hz51FillGroup").body), "window and box still use the mockup corner radii on their fills");
 
 const drop = new Function("ctrlX", "ctrlY", "ctrlW", "ctrlH", "menuW", "menuH", "winW", "winH", "foot", "top",
 	"const HZ51_DROP_ITEM = 24; const int = (n) => n | 0;\n" + fnText(as, "hz51DropRect").body.replace(/var (\w+):[\w.*]+/g, "let $1"));

@@ -64,6 +64,7 @@
       private static const HZ51_QM_GAP:Number = 8;
       private static const HZ51_QM_WARN:Number = 44;
       private static const HZ51_QM_CLASH:uint = 0xF2A03A;
+      private static const HZ51_MOD_GAP:Number = 10;    // space under a module banner / between module cards
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
       // Purpose: size the F11 window. Height stays 726. Width caps at 1260 so HUD
@@ -567,10 +568,18 @@
          if(v === true || v === false) { return Boolean(v); }
          return Number(v) >= 0.5;
       }
+      // Purpose: enable or mute dependent rows from the current pending parent
+      // values on every draw. A parent toggle (MARKERS, Show Compass, Horizon
+      // Style, and every other master) must re-enable children immediately —
+      // the old path only set dis=true and never cleared it, so FOLLOWERS and
+      // MARKER COLOR stayed grey after MARKERS was turned back on.
+      // Inputs: finished row list. Outputs: same list with r.dis refreshed.
+      // Unavail/module-lock (chip) is never cleared. No per-frame work.
       private function hz51Mute(rows:Array) : Array
       {
          var i:int = 0;
          var parentOn:Boolean = true;
+         var markersOn:Boolean = true;
          var extOn:Boolean = this.hz51On("QuickMenuExtended") && this.hz51On("QuickMenuHorizon");
          var hideHud:Boolean = this.hz51On("HideMainHudWhileScanning");
          var charRule:int = this.hzSetPend != null ? int(this.hzSetPend.CharacterRule) : 0;
@@ -578,53 +587,68 @@
          {
             var r:Object = rows[i];
             var k:String = String(r.k);
-            if(r.t == "b" && k.indexOf("Show") == 0) { parentOn = this.hz51On(k); }
-            if(k == "HazardStatus" || k == "EnemyBar" || k == "StealthMeter" || k == "XpToast" || k == "MissionToast" || k == "Subtitles" || k == "Dialogue" || k == "QuickMenuHorizon" || k == "QuickMenuExtended" || k == "Record" || k == "Persist") { parentOn = this.hz51On(k); }
-            if(r.sub && !parentOn && !r.dis)
+            var locked:Boolean = r.chip == "unavail";
+            if(r.h) { parentOn = true; markersOn = true; }
+            var mute:Boolean = Boolean(r.sub) && !parentOn;
+            if(k == "ShowFollowers" || k == "FollowerColor" || k == "ShowLocations" || k == "ShowShip" || k == "ShowEnemies" || k == "ShowPlayerMarker")
             {
-               r.dis = true;
-               if(r.dv === undefined) { r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0; }
+               if(!markersOn) { mute = true; }
             }
+            if(k == "FollowerColor" && !this.hz51On("ShowFollowers")) { mute = true; }
+            if(r.t == "b" && k.indexOf("Show") == 0 && k != "ShowFollowers" && k != "ShowLocations" && k != "ShowShip" && k != "ShowEnemies" && k != "ShowPlayerMarker") { parentOn = this.hz51On(k); }
+            if(k == "HazardStatus" || k == "EnemyBar" || k == "StealthMeter" || k == "XpToast" || k == "MissionToast" || k == "Subtitles" || k == "Dialogue" || k == "QuickMenuHorizon" || k == "QuickMenuExtended" || k == "Record" || k == "Persist") { parentOn = this.hz51On(k); }
+            if(k == "CompassMarkers") { markersOn = parentOn && this.hz51On("CompassMarkers"); }
             if(k == "CharacterShowSeconds")
             {
                var eventRule:Boolean = charRule == 7 || charRule == 8 || charRule == 9;
                if(!eventRule)
                {
-                  r.dis = true;
-                  r.dv = this.hzSetPend != null ? this.hzSetPend.CharacterShowSeconds : 8;
+                  mute = true;
                   r.note = "Used only when Show when is an event choice. Your saved time is kept.";
                   r.n13 = true;
                }
             }
-            if(k == "QuickMenuExtended" && !this.hz51On("QuickMenuHorizon") && !r.dis)
+            if(k == "QuickMenuExtended" && !this.hz51On("QuickMenuHorizon"))
             {
-               r.dis = true;
-               r.dv = this.hzSetPend != null ? this.hzSetPend.QuickMenuExtended : 0;
+               mute = true;
                r.note = "Turn on Horizon Style first. Extended Mode stays off until the Horizon look is on. Saved preference is kept.";
                r.n13 = true;
             }
-            if((k.indexOf("QuickMenuKey") == 0 || k == "QuickMenuSlotCount" || k == "QuickMenuSlotsPerRow" || k == "QuickMenuExtendedLayout" || k == "QuickMenuExtEmptySlots" || k == "QuickMenuExtPanelOpacity" || k == "QuickMenuExtSlotScale" || k == "_qmkeys" || k == "_qmclear") && !extOn && !r.dis)
+            if(k.indexOf("QuickMenuKey") == 0 || k == "QuickMenuSlotCount" || k == "QuickMenuSlotsPerRow" || k == "QuickMenuExtendedLayout" || k == "QuickMenuExtEmptySlots" || k == "QuickMenuExtPanelOpacity" || k == "QuickMenuExtSlotScale" || k == "_qmkeys" || k == "_qmclear")
             {
-               r.dis = true;
-               r.note = "Turn on Extended Mode to bind keys. Saved keys are kept.";
-               r.n13 = true;
+               if(!extOn)
+               {
+                  mute = true;
+                  r.note = "Turn on Extended Mode to bind keys. Saved keys are kept.";
+                  r.n13 = true;
+               }
             }
             if(k.indexOf("ScanShowVitals") == 0 || k == "ScanVitalsCompact" || k == "ScanVitalsLayout")
             {
-               if(!hideHud && !r.dis)
+               if(!hideHud)
                {
-                  r.dis = true;
-                  r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0;
+                  mute = true;
                   r.note = "Only used while Hide Horizon HUD while scanning is on.";
                   r.n13 = true;
                }
             }
-            if((k == "PerfMode" || k == "PerfDump") && !this.hz51On("PerfDiag") && !r.dis)
+            if((k == "PerfMode" || k == "PerfDump") && !this.hz51On("PerfDiag"))
             {
-               r.dis = true;
-               r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0;
+               mute = true;
                r.note = "Turn on Advanced Performance Timing first. Your saved choice is kept.";
                r.n13 = true;
+            }
+            if(!locked)
+            {
+               if(mute)
+               {
+                  r.dis = true;
+                  if(r.dv === undefined) { r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0; }
+               }
+               else
+               {
+                  r.dis = false;
+               }
             }
             i++;
          }
@@ -722,10 +746,19 @@
          if(id == "comms")
          {
             st.inst = this.hz30Mod["comms"] === 1;
-            st.on = st.inst;
-            st.paused = st.inst && ((this.hz31SubForeign().length > 0 && Boolean(this.hz31Val("SubAutoPause"))) || (this.hz31On("comms_dialogue") && this.hz31DlgForeign() && Boolean(this.hz31Val("DlgAutoPause"))));
+            st.on = st.inst && this.hz51On("Subtitles");
+            st.paused = st.inst && this.hz31SubForeign().length > 0 && Boolean(this.hz31Val("SubAutoPause"));
             if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
-            else if(st.paused) { st.why = "Horizon subtitles or dialogue are paused because another add-on was found."; st.act = "Use Horizon to turn Horizon's own menus back on."; }
+            else if(st.paused) { st.why = "Horizon subtitles are paused because another add-on was found."; st.act = "Use Horizon to turn Horizon's own menus back on."; }
+            return st;
+         }
+         if(id == "comms_dialogue")
+         {
+            st.inst = this.hz30Mod["comms"] === 1;
+            st.on = st.inst && this.hz51On("Dialogue");
+            st.paused = st.inst && this.hz31DlgForeign() && Boolean(this.hz31Val("DlgAutoPause"));
+            if(!st.inst) { st.why = "Install it from the Horizon UI installer."; }
+            else if(st.paused) { st.why = "Horizon dialogue is paused because another add-on was found."; st.act = "Use Horizon to turn Horizon's own menus back on."; }
             return st;
          }
          if(id == "scanner")
@@ -1292,19 +1325,23 @@
          if(!st.inst) { return "NOT INSTALLED"; }
          if(st.paused) { return "PAUSED - CONFLICT"; }
          if(id == "quickmenu" && !this.hz51On("QuickMenuHorizon")) { return "INSTALLED - DISABLED"; }
+         if((id == "comms" || id == "comms_dialogue") && st.inst && !st.paused && !st.on) { return "INSTALLED - DISABLED"; }
          if(st.on) { return "INSTALLED"; }
          return "INSTALLED - DISABLED";
       }
       private function hz51Modules() : Array
       {
+         // Runtime-disableable modules get swk (an existing INI key). Install-only
+         // modules are status. No new INI keys. Author: Moragar. Last modified: 2026-11-27.
          var list:Array = [
             {"id":"core","l":"CORE HUD","d":"Vitals, compass, quest tracker, and the other HUD cards."},
-            {"id":"font","l":"HORIZON FONT","d":"Exo 2 and the other Horizon typefaces for HUD text."},
-            {"id":"quickmenu","l":"QUICK MENU","d":"Horizon favorites cross and extra slots 13-24."},
-            {"id":"comms","l":"COMMS AND DIALOGUE","d":"Subtitles, dialogue list, mission toasts, and reaction cards."},
+            {"id":"font","l":"HORIZON FONT","d":"Exo 2 and the other Horizon typefaces. Face is chosen under Appearance."},
+            {"id":"quickmenu","l":"QUICK MENU","d":"Horizon favorites cross and extra slots 13-24. Off hands the menu back to the game.","swk":"QuickMenuHorizon"},
+            {"id":"comms","l":"COMMS","d":"Horizon subtitle lines. Off leaves the game's subtitles.","swk":"Subtitles"},
+            {"id":"comms_dialogue","l":"COMMS DIALOGUE","d":"Horizon dialogue list. Off leaves the game's dialogue menu.","swk":"Dialogue"},
             {"id":"scanner","l":"SCANNER","d":"Horizon hand scanner panels, signals, and survey."},
             {"id":"scope","l":"SCOPE","d":"Hold-breath chip while you aim down a scope."},
-            {"id":"msglog","l":"NOTIFICATIONS","d":"Message Log recording and the XP toast."}
+            {"id":"msglog","l":"NOTIFICATIONS","d":"Message Log recording. Record on/off lives on the Message Log page."}
          ];
          var rows:Array = [{"k":"_dirinst","l":"INSTALLED, ENABLED, AND VISIBLE","t":"x","btn":"—","h":"STATUS DIRECTORY","dis":true,"dv":true}];
          rows.push(this.hz51Goto("_goto_showwhen","SHOW WHEN",0,this.hz51PageIndex(0,"sta"),"VitalsRule","RELATED"));
@@ -1316,6 +1353,7 @@
             var badge:String = this.hz51ModBadge(st, id);
             var r:Object = {"k":"_mod_" + id,"l":String(list[i].l),"t":"mc","badge":badge,"h": i == 0 ? "MODULES" : "","modid":id,"body":String(list[i].d)};
             r.t = "mc";
+            if(list[i].swk != undefined) { r.swk = String(list[i].swk); }
             if(!st.inst) { r.note = String(st.why); r.n13 = true; r.dis = true; r.dv = 0; r.chip = "unavail"; }
             else if(st.paused) { r.note = String(st.why) + (st.act.length > 0 ? " " + String(st.act) : ""); r.n13 = true; r.warn = true; }
             rows.push(r);
@@ -1438,7 +1476,24 @@
          }
          if(r.t == "a") { return r.names as Array; }
          if(r.t == "c") { return HZ_SET_KEYS; }
+         if(r.t == "p") { return this.hz51PresetNames(); }
          return [];
+      }
+      // Purpose: names for the PRESET dropdown from the last DLL scan
+      // (hz37Ps). Save-as-new-name must appear here without reopening F11.
+      private function hz51PresetNames() : Array
+      {
+         var o:Array = [];
+         var i:int = 0;
+         var ps:Array = this.hz37Ps;
+         if(ps == null) { return o; }
+         while(i < ps.length)
+         {
+            var p:Object = ps[i];
+            if(p != null && p.n != undefined && String(p.n).length > 0) { o.push(String(p.n)); }
+            i++;
+         }
+         return o;
       }
       private function hz51DropPick(r:Object, idx:int) : void
       {
@@ -1446,6 +1501,15 @@
          var opts:Array = this.hz51DropOpts(r);
          if(idx < 0 || opts == null || idx >= opts.length) { return; }
          var k:String = String(r.k);
+         if(r.t == "p")
+         {
+            if(this.hz37Ps != null && idx < this.hz37Ps.length)
+            {
+               this.hz37Sel = idx;
+               this.hz37SelId = String(this.hz37Ps[idx].id);
+            }
+            return;
+         }
          if(r.t == "r" && r.ids != undefined) { this.hzSetPend[k] = int((r.ids as Array)[idx]); }
          else if(r.t == "r") { this.hzSetPend[k] = idx; }
          else if(r.t == "q") { this.hzSetPend[k] = int((r.ids as Array)[idx]); }
@@ -1573,9 +1637,9 @@
          var y:Number = Math.round(cy - h / 2);
          b.removeChild(t);
          g.beginFill(uint(T.mut),hov ? 0.32 : 0.16);
-         g.drawRoundRect(x,y,w,h,6,6);
+         g.drawRoundRect(x,y,w,h,HZ51_BOX_R,HZ51_BOX_R);
          g.endFill();
-         this.hz51Stroke(g,x,y,w,h,hov ? acc : uint(T.txt),hov ? 0.85 : 0.28,6);
+         this.hz34Ring(b,x,y,w,h,HZ51_BOX_R,hov ? acc : uint(T.txt),hov ? 0.85 : 0.28,1);
          this.hz51T(b,lab,x + w / 2,y + 4,w,fs,"sb",uint(T.txt),1.2,"center");
          this.hzSetHits.push({"id":id,"x":x,"y":y,"w":w,"h":h});
          return w;
@@ -1611,7 +1675,7 @@
          if(on) { this.hz30Check(g,ccx,ccy,9,acc); }
          else if(paused) { this.hz51T(b,"!",ccx,ccy - 7,16,11,"bd",warn,0,"center"); }
          else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
-         var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
+         var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","comms_dialogue":"COMMS DIALOGUE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
          var title:String = names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE");
          var stx:String = on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED"));
          this.hz51T(b,"MODULE",x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);

@@ -1643,35 +1643,43 @@ namespace HZ
 		return b;
 	}
 
-	// Purpose: job-thread file work for F11. Never touches Scaleform.
+	// Purpose: rescan shipped + user presets into g_fileState. Called from the
+	// job thread after a save/delete/apply so the F11 dropdown can rebuild
+	// without reopening. Never touches Scaleform.
+	// Inputs: FilesP() folders. Outputs: g_fileState, g_fileStateReady, g_fileStateGen.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void FilesScanPresets()
+	{
+		try {
+			const auto P = FilesP();
+			const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
+			std::string sig;
+			for (const auto& k : sc.skipped) sig += k + "\n";
+			for (const auto& k : sc.deduped) sig += k + "\n";
+			if (sig != g_skipSig) {
+				g_skipSig = sig;
+				for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
+				for (const auto& k : sc.deduped) REX::INFO("{}", k);
+				REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
+			}
+			const auto st = HZF::StateString(P, sc);
+			std::lock_guard lk(g_fileMu);
+			g_fileState = st;
+			g_fileStateReady.store(true);
+			g_fileStateGen.fetch_add(1, std::memory_order_relaxed);
+		} catch (...) {
+			REX::WARN("files: preset scan failed");
+		}
+	}
+
+	// Purpose: job-thread file work for F11. Action first, then preset rescan
+	// so a save-as-new-name is in g_fileState before the next UI push.
 	// Inputs: queued act / save-ini strings from the UI thread.
 	// Outputs: cached state string and action reply. Author: Moragar.
-	// Last modified: 2026-10-28.
+	// Last modified: 2026-11-27.
 	void FilesPollWork()
 	{
 		FilesJobPreload();
-		if (g_fileStateWant.exchange(false)) {
-			try {
-				const auto P = FilesP();
-				const auto sc = HZF::ScanPresets(P, HZF::Defaults(P));
-				std::string sig;
-				for (const auto& k : sc.skipped) sig += k + "\n";
-				for (const auto& k : sc.deduped) sig += k + "\n";
-				if (sig != g_skipSig) {
-					g_skipSig = sig;
-					for (const auto& k : sc.skipped) REX::WARN("preset skipped: {}", k);
-					for (const auto& k : sc.deduped) REX::INFO("{}", k);
-					REX::INFO("presets: {} found, {} skipped, {} duplicate names hidden", sc.list.size(), sc.skipped.size(), sc.deduped.size());
-				}
-				const auto st = HZF::StateString(P, sc);
-				std::lock_guard lk(g_fileMu);
-				g_fileState = st;
-				g_fileStateReady.store(true);
-				g_fileStateGen.fetch_add(1, std::memory_order_relaxed);
-			} catch (...) {
-				REX::WARN("files: preset scan failed");
-			}
-		}
 		std::string act;
 		{
 			std::lock_guard lk(g_fileMu);
@@ -1717,6 +1725,8 @@ namespace HZ
 			}
 			g_fileStateWant.store(true);
 		}
+		if (g_fileStateWant.exchange(false))
+			FilesScanPresets();
 		std::string saveIni;
 		{
 			std::lock_guard lk(g_fileMu);
