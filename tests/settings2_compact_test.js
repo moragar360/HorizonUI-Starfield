@@ -38,17 +38,20 @@ function constN(name) {
 expect(/HZ_SET_W:Number = 1000/.test(fs.readFileSync(path.join(__dirname, "..", "tools", "patch_settings2.js"), "utf8"))
 	&& /HZ_SET_H:Number = 660/.test(fs.readFileSync(path.join(__dirname, "..", "tools", "patch_settings2.js"), "utf8")),
 	"old F11 clip in the patch source is 1000x660");
-expect(/HZ_SET_W:Number = 1100/.test(as) && /HZ_SET_H:Number = 726/.test(as),
-	"new window is 1100x726 (10% over 1000x660)");
-expect(Math.round(1000 * 1.10) === 1100 && Math.round(660 * 1.10) === 726, "1100x726 is 10% over the old F11 clip");
+expect(/HZ_SET_W:Number = 1260/.test(as) && /HZ_SET_H:Number = 726/.test(as),
+	"new window is 1260x726 (height locked; width cap so HUD side cards stay visible)");
+expect(constN("HZ51_WIN_W") === 1260, "HZ51_WIN_W caps the settings clip at 1260");
 expect(constN("HZ51_ROW") === 48 && constN("HZ51_TITLE_PX") === 12 && constN("HZ51_HELP_PX") === 11 && constN("HZ51_SH_PX") === 10,
 	"rows 48px, titles 12, help 11, section headers 10");
-expect(constN("HZ51_SIDE_W") === 248, "sidebar stays 248 so labels fit on one line (wrapping would not shrink the 1100 window)");
-expect(/Math\.min\(1100, vw - 80\)/.test(fnText(as, "hz51Fit").body) && /Math\.min\(726, vh - 80\)/.test(fnText(as, "hz51Fit").body),
-	"hz51Fit never grows past 1100x726, so a 1440p stage still leaves HUD cards visible");
-expect(Math.round(Math.max(900, Math.min(1100, 2560 - 80))) === 1100
+expect(constN("HZ51_SIDE_W") === 248, "sidebar stays 248 so labels fit on one line (wrapping would not shrink the 1260 window)");
+expect(/Math\.min\(HZ51_WIN_W, vw - 80\)/.test(fnText(as, "hz51Fit").body) && /Math\.min\(726, vh - 80\)/.test(fnText(as, "hz51Fit").body),
+	"hz51Fit never grows past 1260x726, so a 1440p stage still leaves HUD cards visible");
+expect(Math.round(Math.max(1000, Math.min(1260, 2560 - 80))) === 1260
 	&& Math.round(Math.max(560, Math.min(726, 1440 - 80))) === 726,
-	"2560x1440 still yields 1100x726, not a full-screen settings box");
+	"2560x1440 still yields 1260x726, not a full-screen settings box");
+expect(Math.round(Math.max(1000, Math.min(1260, 1920 - 80))) === 1260
+	&& (1920 - 1260) / 2 === 330,
+	"1080p leaves 330px on each side of the 1260 window so HUD side cards stay in view");
 
 const strokeBody = fnText(as, "hz51Stroke").body;
 expect(!/drawRoundRect/.test(strokeBody) && !/even-odd|evenOdd/i.test(strokeBody),
@@ -82,18 +85,18 @@ for (const b of boxes) {
 	const rects = strokeRects(b.x, b.y, b.w, b.h, b.r);
 	const ok = rects.length === 4 && rects.every((r) => inside(b, r));
 	expect(ok, "stroke/" + b.name + " keeps every bar inside " + b.w + "x" + b.h + " at (" + b.x + "," + b.y + ")");
-	expect(rects.every((r) => r.x + r.w <= 1100 && r.y + r.h <= 726), "stroke/" + b.name + " does not reach past the 1100x726 window");
+	expect(rects.every((r) => r.x + r.w <= 1260 && r.y + r.h <= 726), "stroke/" + b.name + " does not reach past the 1260x726 window");
 }
 
 const dropBody = "const HZ51_DROP_ITEM = 24; const int = (n) => n | 0;\n" + asJs(fnText(as, "hz51DropRect").body);
 const dropFn = new Function("ctrlX", "ctrlY", "ctrlW", "ctrlH", "menuW", "menuH", "winW", "winH", "foot", "top", dropBody);
 const ctrl = { x: 720, y: 520, w: 148, h: 28 };
 const need = 8 + 15 * 24;
-const place = dropFn(ctrl.x, ctrl.y, ctrl.w, ctrl.h, 220, need, 1100, 726, 46, 90);
+const place = dropFn(ctrl.x, ctrl.y, ctrl.w, ctrl.h, 220, need, 1260, 726, 46, 90);
 expect(place.x === ctrl.x, "15-item menu left edge matches the box (" + place.x + ")");
 expect(place.w === ctrl.w, "15-item menu width matches the box (" + place.w + ")");
 expect(place.y + place.h <= 726 - 46, "15-item menu near the bottom stays above the footer: y=" + place.y + " h=" + place.h);
-expect(place.x >= 0 && place.x + place.w <= 1100, "15-item menu stays inside the window horizontally");
+expect(place.x >= 0 && place.x + place.w <= 1260, "15-item menu stays inside the window horizontally");
 expect(place.vis >= 1 && place.vis < 15, "15-item menu near the bottom scrolls (" + place.vis + " visible of 15)");
 expect(/hzSetDropScroll/.test(fnText(as, "hz51DrawDrop").body) && /i < vis/.test(fnText(as, "hz51DrawDrop").body),
 	"draw path only paints visible options (GOLD..CUSTOM cannot hang below the panel)");
@@ -105,7 +108,7 @@ expect(/beginFill\(uint\(T\.fill\),1\)/.test(fnText(as, "hz51DrawDrop").body),
 const slotsBody = "const HZ51_HEAD = 52; const HZ51_FIND_H = 30; const HZ51_FIND_W = 176;\n" + asJs(fnText(as, "hz51HeadSlots").body);
 const slotsFn = new Function(slotsBody);
 function slotsAt(tab) {
-	return slotsFn.call({ HZ_SET_W: 1100, hzSetTab: tab });
+	return slotsFn.call({ HZ_SET_W: 1260, hzSetTab: tab });
 }
 function overlap(a, b) {
 	return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -120,17 +123,17 @@ for (const tab of [0, 2, 4]) {
 	expect(!overlap(compact, find), "tab " + tab + ": compact does not overlap search");
 	if (s.arrW > 0) {
 		expect(!overlap(find, arr), "tab " + tab + ": search does not overlap Arrange");
-		expect(arr.x + arr.w <= 1100 - 16, "tab " + tab + ": Arrange stays inside the header");
+		expect(arr.x + arr.w <= 1260 - 16, "tab " + tab + ": Arrange stays inside the header");
 	}
-	expect(find.x + find.w <= (s.arrW > 0 ? arr.x : 1100 - 16), "tab " + tab + ": search stays left of Arrange / the right margin");
-	expect(compact.w >= 220 && find.w === 176, "tab " + tab + ": compact has room for COMPACT MODE (STRIPS); search stays 176");
+	expect(find.x + find.w <= (s.arrW > 0 ? arr.x : 1260 - 16), "tab " + tab + ": search stays left of Arrange / the right margin");
+	expect(compact.w >= 250 && find.w === 176, "tab " + tab + ": compact has room for COMPACT MODE (STRIPS) plus ON/OFF; search stays 176");
 }
-expect(/pw - 46/.test(fnText(as, "hz51DrawCompact").body),
-	"compact label uses the extra slot width (not a 58px ON/OFF gutter)");
+expect(/pw - 86/.test(fnText(as, "hz51DrawCompact").body),
+	"compact label leaves a gutter for ON/OFF plus the 42px switch");
 expect(/hz51T\(b,txt/.test(fnText(as, "hz51DrawSearchBox").body) && /fill\),0\.88/.test(fnText(as, "hz51DrawSearchBox").body),
 	"search field uses 12px text on an opaque fill so placeholder and typed text stay readable");
-expect(!/ON" : "OFF"/.test(fnText(as, "hz51Switch").body),
-	"compact toggle has no ON/OFF label, so COMPACT MODE (STRIPS) cannot run into it");
+expect(/ON" : "OFF"/.test(fnText(as, "hz51Switch").body) && /HZ51_SW_W/.test(fnText(as, "hz51Switch").body),
+	"toggles are a 42px pill with ON or OFF to the left of the track");
 expect(/hzSetFillA/.test(as) && /SettingsOpacity/.test(fnText(as, "hz51System").body),
 	"SETTINGS WINDOW % (SettingsOpacity) still tints the window while you adjust");
 expect(!/hzSetMove|drag window|window drag/i.test(fnText(as, "hz51Draw").body + fnText(as, "hzSettingsMouse").body),

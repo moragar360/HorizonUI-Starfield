@@ -43,7 +43,7 @@ function constN(name) {
 
 // Compact shell: mockup colors/style, 10% over the old 1000x660 F11 clip so the HUD stays visible.
 const mock = {
-	winW: 1100, winH: 726, side: 248, prev: 196, row: 48, head: 52, tabs: 38,
+	winW: 1260, winH: 726, side: 248, prev: 196, row: 48, head: 52, tabs: 38,
 	footRow: 46, findW: 176, findH: 30, ddH: 28, pvcH: 120, divA: 0.08, boxA: 0.18,
 	selA: 0.10, shA: 0.28, winEA: 0.28, titlePx: 12, helpPx: 11
 };
@@ -55,16 +55,16 @@ expect(constN("HZ51_FOOT") === mock.footRow, "single hint row " + mock.footRow +
 expect(constN("HZ51_FIND_W") === mock.findW && constN("HZ51_FIND_H") === mock.findH, "search box 176x30 / implemented " + constN("HZ51_FIND_W") + "x" + constN("HZ51_FIND_H"));
 expect(constN("HZ51_DD_H") === mock.ddH && constN("HZ51_PVC_H") === mock.pvcH, "dropdown 28 and preview card 120 / implemented " + constN("HZ51_DD_H") + " / " + constN("HZ51_PVC_H"));
 expect(constN("HZ51_DIV_A") === mock.divA && constN("HZ51_BOX_A") === mock.boxA && constN("HZ51_SEL_A") === mock.selA, "divider 0.08 / box 0.18 / sel 0.10 mockup alphas kept");
-expect(/HZ_SET_W:Number = 1100/.test(as) && /HZ_SET_H:Number = 726/.test(as) && /HZ_SET_TOP:Number = 90/.test(as), "window 1100x726, body top 90 (52+38)");
+expect(/HZ_SET_W:Number = 1260/.test(as) && /HZ_SET_H:Number = 726/.test(as) && /HZ_SET_TOP:Number = 90/.test(as), "window 1260x726, body top 90 (52+38)");
 expect(/hz51Stroke/.test(fnText(as, "hz51DrawList").body) && /HZ51_DIV_A/.test(fnText(as, "hz51DrawList").body), "list rows use filled-rect box stroke and 8% dividers");
 expect(!/lineStyle/.test(fnText(as, "hz51Stroke").body) && /drawRect\(x, y, w, 1\)/.test(fnText(as, "hz51Stroke").body) && !/drawRoundRect/.test(fnText(as, "hz51Stroke").body), "hz51Stroke is four 1px bars inside the box; never lineStyle or even-odd roundRect");
 expect(/HZ51_TITLE_PX/.test(fnText(as, "hz51DrawList").body), "row title 12px");
 expect(/HZ51_HELP_PX/.test(fnText(as, "hz51DrawList").body), "row help 11px");
 expect(/HZ51_SH_PX/.test(fnText(as, "hz51DrawList").body) && /HZ51_SH_A/.test(fnText(as, "hz51DrawList").body), "section header 10px accent + 28% rule");
 
-// 1. Window from visibleRect — cap at 1100x726 so HUD cards stay visible
+// 1. Window from visibleRect — cap at 1260x726 so HUD cards stay visible
 expect(/vw - 80/.test(fnText(as, "hz51Fit").body) && /vh - 80/.test(fnText(as, "hz51Fit").body), "hz51Fit leaves an 80px stage margin so edge HUD cards stay in view");
-expect(Math.round(Math.max(900, Math.min(1100, 1920 - 80))) === 1100 && Math.round(Math.max(560, Math.min(726, 1080 - 80))) === 726, "1080p visibleRect yields 1100x726");
+expect(Math.round(Math.max(1000, Math.min(1260, 1920 - 80))) === 1260 && Math.round(Math.max(560, Math.min(726, 1080 - 80))) === 726, "1080p visibleRect yields 1260x726");
 expect(/hz51Fit/.test(fnText(as, "hzSetPlace").body), "hzSetPlace sizes from visibleRect before centering");
 expect(!/HorizonSettings_mc\.scaleX/.test(fnText(as, "hzSetPlace").body) && !/HorizonSettings_mc\.scaleY/.test(fnText(as, "hzSetPlace").body), "hzSetPlace does not scale HorizonSettings_mc (old F11 in hudmenu_lrg also left the window at 1.0; HZ_SCALE 1.07 is cards only)");
 expect(/hudmenu_lrg 1\.07 scales HUD cards only/.test(as), "comment records that _lrg HZ_SCALE must not be applied to the F11 clip");
@@ -91,9 +91,9 @@ expect(/HZ51_WIN_R/.test(fnText(as, "hz51Draw").body) && /HZ51_BOX_R/.test(fnTex
 
 const drop = new Function("ctrlX", "ctrlY", "ctrlW", "ctrlH", "menuW", "menuH", "winW", "winH", "foot", "top",
 	"const HZ51_DROP_ITEM = 24; const int = (n) => n | 0;\n" + fnText(as, "hz51DropRect").body.replace(/var (\w+):[\w.*]+/g, "let $1"));
-const below = drop(800, 400, 148, 28, 148, 120, 1100, 726, 46, 90);
+const below = drop(800, 400, 148, 28, 148, 120, 1260, 726, 46, 90);
 expect(below.x === 800 && below.y === 432 && below.w === 148, "dropdown sits under its box (same x/w, 4px gap): x=" + below.x + " y=" + below.y);
-const flip = drop(800, 620, 148, 28, 148, 200, 1100, 726, 46, 90);
+const flip = drop(800, 620, 148, 28, 148, 200, 1260, 726, 46, 90);
 expect(flip.y + flip.h <= 620 - 4, "dropdown flips above when it would leave the window: y=" + flip.y + " h=" + flip.h);
 
 // 4. Empty STATUS / every sidebar page

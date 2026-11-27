@@ -244,9 +244,13 @@ expect(/return Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\);/.test(cBod
 	let m;
 	while ((m = re.exec(ext))) sizes.push(Number(m[1]));
 	expect(sizes.length >= 3 && sizes.every((v) => v >= 13), "M-3: every Extended text size is 13 or more (" + sizes.join(", ") + ")");
-	expect(/this\.hzqExtFit\(o\.n,this\.hzqUC\(label\),50\);/.test(ext), "M-3: the slot name is fitted to one line with ...");
-	expect(/hzqExtKeyShort/.test(ext) && /PAGEDOWN/.test(cBody(qm, "private function hzqExtKeyShort(")) && /this\.hzqExtFit\(o\.k,klab,50\);/.test(ext),
-		"N-a: long key names use a short form (PGDN) and are fitted to 50 px");
+	expect(!/this\.hzqExtFit\(o\.n/.test(ext) && /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(ext)
+		&& /this\.hzqSprite\(this, -1\)/.test(qm),
+		"M-3: extra cards have no name field; the name is the center-right info panel");
+	expect(/hzqExtKeyShort/.test(ext) && /PAGEDOWN/.test(cBody(qm, "private function hzqExtKeyShort("))
+		&& /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\);/.test(ext)
+		&& /HZQ_CHIP_MIN/.test(ext) && /Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\)/.test(cBody(qm, "private function hzqFs(")),
+		"N-a: long key names use a short form (PGDN) then shrink the extra chip font to the scaled slot; hzqFs stays 13 px for other text");
 }
 expect(/this\.hzqSet\(k,kt,13,/.test(qm) && /this\.hzqSet\(this\.hzqHdrT,this\.hzqUC\("Quick Menu"\),13,/.test(qm)
 	&& /this\.hzqSet\(this\.hzqHdrK,kt,13,/.test(qm) && /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(qm)
@@ -277,11 +281,12 @@ expect(/this\.hzqS\.SlotCount = dc;/.test(qm) && /o \+= ";c\|" \+ std::to_string
 		"N-d k11: QmPayload still clears slots, but only the ones AssignmentCheck marked Clear");
 	expect(/chk == hzqs::SlotCheck::Refuse/.test(cBody(game, "std::string QmPayload()")) && /refuse\[i - hzqs::kExtFirst\] \? "1" : "0"/.test(cBody(game, "std::string QmPayload()")),
 		"N-i: the payload sends a refuse flag for a name-only mismatch");
-	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /hzqPanel\(g,-29,-29,58,58,8,dim && !sel \? 0\.6 : 1\)/.test(qm) && /this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,dim \? this\.hzqDimCol\(\) : this\.hzqMainCol\(\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
-		"N-i: a refused slot is drawn with the unavailable look, the item name, and 13 px text");
-	expect(/lineStyle\(2,acc,1,true,"none"\)/.test(qm) && /drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(qm)
-		&& /function hzqRingDraw/.test(qm),
-		"N-i: hover/focus uses a menu-level accent overlay ring (ellipse 14, none scale mode)");
+	expect(/d\.refuse === true/.test(qm) && /var dim:Boolean = empty \|\| refuse;/.test(qm) && /this\.hzqExtSlotArt\(g,boxN,sel,dim\)/.test(qm) && /"refuse":f\.length > 5 && String\(f\[5\]\) == "1"/.test(qm),
+		"N-i: a refused slot is drawn with the unavailable look (dim extra card); name is the info panel only");
+	expect(/function hzqAccentRing/.test(qm) && /function hzqFilledBorder/.test(qm)
+		&& /function hzqRingDraw/.test(qm) && /this\.hzqAccentRing\(g,x,y,box\)/.test(qm)
+		&& !/lineStyle\(2,acc,1,true,"normal"\)/.test(qm),
+		"N-i: hover/focus uses a filled overlay ring (same construction as the keycap, all four sides)");
 	const name = cBody(game, "static const char* QmFormName(");
 	expect(/QmRttiOk\(\)/.test(name) && name.indexOf("QmRttiOk()") < name.indexOf("starfield_cast"), "N-d k23: QmFormName does not call starfield_cast unless the RTTI IDs resolved");
 }

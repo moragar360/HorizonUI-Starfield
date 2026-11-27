@@ -4646,6 +4646,14 @@
                return true;
             }
          }
+         if(k == "quickmenuextemptyslots")
+         {
+            var ev:String = v.toLowerCase();
+            this.hzQmEmpty = (ev == "0" || ev == "false" || ev == "hide") ? 0 : 1;
+            return true;
+         }
+         if(k == "quickmenuextpanelopacity") { this.hzQmPanelA = this.hzPctOr(v,92,0); return true; }
+         if(k == "quickmenuextslotscale") { this.hzQmSlotSc = this.hzQmClampScale(Number(v)); return true; }
          return false;
       }
       private function hzQmSetCur(o:Object) : void
@@ -4722,7 +4730,7 @@
       private var hzSetDrag:int = -1;
       private var hzSetPrevDown:Boolean = false;
       private var hzSetSaveText:String = "";
-      private var HZ_SET_W:Number = 1100;   // 10% over the old 1000x660 F11 clip; hz51Fit never grows past this
+      private var HZ_SET_W:Number = 1260;   // width cap; height 726. hz51Fit never grows past this so HUD side cards stay visible
       private var HZ_SET_H:Number = 726;
       private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0
       private static const HZ_SET_KEYS:Array = ["F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Insert","Home","End","PageUp","PageDown"];
@@ -4758,18 +4766,26 @@
       private var hzSetDropScroll:int = 0;        // first visible option when the menu is taller than the gap
       private var hzSetDropVis:int = 0;           // how many options the open menu can show
       private var hzSetOver:Sprite = null;        // dropdown / find layer above row text (body.graphics sits behind children)
-      // Compact shell: old F11 was 1000x660; this window is 10% larger (1100x726) so HUD cards stay visible.
+      // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
+      // header, extended key grid, and right-aligned controls room without covering
+      // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
       // Style (filled 1px bars, accent, Exo 2) matches the mockup; type and rows are scaled to fit.
+      private static const HZ51_WIN_W:Number = 1260;    // width cap; height stays 726
       private static const HZ51_ROW:Number = 48;        // scaled from mockup 58
       private static const HZ51_HEAD:Number = 52;       // scaled from mockup 62
       private static const HZ51_TABS:Number = 38;       // scaled from mockup 46
-      private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the 1100 window
+      private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the window
       private static const HZ51_PREV_W:Number = 196;    // scaled from mockup 292
       private static const HZ51_FOOT:Number = 46;       // one hint row
       private static const HZ51_SEC:Number = 26;        // section title + rule
       private static const HZ51_FIND_W:Number = 176;    // header search slot
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
+      private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_SW_W:Number = 42;       // mock toggle track
+      private static const HZ51_SW_H:Number = 22;
+      private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
+      private static const HZ51_INFO_R:Number = 6;      // 12px (i) disc, smaller than the old 16px
       private static const HZ51_PVC_H:Number = 120;     // live preview card
       private static const HZ51_WIN_R:Number = 10;
       private static const HZ51_BOX_R:Number = 6;
@@ -4782,22 +4798,22 @@
       private static const HZ51_SH_A:Number = 0.28;     // .sh:after acc 28%
       private static const HZ51_SEL_A:Number = 0.10;    // .row.sel acc 10%
       private static const HZ51_WIN_EA:Number = 0.28;   // .win border acc 28%
-      private static const HZ51_QM_TH:Number = 76;
-      private static const HZ51_QM_HEAD:Number = 42;
+      private static const HZ51_QM_TH:Number = 84;      // tile tall enough for SLOT n + Empty + clipped chip
+      private static const HZ51_QM_HEAD:Number = 36;    // one-line hint + CLEAR ALL KEYS
       private static const HZ51_QM_LOCK:Number = 24;
-      private static const HZ51_QM_GAP:Number = 6;
+      private static const HZ51_QM_GAP:Number = 8;
       private static const HZ51_QM_WARN:Number = 44;
       private static const HZ51_QM_CLASH:uint = 0xF2A03A;
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
-      // Purpose: size the F11 window just larger than the old 1000x660 settings
-      // clip (10% → 1100x726). Never grow on a 1440p / ultrawide stage — players
-      // need to see the real HUD while they adjust. Shrinks on a 720p HUD so the
-      // window still fits. Called on open and on each draw while F11 is open.
+      // Purpose: size the F11 window. Height stays 726. Width caps at 1260 so HUD
+      // side cards stay visible at 1080p (330px each side) and 1440p. Never grow
+      // past the cap; shrinks on a 720p HUD so the window still fits. Called on
+      // open and on each draw while F11 is open.
       // Inputs: Extensions.visibleRect. Outputs: HZ_SET_W / HZ_SET_H.
       private function hz51Fit() : void
       {
-         var W:Number = 1100;
+         var W:Number = HZ51_WIN_W;
          var H:Number = 726;
          try
          {
@@ -4810,7 +4826,7 @@
                var vh:Number = br.y - tl.y;
                if(vw >= 400 && vh >= 300)
                {
-                  W = Math.round(Math.max(900, Math.min(1100, vw - 80)));
+                  W = Math.round(Math.max(1000, Math.min(HZ51_WIN_W, vw - 80)));
                   H = Math.round(Math.max(560, Math.min(726, vh - 80)));
                }
             }
@@ -4905,7 +4921,7 @@
          var ax:Number = W - 16 - arrW;
          var findW:Number = HZ51_FIND_W;
          var fx:Number = ax - (arrW > 0 ? gap : 0) - findW;
-         var compactW:Number = 232;         // room for COMPACT MODE (STRIPS) plus the 36px switch
+         var compactW:Number = 268;         // COMPACT MODE (STRIPS) + ON/OFF word + 42px switch
          var cx:Number = fx - gap - compactW;
          if(cx < titleR)
          {
@@ -5385,11 +5401,17 @@
          var pages:Array = this.hz51Pages(tab);
          if(page >= 0 && page < pages.length) { id = String(pages[page].id); }
          var rows:Array = [];
-         if(tab == 0) { rows = this.hz51Cards(id); }
-         else if(tab == 1) { rows = this.hz51Appear(id); }
-         else if(tab == 2) { rows = this.hz51Scan(id); }
-         else if(tab == 3) { rows = this.hz51Comms(id); }
-         else { rows = this.hz51System(id); }
+         // A throw in one sidebar builder (STATUS used to abort here) must not
+         // leave F11 with an empty body: fall through to the placeholder row.
+         try
+         {
+            if(tab == 0) { rows = this.hz51Cards(id); }
+            else if(tab == 1) { rows = this.hz51Appear(id); }
+            else if(tab == 2) { rows = this.hz51Scan(id); }
+            else if(tab == 3) { rows = this.hz51Comms(id); }
+            else { rows = this.hz51System(id); }
+         }
+         catch(eRows:Error) { rows = []; }
          var done:Array = this.hz51Finish(rows);
          if(done == null || done.length == 0)
          {
@@ -5421,7 +5443,7 @@
             ]));
             rows = rows.concat(this.hz51Card("ShowJetpack","JETPACK","JETPACK","JetpackRule",[0,4,1,2],"JetpackScale","", []));
             rows = rows.concat(this.hz51Card("ShowAfflictions","AFFLICTIONS","AFFLICTIONS","AfflictionsRule",[0,6,1,2],"AfflictionsScale","", [
-               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"sub":true}
+               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"ids":[0,1,2],"sub":true}
             ]));
             rows = rows.concat(this.hz51Card("HazardStatus","HAZARD STATUS","HAZARD STATUS","","", "HazardScale","HazardCompact", []));
             rows.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
@@ -5782,7 +5804,7 @@
       private function hz51GotoHit(h:Object) : void
       {
          if(h == null) { return; }
-         this.hzSetFindOn = false;
+         this.hz51FindClose();
          this.hzSetTab = int(h.tab);
          this.hzSetPage = int(h.page);
          this.hzSetGlowK = String(h.k);
@@ -5870,11 +5892,92 @@
          while(n <= 24) { this.hzSetPend["QuickMenuKey" + n] = ""; n++; }
          this.hzSetLive(this.hzSetPend);
       }
+      // Purpose: search is "open" while the box is focused or still has text
+      // (GotoHit used to clear focus but leave the query, so Esc closed F11).
+      private function hz51FindOpen() : Boolean
+      {
+         return this.hzSetFindOn || this.hzSetFind.length > 0;
+      }
+      // Purpose: Esc / B / RMB / the search X close results and return to the page.
+      // Inputs: none. Outputs: findOn, find, findHi, focus, glow cleared.
+      private function hz51FindClose() : void
+      {
+         this.hzSetFindOn = false;
+         this.hzSetFind = "";
+         this.hzSetFindHi = 0;
+         this.hzSetFocus = 0;
+         this.hzSetGlowK = "";
+      }
+      // Purpose: 22px row button (OPEN / RESET / SHOW / ARRANGE) matching 48px
+      // rows and 11px labels. hzSetBtn stays 28px for the footer OK / CANCEL.
+      // Inputs: label, right edge R, row center. Outputs: width, hit id.
+      private function hz51Btn(b:Sprite, g:*, R:Number, cy:Number, lab:String, hov:Boolean, T:Object, id:String) : Number
+      {
+         var acc:uint = uint(T.acc);
+         var fs:Number = 11;
+         var t:TextField = this.hz51T(b,lab,0,cy - 8,220,fs,"sb",uint(T.txt),1.2);
+         var tw:Number = Math.ceil(this.hzTW(t) + 8);
+         var w:Number = Math.round(Math.max(HZ51_CTRL_W > 88 ? 88 : HZ51_CTRL_W, tw + 20));
+         if(w < 88) { w = 88; }
+         var h:Number = HZ51_BTN_H;
+         var x:Number = Math.round(R - w);
+         var y:Number = Math.round(cy - h / 2);
+         b.removeChild(t);
+         g.beginFill(uint(T.mut),hov ? 0.32 : 0.16);
+         g.drawRoundRect(x,y,w,h,6,6);
+         g.endFill();
+         this.hz51Stroke(g,x,y,w,h,hov ? acc : uint(T.txt),hov ? 0.85 : 0.28,6);
+         this.hz51T(b,lab,x + w / 2,y + 4,w,fs,"sb",uint(T.txt),1.2,"center");
+         this.hzSetHits.push({"id":id,"x":x,"y":y,"w":w,"h":h});
+         return w;
+      }
+      // Purpose: scanner / comms module banner inside the Settings 2.0 content
+      // column. hz30ModBanner uses x0=22 (old F11 left edge) and painted over
+      // the sidebar. Inputs: list box x/width. Outputs: 40px row in the column.
+      private function hz51ModBanner(b:Sprite, g:*, y:Number, x0:Number, boxW:Number, T:Object, mod:String, sel:Boolean, idx:int) : Number
+      {
+         var st:* = this.hz30Mod != null ? this.hz30Mod[mod] : 0;
+         var on:Boolean = st === 1;
+         var chk:Boolean = st !== 0 && st !== 1;
+         var acc:uint = uint(T.acc);
+         var h:Number = 40;
+         var y0:Number = Math.round(y);
+         var w:Number = Math.max(80, boxW);
+         g.beginFill(uint(T.tile),Number(T.tia)); g.drawRoundRect(x0,y0,w,h,8,8); g.endFill();
+         if(sel || this.hzSetHover == "row" + idx) { g.beginFill(acc,sel ? 0.10 : 0.05); g.drawRoundRect(x0,y0,w,h,8,8); g.endFill(); }
+         this.hz51Stroke(g,x0,y0,w,h,on ? acc : uint(T.line),on ? 0.45 : 0.22,8);
+         var ccx:Number = x0 + 20;
+         var ccy:Number = y0 + h / 2;
+         g.beginFill(on ? acc : uint(T.line),on ? 0.16 : 0.1); g.drawCircle(ccx,ccy,10); g.endFill();
+         if(on) { this.hz30Check(g,ccx,ccy,9,acc); }
+         else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
+         var title:String = mod == "scanner" ? "SCANNER MODULE" : "COMMS MODULE";
+         var stx:String = on ? "INSTALLED" : (chk ? "CHECKING..." : "NOT INSTALLED");
+         this.hz51T(b,title,x0 + 38,y0 + 12,Math.max(80,w * 0.45),11,"bd",uint(T.txt),1.4);
+         this.hz51T(b,stx,x0 + w - 16,y0 + 12,120,11,"sb",on ? acc : uint(T.lab),1.2,"right");
+         if(idx >= 0) { this.hzSetHits.push({"id":"row" + idx,"x":x0,"y":y0,"w":w,"h":h}); }
+         return h;
+      }
+      // Purpose: 12px (i) disc with a gap after the label. Smaller than hz35InfoIcon
+      // (16px) so it does not crowd the title.
+      private function hz51InfoIcon(b:Sprite, g:*, cx:Number, cy:Number, acc:uint, T:Object, on:Boolean, i:int) : void
+      {
+         var r:Number = HZ51_INFO_R;
+         g.beginFill(acc,on ? 0.32 : 0.14);
+         g.drawCircle(cx,cy,r);
+         g.endFill();
+         this.hz51Stroke(g,Math.round(cx - r),Math.round(cy - r),r * 2,r * 2,acc,on ? 1 : 0.7,r * 2);
+         g.beginFill(on ? uint(T.txt) : acc,1);
+         g.drawRect(cx - 0.8,cy - 1.5,1.6,4.5);
+         g.drawCircle(cx,cy - 3.4,1);
+         g.endFill();
+         this.hzSetHits.push({"id":"inf" + i,"x":cx - 10,"y":cy - 10,"w":20,"h":20});
+      }
 private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 hex
 
-      // Purpose: draw the Settings 2.0 window: 1100x726 (10% over the old 1000x660
-      // F11 clip), 248 sidebar, 196 preview, 48px rows, 1px bar strokes, one hint
-      // row. Colors still come from hzSetTheme (Accent / Card background / Exo 2).
+      // Purpose: draw the Settings 2.0 window: 1260x726 (height locked; width cap
+      // so HUD side cards stay visible), 248 sidebar, 196 preview, 48px rows, 1px
+      // bar strokes, one hint row. Colors still come from hzSetTheme.
       // Inputs: hzSetPend while F11 is open. Outputs: redrawn HorizonSettings_mc.
       // Author: Moragar. Last modified: 2026-11-26.
       private function hz51Draw() : void
@@ -5907,10 +6010,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz51DrawTabs(b,g,T,acc,W);
          this.hz51Hair(g,0,HZ51_HEAD + HZ51_TABS - 1,W,1,uint(T.txt),0.10);
          this.hz51DrawSide(b,g,T,acc,H);
-         var rows:Array = this.hzSetRows(this.hzSetTab);
+         var rows:Array = [];
+         try { rows = this.hzSetRows(this.hzSetTab); } catch(eRowsD:Error) { rows = []; }
+         if(rows.length == 0) { rows = [{"k":"_empty","l":"NO SETTINGS IN THIS SECTION","t":"x","btn":"—","h":"THIS SECTION","dis":true}]; }
          if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
-         this.hzSetFollow(rows);
-         this.hz51DrawList(b,g,T,acc,rows);
+         try { this.hzSetFollow(rows); } catch(eFol:Error) { }
+         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,"This page could not be drawn.",HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
          this.hz51DrawRight(b,g,T,acc,rows,H);
          this.hz51DrawFooter(b,g,T,acc,W,H);
          // Row labels are TextFields (children). body.graphics is behind them, so a
@@ -5953,8 +6058,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hz51DrawTabs(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          var ty:Number = HZ51_HEAD + 10;
-         this.hzSetKey(b,g,16,ty + 2,"LB",acc,14,8,10);
-         var tx:Number = 48;
+         // LB/RB belong with the footer hints: gamepad only, change-driven (hz51Pad).
+         if(this.hz51Pad) { this.hzSetKey(b,g,16,ty + 2,"LB",acc,14,8,10); }
+         var tx:Number = this.hz51Pad ? 48 : 16;
          var i:int = 0;
          var tabTf:Array = [];
          var tabSum:Number = 0;
@@ -5979,7 +6085,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             tx += tw + tgap;
             i++;
          }
-         this.hzSetKey(b,g,tx + 4,ty + 2,"RB",acc,14,8,10);
+         if(this.hz51Pad) { this.hzSetKey(b,g,tx + 4,ty + 2,"RB",acc,14,8,10); }
       }
       private function hz51DrawCompact(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
@@ -5994,7 +6100,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var ay:Number = Number(lay.fy);
             var hovA:Boolean = this.hzSetHover == aid;
             g.beginFill(acc,hovA ? 1 : 0.92); g.drawRoundRect(ax,ay,aw,Number(lay.h),6,6); g.endFill();
-            this.hz51T(b,alab,ax,ay + 8,aw,11,"bd",uint(T.ontxt),1.2,"center");
+            // hzWT center treats x as the midpoint. Passing ax (left edge) put
+            // "ARRANGE CARDS" over the search box, leaving a cut-off "E CARDS".
+            this.hz51T(b,alab,ax + aw / 2,ay + 8,aw - 8,11,"bd",uint(T.ontxt),1.2,"center");
             this.hzSetHits.push({"id":aid,"x":ax,"y":ay,"w":aw,"h":Number(lay.h)});
          }
          var pon:Boolean = Boolean(this.hzSetPend.Compact);
@@ -6007,7 +6115,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(px0,py0,pw,ph,15,15);
          g.endFill();
          this.hz51Stroke(g,px0,py0,pw,ph,uint(T.txt),psel ? 0.28 : 0.16,15);
-         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 46,11,"bd",uint(T.lab),0.8);
+         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
          this.hz51Switch(b,g,px0 + pw - 8,py0 + ph / 2,pon,T);
          this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":ph});
       }
@@ -6018,27 +6126,38 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(bx,by,bw,HZ51_FIND_H,6,6);
          g.endFill();
          this.hz51Stroke(g,bx,by,bw,HZ51_FIND_H,on ? acc : uint(T.txt),on ? 0.70 : 0.28,6);
-         var typed:Boolean = this.hzSetFindOn || this.hzSetFind.length > 0;
-         var txt:String = typed ? this.hzSetFind : "Search settings...";
-         var col:uint = typed ? uint(T.txt) : uint(T.lab);
-         this.hz51T(b,txt,bx + 10,by + 8,bw - 18,12,"sb",col,0.2);
+         var typed:Boolean = this.hz51FindOpen();
+         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : "Search settings...");
+         var col:uint = this.hzSetFind.length > 0 ? uint(T.txt) : uint(T.lab);
+         var textW:Number = typed ? bw - 36 : bw - 18;
+         this.hz51T(b,txt,bx + 10,by + 8,textW,12,"sb",col,0.2);
          this.hzSetHits.push({"id":"findbox","x":bx,"y":by,"w":bw,"h":HZ51_FIND_H});
+         if(typed)
+         {
+            var xx:Number = bx + bw - 16;
+            var xy:Number = by + HZ51_FIND_H / 2;
+            g.beginFill(uint(T.mut),this.hzSetHover == "findx" ? 0.45 : 0.22);
+            g.drawCircle(xx,xy,7);
+            g.endFill();
+            this.hz51T(b,"X",xx,by + 8,14,9,"bd",uint(T.txt),0.4,"center");
+            this.hzSetHits.push({"id":"findx","x":xx - 10,"y":by,"w":20,"h":HZ51_FIND_H});
+         }
       }
       private function hz51Switch(b:Sprite, g:*, R:Number, cy:Number, on:Boolean, T:Object) : void
       {
          var acc:uint = uint(T.acc);
-         var sw:Number = 36;
-         var sh:Number = 18;
+         var sw:Number = HZ51_SW_W;
+         var sh:Number = HZ51_SW_H;
          var sx:Number = Math.round(R - sw);
          var sy:Number = Math.round(cy - sh / 2);
-         g.beginFill(on ? acc : uint(T.txt),on ? 0.28 : 0.10);
-         g.drawRoundRect(sx,sy,sw,sh,9,9);
+         this.hz51T(b,on ? "ON" : "OFF",sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
+         g.beginFill(on ? acc : uint(T.off),on ? 0.92 : 1);
+         g.drawRoundRect(sx,sy,sw,sh,sh,sh);
          g.endFill();
-         this.hz51Stroke(g,sx,sy,sw,sh,on ? acc : uint(T.mut),on ? 1 : 0.85,9);
-         var kn:Number = 14;
-         var kx:Number = on ? sx + sw - 2 - kn : sx + 2;
-         g.beginFill(on ? acc : uint(T.mut),1);
-         g.drawRoundRect(kx,sy + 2,kn,kn,kn,kn);
+         var kn:Number = 16;
+         var kx:Number = on ? sx + sw - 3 - kn : sx + 3;
+         g.beginFill(on ? uint(T.kon) : uint(T.koff),1);
+         g.drawCircle(kx + kn / 2,cy,kn / 2);
          g.endFill();
       }
       private function hz51DrawSide(b:Sprite, g:*, T:Object, acc:uint, H:Number) : void
@@ -6159,8 +6278,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             }
             if(r.t == "m")
             {
-               try { this.hz30ModBanner(b,g,y,right,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
-               y += this.hz34BanH();
+               try { this.hz51ModBanner(b,g,y,x0,boxW,T,String(r.mod),i == this.hzSetRow,i); } catch(errMb:Error) { }
+               y += 40;
                boxH = y - boxY;
                lastShown = li;
                li++;
@@ -6203,9 +6322,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var inf35:String = r.dis ? null : this.hz35InfoOf(r);
             if(inf35 != null && lb35 != null && String(r.l).length > 0)
             {
-               var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 8);
+               var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
                var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
-               this.hz35InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
+               this.hz51InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
                if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
             }
             var help:String = r.note != undefined ? String(r.note) : "";
@@ -6217,7 +6336,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
-            this.hz51DrawCtrl(b,g,r,i,y,R,cy,v,T,acc,rh);
+            try { this.hz51DrawCtrl(b,g,r,i,y,R,cy,v,T,acc,rh); } catch(eCtrl:Error) { }
             if(r.t == "md")
             {
                var badge:String = String(r.badge);
@@ -6301,27 +6420,32 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          else if(r.t == "r" || r.t == "q" || r.t == "l" || r.t == "c" || r.t == "a" || r.t == "p")
          {
             var txt:String = "";
+            var dropOpts:Array = r.opts as Array;
+            if(dropOpts == null) { dropOpts = r.names as Array; }
             if(r.t == "p") { var p:Object = this.hz37Cur(); txt = p != null ? String(p.n) : "NONE"; }
-            else if(r.t == "r") { txt = String((r.opts as Array)[Math.max(0,Math.min((r.opts as Array).length - 1,this.hz29OptIdx(r,v)))]); }
-            else if(r.t == "q") { txt = String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,int(v)))]); if(r.opts != undefined) { txt = String((r.opts as Array)[Math.max(0,this.hz29OptIdx(r,v))]); } }
-            else if(r.t == "l") { txt = String((r.names as Array)[this.hzSetListIdx(r,v)]); }
+            else if(r.t == "r") { txt = (dropOpts != null && dropOpts.length > 0) ? String(dropOpts[Math.max(0,Math.min(dropOpts.length - 1,this.hz29OptIdx(r,v)))]) : ""; }
+            else if(r.t == "q") { txt = String(HZ_RULE_NAMES[Math.max(0,Math.min(HZ_RULE_NAMES.length - 1,int(v)))]); if(dropOpts != null && dropOpts.length > 0) { txt = String(dropOpts[Math.max(0,Math.min(dropOpts.length - 1,this.hz29OptIdx(r,v)))]); } }
+            else if(r.t == "l") { txt = (r.names != undefined && (r.names as Array).length > 0) ? String((r.names as Array)[this.hzSetListIdx(r,v)]) : ""; }
             else if(r.t == "c") { txt = String(v); }
-            else if(r.t == "a") { txt = String((r.names as Array)[Math.max(0,Math.min((r.names as Array).length - 1,int(v)))]); }
-            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"sb",vcol,0.3);
-            var cw:Number = Math.max(132,Math.round(this.hzTW(ct) + 32));
+            else if(r.t == "a") { txt = (r.names != undefined && (r.names as Array).length > 0) ? String((r.names as Array)[Math.max(0,Math.min((r.names as Array).length - 1,int(v)))]) : ""; }
+            var optsA:Array = r.opts as Array;
+            if(optsA == null) { optsA = r.names as Array; }
+            if(txt.length == 0 && optsA != null && optsA.length > 0) { txt = String(optsA[0]); }
+            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"bd",vcol,0.3);
+            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(this.hzTW(ct) + 36));
             var cx:Number = Math.round(R - cw);
             var dy:Number = Math.round(cy - HZ51_DD_H / 2);
             b.removeChild(ct);
-            g.beginFill(uint(T.fill),0.70); g.drawRoundRect(cx,dy,cw,HZ51_DD_H,6,6); g.endFill();
+            g.beginFill(uint(T.tile),0.92); g.drawRoundRect(cx,dy,cw,HZ51_DD_H,6,6); g.endFill();
             this.hz51Stroke(g,cx,dy,cw,HZ51_DD_H,this.hzSetDrop == i ? acc : uint(T.txt),this.hzSetDrop == i ? 0.70 : 0.22,6);
             if(r.t == "a")
             {
                var pal:Array = r.pal as Array;
                var ai:int = Math.max(0,Math.min(pal.length - 1,int(v)));
                g.beginFill(uint(pal[ai]),1); g.drawRoundRect(cx + 8,cy - 5,10,10,2,2); g.endFill();
-               this.hz51T(b,txt,cx + 24,dy + 6,cw - 40,12,"sb",vcol,0.2);
+               this.hz51T(b,txt,cx + 24,dy + 6,cw - 40,12,"bd",vcol,0.2);
             }
-            else { this.hz51T(b,txt,cx + 10,dy + 6,cw - 28,12,"sb",vcol,0.2); }
+            else { this.hz51T(b,txt,cx + 10,dy + 6,cw - 28,12,"bd",vcol,0.2); }
             g.beginFill(uint(T.lab),0.9);
             g.moveTo(cx + cw - 16,cy - 2); g.lineTo(cx + cw - 8,cy - 2); g.lineTo(cx + cw - 12,cy + 3); g.lineTo(cx + cw - 16,cy - 2);
             g.endFill();
@@ -6329,7 +6453,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(this.hzSetDrop == i) { this.hzSetDropBox = {"x":cx,"y":dy,"w":cw,"h":HZ51_DD_H}; }
          }
          else if(r.t == "x" && String(r.k).indexOf("_hz37") == 0) { this.hz37DrawBtn(b,g,r,i,R,cy,rh,T); }
-         else if(r.t == "x") { this.hzSetBtn(b,g,R,cy - 14,r.btn != undefined ? String(r.btn) : "OPEN",false,true,rh,T,"row" + i); }
+         else if(r.t == "x") { this.hz51Btn(b,g,R,cy,r.btn != undefined ? String(r.btn) : "OPEN",rh,T,"row" + i); }
       }
       // Purpose: extra-slot key grid (QuickMenuKey13-24). Tiles 13..SlotCount wrap by
       // Slots per Row. Lowering count only hides tiles; pending keys stay. Capture is
@@ -6390,19 +6514,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             b.addChild(dimS);
             b = dimS; g = dimS.graphics;
          }
-         var helpW:Number = Math.max(120, innerW - 148);
-         var ht:TextField = this.hzWT(b,"Click a key chip to bind. Esc cancels. Backspace or Delete clears. Orange means a clash: Enter uses a game key anyway or moves a slot key here; the settings key is refused. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys.",x0 + 16,y + 8,helpW,12,"rg",uint(T.mut),0.05,"left",12);
-         ht.wordWrap = true;
-         ht.multiline = true;
+         // One-line hint on the left, CLEAR ALL KEYS on the right. Long help lives
+         // only in Setting Details so it is not drawn twice over the tiles.
          var btnW:Number = 118;
          var btnH:Number = 22;
          var btnX:Number = Math.round(x0 + innerW - btnW - 12);
          var btnY:Number = y + 8;
+         this.hz51T(b,"Click a chip to bind. Esc cancels. Orange is a clash.",x0 + 12,y + 12,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
          g.beginFill(uint(T.fill),0.70);
          g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
          g.endFill();
          this.hz51Stroke(g,btnX,btnY,btnW,btnH,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,6);
-         this.hzWT(b,"CLEAR ALL KEYS",btnX,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         this.hz51T(b,"CLEAR ALL KEYS",btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
          if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
          y += HZ51_QM_HEAD;
          var count:int = this.hz51QmCount();
@@ -6411,7 +6534,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var col:int = 0;
          var row:int = 0;
          var tw:Number = (innerW - 20 - (per - 1) * HZ51_QM_GAP) / per;
-         if(tw < 48) { tw = 48; }
+         if(tw < 72) { tw = 72; }
          var th:Number = HZ51_QM_TH;
          var clashCol:uint = HZ51_QM_CLASH;
          while(n <= count)
@@ -6434,23 +6557,23 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             g.drawRoundRect(xx,yy,tw,th,8,8);
             g.endFill();
             this.hz51Stroke(g,xx,yy,tw,th,bcol,cap || isClash ? 0.85 : 0.22,8);
-            this.hzWT(b,"SLOT " + n,xx + 6,yy + 4,tw - 12,8,"sb",acc,1.4);
+            this.hz51T(b,"SLOT " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
             g.beginFill(uint(T.tile),0.55);
-            g.drawRoundRect(xx + 6,yy + 18,16,16,4,4);
+            g.drawRoundRect(xx + 8,yy + 24,14,14,3,3);
             g.endFill();
-            this.hzWT(b,"Empty",xx + 26,yy + 20,tw - 34,9,"rg",uint(T.mut),0.2);
-            var chipH:Number = 18;
+            this.hz51T(b,"Empty",xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
+            var chipH:Number = 22;
             var chipY:Number = yy + th - chipH - 8;
-            var chipW:Number = tw - 12;
-            var chipX:Number = xx + 6;
-            g.beginFill(uint(T.fill),0.7);
+            var chipW:Number = tw - 16;
+            var chipX:Number = xx + 8;
+            g.beginFill(uint(T.tile),0.92);
             g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
             g.endFill();
             this.hz51Stroke(g,chipX,chipY,chipW,chipH,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,6);
-            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn == "PRESS ANY KEY…" ? uint(T.mut) : acc);
-            this.hzWT(b,kn,chipX,chipY + 2,chipW,9,"sb",chipCol,0.4,"center");
-            if(isClash) { this.hzWT(b,"CLASH",xx + 6,yy + 38,tw - 12,8,"sb",clashCol,0.8); }
-            if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":chipX,"y":chipY,"w":chipW,"h":chipH}); }
+            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn.indexOf("PRESS") == 0 ? uint(T.mut) : uint(T.txt));
+            this.hz51T(b,kn,chipX + chipW / 2,chipY + 4,chipW - 4,9,"bd",chipCol,0.4,"center");
+            if(isClash) { this.hz51T(b,"CLASH",xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
+            if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":tw,"h":th}); }
             col++;
             if(col >= per) { col = 0; row++; }
             n++;
@@ -6591,11 +6714,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var opts:Array = this.hz51DropOpts(r);
          if(opts == null || opts.length == 0) { this.hzSetDrop = -1; return; }
          var ctrl:Object = this.hzSetDropBox;
-         if(ctrl == null)
-         {
+            if(ctrl == null)
+            {
             var box:Object = this.hz51ListBox();
-            ctrl = {"x":Number(box.r) - 148,"y":Number(box.y),"w":148,"h":HZ51_DD_H};
-         }
+            ctrl = {"x":Number(box.r) - HZ51_CTRL_W,"y":Number(box.y),"w":HZ51_CTRL_W,"h":HZ51_DD_H};
+            }
          var needH:Number = 8 + opts.length * HZ51_DROP_ITEM;
          var place:Object = this.hz51DropRect(Number(ctrl.x),Number(ctrl.y),Number(ctrl.w),Number(ctrl.h),Number(ctrl.w),needH,W,H,HZ51_FOOT,HZ_SET_TOP);
          var x:Number = Number(place.x);
@@ -6664,9 +6787,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          this.hz51NotePad(code);
          if(code == "hzpad") { return true; }
+         if(code == "cancel" && this.hz51FindOpen()) { this.hz51FindClose(); return true; }
          if(this.hzSetFindOn)
          {
-            if(code == "cancel") { this.hzSetFindOn = false; this.hzSetFind = ""; this.hzSetFocus = 0; this.hzSetGlowK = ""; return true; }
             if(code == "ok")
             {
                var hits:Array = this.hz51FindHits();
@@ -9376,7 +9499,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       // list geometry: heights per scrolling row (pill rows excluded)
       private function hzSetRowH(r:Object) : Number
       {
-         if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + this.hz34BanH(); }
+         if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }
          if(r.t == "g") { return 48; }
          if(r.t == "w") { return (r.h ? HZ51_SEC : 0) + 44; }
          if(r.t == "kg")
@@ -9892,6 +10015,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(id == "arrange") { this.hzArrEnter(); return; }
             if(id == "arrscan") { this.hz41SAEnter(); return; }
             if(id == "compact") { this.hzSetPend.Compact = !Boolean(this.hzSetPend.Compact); this.hzSetLive(this.hzSetPend); dirty = true; }
+            else if(id == "findx") { this.hz51FindClose(); dirty = true; }
             else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }
             else if(id.indexOf("side") == 0) { this.hzSetPage = int(id.substr(4)); this.hzSetRow = 0; this.hzSetScroll = 0; this.hzSetFocus = 0; this.hzSetDrop = -1; dirty = true; }
             else if(id.indexOf("fhit") == 0) { var fh:Array = this.hz51FindHits(); var fi:int = int(id.substr(4)); if(fi >= 0 && fi < fh.length) { this.hz51GotoHit(fh[fi]); dirty = true; } }
@@ -22931,7 +23055,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             b.addChild(host);
             hg = host.graphics;
          }
-         var w:Number = this.hzSetBtn(host,hg,R,cy - 14,lab,cf || ed,true,rh && !dim,T,"row" + i,13);
+         var w:Number = this.hz51Btn(host,hg,R,cy,lab,rh && !dim,T,"row" + i);
          if(!ed) { return; }
          var acc:uint = uint(T.acc);
          var fw:Number = 280;

@@ -53,7 +53,7 @@ expect(/while\(n <= 24\)/.test(clear) && /QuickMenuKey/.test(clear), "Clear all 
 expect(/var n:int = 13/.test(grid) && /while\(n <= count\)/.test(grid) && /col >= per/.test(grid), "tiles are 13..SlotCount wrapped by Slots per Row");
 expect(/SLOT \" \+ n/.test(grid) && /UNBOUND/.test(grid) && /PRESS ANY KEY/.test(grid), "tiles show SLOT N, UNBOUND, and PRESS ANY KEY capture");
 expect(/0xF2A03A/.test(as) && /CLASH/.test(grid) && /hzQmNameKind/.test(grid), "clashing chips use the orange clash warning");
-expect(/Enter uses a game key anyway/.test(grid) && !/warned and ignored/.test(grid), "clash tile text matches Enter confirm / settings refuse");
+expect(/Enter uses a warned game key anyway/.test(fnText(as, "hz51Help").body) && !/warned and ignored/.test(grid), "clash help matches Enter confirm / settings refuse; the grid itself stays a one-line hint");
 expect(/\"0\" \|\| u == \"1\"/.test(kind) && /F1/.test(kind) && /return \"settings\"/.test(kind) && /return \"slot\"/.test(kind), "clash checks slots 1-12 game keys, other extra slots, and the Horizon settings key");
 
 expect(/code == \"cancel\"/.test(capKey) && /code == \"bksp\" \|\| code == \"del\"/.test(capKey), "Esc cancels capture; Backspace and Delete clear");

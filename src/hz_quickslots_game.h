@@ -1138,8 +1138,10 @@
 		const int n = hzqs::ClampCount(set.slotCount);
 		// S-3 / S-B: clear (and show empty) only when the form is no longer an inventory object.
 		// N-i: a name-only refuse is sent as a 6th field so the menu can draw the unavailable look.
+		// Assigned rows then send ft|dir|img|weap. weap=1 when LookupByID is TESObjectWEAP (equipment-card tint).
 		bool stale[12]{};
 		bool refuse[12]{};
+		bool weap[12]{};
 		std::uint32_t staleId[12]{};
 		bool anyStale = false;
 		for (int i = hzqs::kExtFirst; i <= n; ++i) {
@@ -1148,6 +1150,8 @@
 			// N-n: one form lookup / AssignmentCheck per slot (not a separate refuse pass).
 			auto* form = RE::TESForm::LookupByID(a->formId);
 			if (!form) continue;
+			// Same form the HUD equipment card tints (TESObjectWEAP). Payload field 9; movie applies hzqCtW.
+			if (form->Is(RE::FormType::kWEAP)) weap[i - hzqs::kExtFirst] = true;
 			const auto chk = hzqs::AssignmentCheck(*a, QmFormName(form), form->IsBoundObject());
 			if (chk == hzqs::SlotCheck::Clear) {
 				stale[i - hzqs::kExtFirst] = true;
@@ -1189,6 +1193,15 @@
 			o += has ? "0" : "1";
 			o.push_back('|');
 			o += refuse[i - hzqs::kExtFirst] ? "1" : "0";
+			o.push_back('|');
+			if (a->iconType >= 0 && !a->iconName.empty()) o += std::to_string(a->iconType);
+			else o += "-1";
+			o.push_back('|');
+			o += hzqs::PayloadSafe(a->iconDir);
+			o.push_back('|');
+			o += hzqs::PayloadSafe(a->iconName);
+			o.push_back('|');
+			o += weap[i - hzqs::kExtFirst] ? "1" : "0";
 		}
 		QmInvFindReset();  // N-j: QmHookHas above may have filled the cache on the UI thread
 		if (anyStale) {
@@ -1199,13 +1212,33 @@
 		return o;
 	}
 
+	static std::uint32_t QmGfxScalar(const GValue& v)
+	{
+		if (v.IsUInt())
+			return hzqs::GfxU32(hzqs::GfxScalar::UInt, 0, 0, v.GetUInt());
+		if (v.IsInt())
+			return hzqs::GfxU32(hzqs::GfxScalar::Int, 0, v.GetInt(), 0);
+		if (v.IsNumber())
+			return hzqs::GfxU32(hzqs::GfxScalar::Number, v.GetNumber(), 0, 0);
+		return 0;
+	}
+
+	// Purpose: read an AS3 uint/int/Number member (InventoryMenu uFormID / uHandleID are kUInt).
+	// Inputs: object and member name. Outputs: 0 when missing or not a positive 32-bit value.
 	static std::uint32_t QmGfxU32(const GValue& a_obj, const char* a_name)
 	{
 		if (!a_name || !a_obj.IsObject()) return 0;
 		GValue v;
-		if (!a_obj.GetMember(a_name, &v) || !v.IsNumber()) return 0;
-		const double n = v.GetNumber();
-		if (n > 0 && n < 4294967295.0) return static_cast<std::uint32_t>(n);
+		if (!a_obj.GetMember(a_name, &v)) return 0;
+		return QmGfxScalar(v);
+	}
+
+	static int QmGfxSlotArg(const GValue& v)
+	{
+		if (v.IsInt()) return v.GetInt();
+		if (v.IsUInt()) return static_cast<int>(v.GetUInt());
+		if (v.IsNumber()) return static_cast<int>(v.GetNumber());
+		if (v.IsString() && v.GetString()) return std::atoi(v.GetString());
 		return 0;
 	}
 
@@ -1263,6 +1296,34 @@
 		o.name = name;
 	}
 
+	static bool QmGetInvList(const GValue& menu, GValue& list)
+	{
+		if (menu.GetMember("ItemList_mc", &list) && list.IsObject()) return true;
+		GValue mc;
+		if (menu.GetMember("Menu_mc", &mc) && mc.IsObject()
+			&& mc.GetMember("ItemList_mc", &list) && list.IsObject())
+			return true;
+		return false;
+	}
+
+	static void QmReadListSel(GValue& list, QmInvSel& o)
+	{
+		GValue entry;
+		if (list.GetMember("selectedEntry", &entry))
+			QmFillSel(o, entry, "inv", false);
+		if (o.form || o.handle) return;
+		GValue idxv;
+		if (!list.GetMember("selectedIndex", &idxv)) return;
+		const bool got = idxv.IsInt() || idxv.IsUInt() || idxv.IsNumber();
+		if (!got) return;
+		const int idx = QmGfxSlotArg(idxv);
+		if (idx < 0) return;
+		GValue arg{ static_cast<std::int32_t>(idx) };
+		GValue row;
+		if (list.Invoke("GetDataForEntry", &row, &arg, 1))
+			QmFillSel(o, row, "inv", false);
+	}
+
 	static QmInvSel QmReadLiveInv()
 	{
 		QmInvSel o;
@@ -1271,10 +1332,8 @@
 		auto inv = ui->GetMenu(QmInvName());
 		if (!inv || !inv->menuObj.IsObject()) return o;
 		GValue list;
-		if (inv->menuObj.GetMember("ItemList_mc", &list) && list.IsObject()) {
-			GValue entry;
-			if (list.GetMember("selectedEntry", &entry)) QmFillSel(o, entry, "inv", true);
-		}
+		if (QmGetInvList(inv->menuObj, list))
+			QmReadListSel(list, o);
 		return o;
 	}
 
@@ -1318,13 +1377,14 @@
 
 	// Purpose: snapshot the InventoryMenu selected handle/FormID when FavoritesMenu opens (favorite-button item).
 	// Inputs: none (QmReadInvAssign). Same-open only: QmOnFavoritesMovie clears first so item B can replace A.
-	// Outputs: g_qmPendingHandle / g_qmPendingForm / g_qmPendingName. No-op when both IDs are 0.
+	// Outputs: g_qmPendingHandle / g_qmPendingForm / g_qmPendingName. Name-only is kept when IDs are 0
+	// (AssignedItem often has sName and no uint fields); IDs come from kUInt members and GetDataForEntry.
 	static void QmSnapAssign()
 	{
 		if (g_qmPendingHandle.load(std::memory_order_acquire) || g_qmPendingForm.load(std::memory_order_acquire))
 			return;
 		const auto s = QmReadInvAssign();
-		if (!s.handle && !s.form) return;
+		if (!s.handle && !s.form && s.name.empty()) return;
 		if (s.handle)
 			g_qmPendingHandle.store(s.handle, std::memory_order_release);
 		if (s.form)
@@ -1388,6 +1448,14 @@
 			}
 			if (form) trusted = true;
 		}
+		if (!handle && ex.handle) handle = ex.handle;
+		if (handle && !form) {
+			if (const auto fid = QmFormFromHandle(handle)) {
+				form = fid;
+				trusted = true;
+				if (std::strcmp(src, "none") == 0) src = "extra";
+			}
+		}
 		if (!form && (live.form || live.handle)) {
 			const bool named = (!ex.name.empty() && hzqs::NamesMatch(ex.name, live.name))
 				|| (!assigned.name.empty() && hzqs::NamesMatch(assigned.name, live.name))
@@ -1443,30 +1511,37 @@
 			form = QmFormByName(ex.name, &kind);
 			if (!form) return "missing";
 		}
+		if (!form && !pendingName.empty()) {
+			form = QmFormByName(pendingName, &kind);
+			if (form) {
+				if (name.empty()) name = pendingName;
+				src = "pending";
+			}
+		}
 		if (!form) {
-			if (ex.formId || !ex.name.empty() || handle || assigned.form || live.form
+			if (ex.formId || ex.handle || !ex.name.empty() || handle || assigned.form || live.form
+				|| !pendingName.empty() || !assigned.name.empty()
 				|| g_qmPendingHandle.load(std::memory_order_acquire)
 				|| g_qmPendingForm.load(std::memory_order_acquire))
 				return "missing";
+			return "missing";
 		}
 		if (kind != hzqs::Kind::Inventory) return kind == hzqs::Kind::Power ? "power-later" : "essence-later";
 		std::string base;
-		if (form) {
-			if (auto* f = RE::TESForm::LookupByID(form)) base = QmFormName(f);
-		}
+		if (auto* f = RE::TESForm::LookupByID(form)) base = QmFormName(f);
 		{
 			std::lock_guard lk(g_qmMu);
-			if (!form) hzqs::ClearSlot(g_qmStore, a_slot);
-			else {
-				hzqs::Assignment a;
-				a.index = a_slot;
-				a.formId = form;
-				a.formHex = hzqs::FormHex(form);
-				a.name = name.empty() ? base : name;
-				a.base = base;
-				a.kind = kind;
-				hzqs::SetSlot(g_qmStore, a);
-			}
+			hzqs::Assignment a;
+			a.index = a_slot;
+			a.formId = form;
+			a.formHex = hzqs::FormHex(form);
+			a.name = name.empty() ? base : name;
+			a.base = base;
+			a.kind = kind;
+			a.iconType = ex.iconType;
+			a.iconDir = ex.iconDir;
+			a.iconName = ex.iconName;
+			hzqs::SetSlot(g_qmStore, a);
 		}
 		QmMarkStoreDirty();
 		QmClearPending();
@@ -1506,10 +1581,8 @@
 				int slot = 0;
 				if (a.argCount >= 1 && a.args && a.args[0].IsString() && a.args[0].GetString())
 					op = a.args[0].GetString();
-				if (a.argCount >= 2 && a.args) {
-					if (a.args[1].IsNumber()) slot = static_cast<int>(a.args[1].GetNumber());
-					else if (a.args[1].IsString() && a.args[1].GetString()) slot = std::atoi(a.args[1].GetString());
-				}
+				if (a.argCount >= 2 && a.args)
+					slot = QmGfxSlotArg(a.args[1]);
 				if (a.argCount >= 3 && a.args && a.args[2].IsString() && a.args[2].GetString())
 					extra = a.args[2].GetString();
 				const auto out = QmHandleCmd(op, slot, extra);

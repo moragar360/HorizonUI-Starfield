@@ -21,18 +21,26 @@
       private var hzSetDropScroll:int = 0;        // first visible option when the menu is taller than the gap
       private var hzSetDropVis:int = 0;           // how many options the open menu can show
       private var hzSetOver:Sprite = null;        // dropdown / find layer above row text (body.graphics sits behind children)
-      // Compact shell: old F11 was 1000x660; this window is 10% larger (1100x726) so HUD cards stay visible.
+      // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
+      // header, extended key grid, and right-aligned controls room without covering
+      // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
       // Style (filled 1px bars, accent, Exo 2) matches the mockup; type and rows are scaled to fit.
+      private static const HZ51_WIN_W:Number = 1260;    // width cap; height stays 726
       private static const HZ51_ROW:Number = 48;        // scaled from mockup 58
       private static const HZ51_HEAD:Number = 52;       // scaled from mockup 62
       private static const HZ51_TABS:Number = 38;       // scaled from mockup 46
-      private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the 1100 window
+      private static const HZ51_SIDE_W:Number = 248;    // one-line labels at 11px; slimming further does not shrink the window
       private static const HZ51_PREV_W:Number = 196;    // scaled from mockup 292
       private static const HZ51_FOOT:Number = 46;       // one hint row
       private static const HZ51_SEC:Number = 26;        // section title + rule
       private static const HZ51_FIND_W:Number = 176;    // header search slot
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
+      private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_SW_W:Number = 42;       // mock toggle track
+      private static const HZ51_SW_H:Number = 22;
+      private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
+      private static const HZ51_INFO_R:Number = 6;      // 12px (i) disc, smaller than the old 16px
       private static const HZ51_PVC_H:Number = 120;     // live preview card
       private static const HZ51_WIN_R:Number = 10;
       private static const HZ51_BOX_R:Number = 6;
@@ -45,22 +53,22 @@
       private static const HZ51_SH_A:Number = 0.28;     // .sh:after acc 28%
       private static const HZ51_SEL_A:Number = 0.10;    // .row.sel acc 10%
       private static const HZ51_WIN_EA:Number = 0.28;   // .win border acc 28%
-      private static const HZ51_QM_TH:Number = 76;
-      private static const HZ51_QM_HEAD:Number = 42;
+      private static const HZ51_QM_TH:Number = 84;      // tile tall enough for SLOT n + Empty + clipped chip
+      private static const HZ51_QM_HEAD:Number = 36;    // one-line hint + CLEAR ALL KEYS
       private static const HZ51_QM_LOCK:Number = 24;
-      private static const HZ51_QM_GAP:Number = 6;
+      private static const HZ51_QM_GAP:Number = 8;
       private static const HZ51_QM_WARN:Number = 44;
       private static const HZ51_QM_CLASH:uint = 0xF2A03A;
       private static const HZ51_PERF_NAMES:Array = ["BASELINE","HOVER SKIP","FIXTURE","FULL PIPELINE","SAME TARGET","RAPID TARGETS","SCANNER","BACKGROUND HUD"];
 
-      // Purpose: size the F11 window just larger than the old 1000x660 settings
-      // clip (10% → 1100x726). Never grow on a 1440p / ultrawide stage — players
-      // need to see the real HUD while they adjust. Shrinks on a 720p HUD so the
-      // window still fits. Called on open and on each draw while F11 is open.
+      // Purpose: size the F11 window. Height stays 726. Width caps at 1260 so HUD
+      // side cards stay visible at 1080p (330px each side) and 1440p. Never grow
+      // past the cap; shrinks on a 720p HUD so the window still fits. Called on
+      // open and on each draw while F11 is open.
       // Inputs: Extensions.visibleRect. Outputs: HZ_SET_W / HZ_SET_H.
       private function hz51Fit() : void
       {
-         var W:Number = 1100;
+         var W:Number = HZ51_WIN_W;
          var H:Number = 726;
          try
          {
@@ -73,7 +81,7 @@
                var vh:Number = br.y - tl.y;
                if(vw >= 400 && vh >= 300)
                {
-                  W = Math.round(Math.max(900, Math.min(1100, vw - 80)));
+                  W = Math.round(Math.max(1000, Math.min(HZ51_WIN_W, vw - 80)));
                   H = Math.round(Math.max(560, Math.min(726, vh - 80)));
                }
             }
@@ -168,7 +176,7 @@
          var ax:Number = W - 16 - arrW;
          var findW:Number = HZ51_FIND_W;
          var fx:Number = ax - (arrW > 0 ? gap : 0) - findW;
-         var compactW:Number = 232;         // room for COMPACT MODE (STRIPS) plus the 36px switch
+         var compactW:Number = 268;         // COMPACT MODE (STRIPS) + ON/OFF word + 42px switch
          var cx:Number = fx - gap - compactW;
          if(cx < titleR)
          {
@@ -648,11 +656,17 @@
          var pages:Array = this.hz51Pages(tab);
          if(page >= 0 && page < pages.length) { id = String(pages[page].id); }
          var rows:Array = [];
-         if(tab == 0) { rows = this.hz51Cards(id); }
-         else if(tab == 1) { rows = this.hz51Appear(id); }
-         else if(tab == 2) { rows = this.hz51Scan(id); }
-         else if(tab == 3) { rows = this.hz51Comms(id); }
-         else { rows = this.hz51System(id); }
+         // A throw in one sidebar builder (STATUS used to abort here) must not
+         // leave F11 with an empty body: fall through to the placeholder row.
+         try
+         {
+            if(tab == 0) { rows = this.hz51Cards(id); }
+            else if(tab == 1) { rows = this.hz51Appear(id); }
+            else if(tab == 2) { rows = this.hz51Scan(id); }
+            else if(tab == 3) { rows = this.hz51Comms(id); }
+            else { rows = this.hz51System(id); }
+         }
+         catch(eRows:Error) { rows = []; }
          var done:Array = this.hz51Finish(rows);
          if(done == null || done.length == 0)
          {
@@ -684,7 +698,7 @@
             ]));
             rows = rows.concat(this.hz51Card("ShowJetpack","JETPACK","JETPACK","JetpackRule",[0,4,1,2],"JetpackScale","", []));
             rows = rows.concat(this.hz51Card("ShowAfflictions","AFFLICTIONS","AFFLICTIONS","AfflictionsRule",[0,6,1,2],"AfflictionsScale","", [
-               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"sub":true}
+               {"k":"AfflictionLayout","l":"LAYOUT","t":"r","opts":HZ_AFLAY_NAMES,"ids":[0,1,2],"sub":true}
             ]));
             rows = rows.concat(this.hz51Card("HazardStatus","HAZARD STATUS","HAZARD STATUS","","", "HazardScale","HazardCompact", []));
             rows.push({"k":"EdgePulse","l":"LOW HEALTH / O2 SCREEN-EDGE PULSE","t":"b","h":"WARNINGS"});
@@ -1045,7 +1059,7 @@
       private function hz51GotoHit(h:Object) : void
       {
          if(h == null) { return; }
-         this.hzSetFindOn = false;
+         this.hz51FindClose();
          this.hzSetTab = int(h.tab);
          this.hzSetPage = int(h.page);
          this.hzSetGlowK = String(h.k);
@@ -1132,4 +1146,85 @@
          var n:int = 13;
          while(n <= 24) { this.hzSetPend["QuickMenuKey" + n] = ""; n++; }
          this.hzSetLive(this.hzSetPend);
+      }
+      // Purpose: search is "open" while the box is focused or still has text
+      // (GotoHit used to clear focus but leave the query, so Esc closed F11).
+      private function hz51FindOpen() : Boolean
+      {
+         return this.hzSetFindOn || this.hzSetFind.length > 0;
+      }
+      // Purpose: Esc / B / RMB / the search X close results and return to the page.
+      // Inputs: none. Outputs: findOn, find, findHi, focus, glow cleared.
+      private function hz51FindClose() : void
+      {
+         this.hzSetFindOn = false;
+         this.hzSetFind = "";
+         this.hzSetFindHi = 0;
+         this.hzSetFocus = 0;
+         this.hzSetGlowK = "";
+      }
+      // Purpose: 22px row button (OPEN / RESET / SHOW / ARRANGE) matching 48px
+      // rows and 11px labels. hzSetBtn stays 28px for the footer OK / CANCEL.
+      // Inputs: label, right edge R, row center. Outputs: width, hit id.
+      private function hz51Btn(b:Sprite, g:*, R:Number, cy:Number, lab:String, hov:Boolean, T:Object, id:String) : Number
+      {
+         var acc:uint = uint(T.acc);
+         var fs:Number = 11;
+         var t:TextField = this.hz51T(b,lab,0,cy - 8,220,fs,"sb",uint(T.txt),1.2);
+         var tw:Number = Math.ceil(this.hzTW(t) + 8);
+         var w:Number = Math.round(Math.max(HZ51_CTRL_W > 88 ? 88 : HZ51_CTRL_W, tw + 20));
+         if(w < 88) { w = 88; }
+         var h:Number = HZ51_BTN_H;
+         var x:Number = Math.round(R - w);
+         var y:Number = Math.round(cy - h / 2);
+         b.removeChild(t);
+         g.beginFill(uint(T.mut),hov ? 0.32 : 0.16);
+         g.drawRoundRect(x,y,w,h,6,6);
+         g.endFill();
+         this.hz51Stroke(g,x,y,w,h,hov ? acc : uint(T.txt),hov ? 0.85 : 0.28,6);
+         this.hz51T(b,lab,x + w / 2,y + 4,w,fs,"sb",uint(T.txt),1.2,"center");
+         this.hzSetHits.push({"id":id,"x":x,"y":y,"w":w,"h":h});
+         return w;
+      }
+      // Purpose: scanner / comms module banner inside the Settings 2.0 content
+      // column. hz30ModBanner uses x0=22 (old F11 left edge) and painted over
+      // the sidebar. Inputs: list box x/width. Outputs: 40px row in the column.
+      private function hz51ModBanner(b:Sprite, g:*, y:Number, x0:Number, boxW:Number, T:Object, mod:String, sel:Boolean, idx:int) : Number
+      {
+         var st:* = this.hz30Mod != null ? this.hz30Mod[mod] : 0;
+         var on:Boolean = st === 1;
+         var chk:Boolean = st !== 0 && st !== 1;
+         var acc:uint = uint(T.acc);
+         var h:Number = 40;
+         var y0:Number = Math.round(y);
+         var w:Number = Math.max(80, boxW);
+         g.beginFill(uint(T.tile),Number(T.tia)); g.drawRoundRect(x0,y0,w,h,8,8); g.endFill();
+         if(sel || this.hzSetHover == "row" + idx) { g.beginFill(acc,sel ? 0.10 : 0.05); g.drawRoundRect(x0,y0,w,h,8,8); g.endFill(); }
+         this.hz51Stroke(g,x0,y0,w,h,on ? acc : uint(T.line),on ? 0.45 : 0.22,8);
+         var ccx:Number = x0 + 20;
+         var ccy:Number = y0 + h / 2;
+         g.beginFill(on ? acc : uint(T.line),on ? 0.16 : 0.1); g.drawCircle(ccx,ccy,10); g.endFill();
+         if(on) { this.hz30Check(g,ccx,ccy,9,acc); }
+         else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
+         var title:String = mod == "scanner" ? "SCANNER MODULE" : "COMMS MODULE";
+         var stx:String = on ? "INSTALLED" : (chk ? "CHECKING..." : "NOT INSTALLED");
+         this.hz51T(b,title,x0 + 38,y0 + 12,Math.max(80,w * 0.45),11,"bd",uint(T.txt),1.4);
+         this.hz51T(b,stx,x0 + w - 16,y0 + 12,120,11,"sb",on ? acc : uint(T.lab),1.2,"right");
+         if(idx >= 0) { this.hzSetHits.push({"id":"row" + idx,"x":x0,"y":y0,"w":w,"h":h}); }
+         return h;
+      }
+      // Purpose: 12px (i) disc with a gap after the label. Smaller than hz35InfoIcon
+      // (16px) so it does not crowd the title.
+      private function hz51InfoIcon(b:Sprite, g:*, cx:Number, cy:Number, acc:uint, T:Object, on:Boolean, i:int) : void
+      {
+         var r:Number = HZ51_INFO_R;
+         g.beginFill(acc,on ? 0.32 : 0.14);
+         g.drawCircle(cx,cy,r);
+         g.endFill();
+         this.hz51Stroke(g,Math.round(cx - r),Math.round(cy - r),r * 2,r * 2,acc,on ? 1 : 0.7,r * 2);
+         g.beginFill(on ? uint(T.txt) : acc,1);
+         g.drawRect(cx - 0.8,cy - 1.5,1.6,4.5);
+         g.drawCircle(cx,cy - 3.4,1);
+         g.endFill();
+         this.hzSetHits.push({"id":"inf" + i,"x":cx - 10,"y":cy - 10,"w":20,"h":20});
       }

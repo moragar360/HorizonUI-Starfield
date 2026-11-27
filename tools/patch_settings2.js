@@ -40,7 +40,7 @@ function replaceFn(sig, newBody, label) {
 
 once(
 	'      private static const HZ_SET_W:Number = 1000;\n      private static const HZ_SET_H:Number = 660;\n      private static const HZ_SET_TABS:Array = ["CARDS","STYLE","TEXT","EFFECTS","RULES","COMPASS","CONTROLS","SCANNER","COMMS"];   // v0.30: 7 SCANNER, 8 COMMS (optional modules)',
-	'      private var HZ_SET_W:Number = 1100;\n      private var HZ_SET_H:Number = 726;\n      private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0',
+	'      private var HZ_SET_W:Number = 1260;\n      private var HZ_SET_H:Number = 726;\n      private static const HZ_SET_TABS:Array = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];   // Settings 2.0',
 	"tabs"
 );
 once(

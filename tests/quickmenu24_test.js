@@ -29,7 +29,8 @@ expect(as.indexOf("Favorites Menu Extended") >= 0 && as.indexOf("Favorites Banks
 expect(as.indexOf("hzQmSetConflict") >= 0 && as.indexOf("hzQmSetSlotCount") >= 0, "HUD has conflict and slot-count setters");
 
 expect(qm.indexOf("hzqExtPrepare") >= 0 && qm.indexOf("hzqExtPlace") >= 0 && qm.indexOf("hzqExtCmd") >= 0, "quick menu movie has Extended Mode hooks");
-expect(qm.indexOf("HZQ_PITCH:Number = 70") >= 0, "slot pitch is 70 (58 box + 12 gap)");
+expect(qm.indexOf("HZQ_PITCH:Number = 70") >= 0, "vanilla slot pitch is 70 (58 box + 12 gap)");
+expect(qm.indexOf("HZQ_EXT_PITCH:Number = 72") >= 0 && qm.indexOf("HZQ_EXT_BOX:Number = 58") >= 0, "extra slots match vanilla 1-12 at scale 1.0 (58 box + 14 gap = 72 pitch)");
 expect(qm.indexOf("Entry_\" + slot") >= 0 && qm.indexOf("hzqExtMouse") >= 0, "extended slots are first-class Entry_13-24 in the vanilla container");
 expect(qm.indexOf("selectedIndex = 12") >= 0, "FS_NONE (12) is still used when no extra slot is highlighted");
 expect(qm.indexOf("hzqExtAdd") >= 0, "ADD SLOT tile exists");

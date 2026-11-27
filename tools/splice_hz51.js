@@ -23,16 +23,28 @@ if (!INSERT.startsWith(startMark)) {
 }
 text = text.slice(0, start) + INSERT.replace(/\s+$/, "") + "\n" + DRAW.replace(/^\s+/, "").replace(/\s+$/, "") + "\n\n" + text.slice(end);
 text = text.replace(
-	/private var HZ_SET_W:Number = \d+;   \/\/ Settings 2\.0[^\n]*\n      private var HZ_SET_H:Number = \d+;/,
-	"private var HZ_SET_W:Number = 1100;   // 10% over the old 1000x660 F11 clip; hz51Fit never grows past this\n      private var HZ_SET_H:Number = 726;"
+	/private var HZ_SET_W:Number = \d+;[^\n]*\n      private var HZ_SET_H:Number = \d+;/,
+	"private var HZ_SET_W:Number = 1260;   // width cap; height 726. hz51Fit never grows past this so HUD side cards stay visible\n      private var HZ_SET_H:Number = 726;"
 );
 text = text.replace(
 	/private static const HZ_SET_TOP:Number = \d+;      \/\/ body top[^\n]*/,
 	"private static const HZ_SET_TOP:Number = 90;      // body top (head 52 + tabs 38)"
 );
 text = text.split("HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 64").join("HZ_SET_H - HZ51_FOOT - HZ_SET_TOP - 52");
-if (!/HZ_SET_W:Number = 1100/.test(text) || !/HZ_SET_H:Number = 726/.test(text)) {
-	console.error("failed to pin 1100x726");
+text = text.replace(
+	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + this.hz34BanH(); }',
+	'if(r.t == "m") { return (r.h ? HZ51_SEC : 0) + 40; }'
+);
+text = text.replace(
+	'else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }',
+	'else if(id == "findx") { this.hz51FindClose(); dirty = true; }\n            else if(id == "findbox") { this.hzSetFindOn = true; this.hzSetFocus = 2; dirty = true; }'
+);
+text = text.replace(
+	'var w:Number = this.hzSetBtn(host,hg,R,cy - 14,lab,cf || ed,true,rh && !dim,T,"row" + i,13);',
+	'var w:Number = this.hz51Btn(host,hg,R,cy,lab,rh && !dim,T,"row" + i);'
+);
+if (!/HZ_SET_W:Number = 1260/.test(text) || !/HZ_SET_H:Number = 726/.test(text)) {
+	console.error("failed to pin 1260x726");
 	process.exit(1);
 }
 if (!text.includes("function hz51Stroke") || !text.includes("function hz51HeadSlots") || !text.includes("hzSetOver")) {

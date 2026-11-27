@@ -27,7 +27,7 @@ function fnText(src, name) {
 }
 
 expect(/HZ_SET_TABS:Array = \["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"\]/.test(as), "five tabs: CARDS APPEARANCE SCANNER COMMS SYSTEM");
-expect(/HZ_SET_W:Number = 1100/.test(as) && /HZ_SET_H:Number = 726/.test(as), "window defaults to 1100x726 (10% over the old 1000x660 F11 clip)");
+expect(/HZ_SET_W:Number = 1260/.test(as) && /HZ_SET_H:Number = 726/.test(as), "window defaults to 1260x726 (height locked; width cap so HUD side cards stay visible)");
 expect(/function hzSetDraw\(\) : void\s*\{\s*this\.hz51Draw\(\);\s*\}/.test(as), "hzSetDraw is the Settings 2.0 shell");
 expect(/function hzSetRows\(tab:int\) : Array\s*\{\s*this\.hzSetPage = this\.hz51PageClamp\(tab\);\s*return this\.hz51Rows\(tab, this\.hzSetPage\);\s*\}/.test(as), "hzSetRows dispatches to the new catalog");
 

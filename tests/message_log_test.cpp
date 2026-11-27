@@ -3425,8 +3425,8 @@ int main()
 			"the log popup is 976 wide");
 		Expect(as.find("HZ_ML_CLOCK:Number = 168") != std::string::npos,
 			"the time column is 168 px");
-		Expect(as.find("HZ_SET_W:Number = 1100") != std::string::npos,
-			"the F11 window defaults to 1100 (10% over the old 1000 clip)");
+		Expect(as.find("HZ_SET_W:Number = 1260") != std::string::npos,
+			"the F11 window defaults to 1260 (height stays 726)");
 		Expect(as.find("HZ_SET_H:Number = 726") != std::string::npos,
 			"the F11 window defaults to 726 (10% over the old 660 clip)");
 		Expect(as.find("HZ_ML_H") != std::string::npos && as.find("620") != std::string::npos,

@@ -35,8 +35,9 @@ const hud = rd("actionscript/horizon_block.as");
 // ---- 1. assign handoff: form ID extra, NamesMatch, no name-only refuse for instance prefixes ----
 {
 	const pick = fnText(qm, "hzqExtPick").body;
-	expect(/this\.hzqExtFormId\(this\.AssignedItem\)/.test(pick) && /this\.hzqExtHex\(fid\)/.test(pick) && /"I\|"/.test(pick),
-		"1: the assign extra is I|<formId>|<name> (or P|<name>)");
+	expect(/this\.hzqExtFormId\(this\.AssignedItem\)/.test(pick) && /this\.hzqExtHandle\(this\.AssignedItem\)/.test(pick)
+		&& /this\.hzqExtHex\(fid\)/.test(pick) && /"I\|"/.test(pick),
+		"1: the assign extra is I|<formId>|hHANDLE|<name> (or P|<name>)");
 	expect(/this\.hzqExtFetch\(\)/.test(pick) && /this\.hzqExtDraw\(\)/.test(pick),
 		"1: a successful assign fetches the payload and redraws before the menu closes");
 	expect(/o\.formId = id/.test(hdr) && /ParseFormId\(raw\.substr\(0, bar\)\)/.test(hdr),
@@ -68,6 +69,8 @@ const hud = rd("actionscript/horizon_block.as");
 	const fid = fnText(qm, "hzqExtFormId").body;
 	expect(/it\.uFormID/.test(fid) && !/uHandleID/.test(fid),
 		"1: hzqExtFormId reads uFormID and never treats uHandleID as a form ID");
+	expect(/it\.uHandleID/.test(fnText(qm, "hzqExtHandle").body) && /it\.uItemHandle/.test(fnText(qm, "hzqExtHandle").body),
+		"1: hzqExtHandle reads uHandleID via Number() (AS3 uint) as a separate hint");
 	{
 		const bind = game.slice(game.indexOf("static bool QmBindExtCmd"), game.indexOf("void PollFavorites"));
 		const onFav = game.slice(game.indexOf("void QmOnFavoritesMovie("), game.indexOf("void QmOnFavoritesMovie(") + 900);
@@ -83,19 +86,24 @@ const hud = rd("actionscript/horizon_block.as");
 // ---- 2 / 3. Horizon card style and a closed selection border ----
 {
 	const drw = fnText(qm, "hzqExtDraw").body;
-	expect(/this\.hzqPanel\(g,-29,-29,58,58,8,dim && !sel \? 0\.6 : 1\)/.test(drw),
-		"2: extended slots use hzqPanel (CardOpacity / CardBgOpacity) like the 1-12 Horizon cards");
-	expect(/g\.beginFill\(acc,0\.13\)/.test(drw) && /this\.hzqKeycap\(g,-24,-24,kw,kh/.test(drw),
-		"2: selected fill and keycap match hzqCard");
-	expect(/function hzqRingDraw/.test(qm) && /drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(fnText(qm, "hzqRingDraw").body)
-		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
-		"3: accent hover/focus stroke is drawn on a menu-level overlay (not clipped by Entry/Catcher)");
+	expect(/this\.hzqExtSlotArt\(g,boxN,sel,dim\)/.test(drw) && /function hzqExtSlotArt/.test(qm) && /function hzqExtBoxN/.test(qm),
+		"2: extended slots use hzqExtSlotArt at vanilla 1-12 size (58 * Slot Scale)");
+	expect(/this\.hzqKeycap\(g,-hb \+ pad,-hb \+ pad,kw,kh/.test(drw)
+		&& /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(drw)
+		&& /this\.hzqAccentRing\(g,0,0,box\)/.test(fnText(qm, "hzqExtSlotArt").body),
+		"2: selected fill, extra keycap inset scales from +5,+5 and filled accent ring match hzqCard");
+	expect(/function hzqRingDraw/.test(qm) && /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body)
+		&& /s\.name = "hzqRing"/.test(fnText(qm, "hzqRingEnsure").body) && /s\.mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body)
+		&& /function hzqFilledBorder/.test(qm) && !/lineStyle\(2,acc/.test(fnText(qm, "hzqRingDraw").body),
+		"3: accent hover/focus is a filled overlay ring (GFx clips stroke-only on +x; FME Selected is filled art)");
 	expect(/function hzqUnclip/.test(qm) && /d\.mask = null/.test(fnText(qm, "hzqUnclip").body) && /scrollRect = null/.test(fnText(qm, "hzqUnclip").body),
-		"3: Entry / Catcher mask and scrollRect are cleared so the overlay ring is visible on all four sides");
-	expect(/this\.hzqSet\(o\.n,this\.hzqUC\(label\),13,/.test(drw) && /this\.hzqSet\(o\.k,klab,13,/.test(drw),
-		"2: extended text uses hzqSet at 13 px (Exo 2 through hzqFace)");
-	expect(/this\.hzqPanel\(ag,-29,-29,58,58,8,0\.6\)/.test(drw),
-		"2: the ADD tile uses the same Horizon panel");
+		"3: Entry / Catcher mask and scrollRect are still cleared");
+	expect(/this\.hzqSet\(o\.k,klab,13,/.test(drw) && /this\.hzqExtChipTune\(o\.k,klab,boxN,kcol\)/.test(drw)
+		&& !/this\.hzqSet\(o\.n,/.test(drw)
+		&& /LoadImageFixtureFromUIData/.test(qm) && /FavoritesIconBuffer/.test(qm),
+		"2: extra cards show the vanilla icon + key chip (design 13 px, then Slot Scale); name is the info panel only");
+	expect(/this\.hzqExtSlotArt\(ag,addBox,false,true\)/.test(drw),
+		"2: the ADD tile uses the same extra-slot card at the live extra box size");
 }
 
 // ---- 4 / 6. CROSS+BARS: authored T, do not move 1-12, bars under the T ----
@@ -121,8 +129,9 @@ const hud = rd("actionscript/horizon_block.as");
 	expect(/hzqExtMoved/.test(rest) && /CenterClip_mc\.visible = true/.test(rest),
 		"4: restore only puts 1-12 back after BARS moved them");
 	const bld = fnText(qm, "hzqExtBuildClips").body;
-	expect(/y = box\.b \+ 12 \+ 29 \+ row \* pitch/.test(bld),
-		"6: CROSS+BARS places 13-24 under the T (tBottom + gap + box/2)");
+	expect(/y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ boxN \* 0\.5/.test(bld)
+		&& /y = y0x \+ row \* pitch/.test(bld),
+		"6: CROSS+BARS places 13-24 under the T, below the EXTENDED frame title");
 	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(qm.indexOf("0.43.5 Extended Mode"))),
 		"perf: Extended Mode still has no enterFrame or timer");
 }

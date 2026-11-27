@@ -75,12 +75,13 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		const assign = game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("));
 		expect(/QmReadFavAssigned\(/.test(assign) && /QmReadLiveInv\(/.test(assign)
 			&& !/QmSnapAssign\(\)/.test(assign) && /g_qmPendingHandle\.load/.test(assign)
-			&& /KeepPendingForAssigned/.test(assign),
+			&& /KeepPendingForAssigned/.test(assign) && /ex\.handle/.test(assign)
+			&& /GetDataForEntry/.test(game) && /IsUInt\(\)/.test(game),
 			"DLL assign uses this-open pending, then AssignedItem, then extra, then NamesMatch-gated live inventory");
 	}
 	const nav = fnText(qm, "hzqExtNav").body;
-	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtPick\(13,false\)/.test(nav),
-		"CROSS+BARS: Down from the T (slots 10-12) lands on slot 13");
+	expect(/idx >= 9 && idx <= 11/.test(nav) && /hzqExtNavFirst/.test(nav),
+		"CROSS+BARS: Down from the T (slots 10-12) lands on the first visitable extra");
 	expect(/nextB >= 12 && nextB < n/.test(nav),
 		"BARS: Down from the last vanilla row continues onto 13-N in the same grid");
 	const raise = fnText(qm, "hzqExtRaise").body;
@@ -95,13 +96,22 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"assign path adds no enterFrame / timer");
 }
 
-// ---- B. selection outline sits fully inside the 58 px panel ----
+// ---- B. selection outline is a filled border (GFx clips stroke-only on +x) ----
 {
 	const ring = fnText(qm, "hzqRingDraw").body;
-	expect(/drawRoundRect\(x - 26,y - 26,52,52,14,14\)/.test(ring) && /lineStyle\(2,acc,1,true,"none"\)/.test(ring),
-		"accent hover/focus stroke is a 2 px overlay ring (menu-level, 52 px, scale none)");
-	expect(/function hzqUnclip/.test(qm) && /gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
-		"vanilla Selected-frame outline is not used; Entry/Catcher mask and scrollRect are cleared");
+	const acc = fnText(qm, "hzqAccentRing").body;
+	const border = fnText(qm, "hzqFilledBorder").body;
+	expect(/this\.hzqAccentRing\(g,x,y,box\)/.test(ring) && /this\.hzqExtBoxN\(\)/.test(ring)
+		&& !/lineStyle\(2,acc/.test(ring) && !/drawRect\(x - 40/.test(ring),
+		"overlay ring calls hzqAccentRing (filled), vanilla box or live extra box, no stroke-only lineStyle");
+	expect(/this\.hzqFilledBorder\(g,x - box \* 0\.5,y - box \* 0\.5,box,box,2,8/.test(acc)
+		&& /g\.beginFill\(col,1\); g\.drawRect/.test(border) && /this\.hzqKeyCorner/.test(border)
+		&& /g\.lineStyle\(\);/.test(border) && !/lineStyle\(2,/.test(border),
+		"accent ring is the same filled-edge construction as hzqKeycap (all four sides, no lineStyle stroke)");
+	expect(/this\.hzqAccentRing\(g,r\.x \+ r\.width \/ 2,r\.y \+ r\.height \/ 2,r\.width\)/.test(fnText(qm, "hzqCard").body),
+		"vanilla 1-12 selected cards draw the filled ring on the card as well as the overlay");
+	expect(/gotoAndStop\("Unselected"\)/.test(fnText(qm, "hzqCard").body),
+		"vanilla Selected-frame outline is not used (FME uses that filled timeline art; Horizon hides it)");
 	expect(/this\.addChild\(s\)/.test(fnText(qm, "hzqRingEnsure").body) && /mouseEnabled = false/.test(fnText(qm, "hzqRingEnsure").body),
 		"the overlay ring is a child of the menu and does not steal hits");
 }
@@ -199,10 +209,10 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"hzqOpen clears the one-shot confirm flag at the start of every open");
 	expect(/this\._SelectedIndex = FS_NONE/.test(fnText(qm, "hzqExtRestore").body),
 		"hzqExtRestore sets _SelectedIndex = FS_NONE directly (no GetEntryClip on a removed Entry_13-24)");
-	expect(/function hzqExtHideVan/.test(qm) && /d\.name != "hzqCard"/.test(fnText(qm, "hzqExtHideVan").body)
+	expect(/function hzqExtHideVan/.test(qm) && /d\.name != "hzqCard" && d\.name != "Icon_mc"/.test(fnText(qm, "hzqExtHideVan").body)
 		&& /Quickkey_tf/.test(fnText(qm, "hzqExtHideVan").body)
 		&& /hzqExtHideVan\(s\)/.test(make) && /hzqExtHideVan\(o\.s/.test(fnText(qm, "hzqExtDraw").body),
-		"Entry_13-24 hide vanilla outline / icon frame / key label; only the Horizon card stays visible");
+		"Entry_13-24 hide leftover vanilla art; Icon_mc (vanilla fixture) and the Horizon card stay visible");
 	function toJsPick() {
 		const f = fnText(qm, "hzqExtPick");
 		const params = f.params.split(",").map((p) => p.trim()).filter(Boolean).map((p) => p.split(":")[0].trim());
@@ -217,7 +227,9 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const h = {
 		hzqExtDone: false, hzqExtSel: 0, hzqExtData: {}, selectedIndex: 12, AssignedItem: { sName: "Med Pack" },
 		hzqExtPad() {}, hzqInfoSet() {}, hzqExtDraw() {}, hzqRingDraw() {}, hzqExtFetch() {},
-		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHex() { return ""; },
+		isAssigningItem() { return true; }, hzqExtFormId() { return 0; }, hzqExtHandle() { return 0; }, hzqExtHex() { return ""; },
+		hzqExtIconExtra() { return ""; },
+		SelectQuickslot_mc: { visible: true },
 		StartClosingMenu() { this.closed = (this.closed || 0) + 1; },
 		sends: [],
 		hzqExtCmdSend(op, slot, extra) { this.sends.push(op + ":" + slot); return "ok"; }
@@ -263,8 +275,8 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 	const conf = fnText(qm, "hzqExtConfirm").body;
 	const pick = fnText(qm, "hzqExtPick").body;
 	expect(/s\.buttonMode = false/.test(make) && /s\.tabEnabled = false/.test(make)
-		&& /s\.tabChildren = false/.test(make) && /drawRect\(-29,-29,58,58\)/.test(make),
-		"G: extra clips are 58 px hits, not in the Tab cycle, no FavoritesEntry Catcher");
+		&& /s\.tabChildren = false/.test(make) && /drawRect\(-HZQ_EXT_BOX \* 0\.5,-HZQ_EXT_BOX \* 0\.5,HZQ_EXT_BOX,HZQ_EXT_BOX\)/.test(make),
+		"G: extra clips are vanilla-sized hits (58 at scale 1.0), not in the Tab cycle, no FavoritesEntry Catcher");
 	expect(/hzqExtHold\.mouseEnabled = false/.test(hold) && /hzqExtHold\.tabEnabled = false/.test(hold)
 		&& /add\.tabEnabled = false/.test(hold),
 		"G: hold overlay and ADD tile do not steal Tab / do not cover Entry_0-11");
@@ -313,10 +325,13 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"G: stage KEY_UP map does not treat Tab (9) or Escape (27) as a slot key");
 	expect(/QmSnapAssign\(\)/.test(game) && /QmClearPending\(\)/.test(game)
 		&& /g_qmPendingHandle\.store\(s\.handle/.test(game) && /SetSlot\(g_qmStore, a\)/.test(game)
+		&& /if \(!s\.handle && !s\.form && s\.name\.empty\(\)\) return;/.test(game)
+		&& /GetDataForEntry/.test(game) && /hzqs::GfxU32/.test(game)
 		&& /hzqExtFetch\(\)/.test(pick) && /hzqExtCmdSend\("ready"/.test(qm),
-		"G: inventory assign snapshots FormID at open, writes the store, refreshes the payload");
-	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick),
-		"G: picking slot 13 or 18 sends assign with that slot (persists via SetSlot + payload fetch)");
+		"G: inventory assign snapshots uint FormID/handle at open, writes the store, refreshes the payload");
+	expect(/this\.hzqExtCmdSend\(op,slot,extra\)/.test(pick) && /hzqExtHandle/.test(pick)
+		&& /SelectQuickslot_mc != null && this\.SelectQuickslot_mc\.visible/.test(pick),
+		"G: picking slot 13 or 18 sends assign with that slot (overlay-visible is assign, not use)");
 	const sel = fnText(qm, "hzqSel").body;
 	expect(/if\(this\.hzqExtSel < 13\)\s*\{\s*this\.hzqInfObj = this\.selectedEntry/.test(sel)
 		&& (sel.match(/if\(this\.hzqExtSel < 13\)/g) || []).length >= 2,
@@ -344,6 +359,196 @@ const pimpL = rd("actionscript/favorites/imp/pimp_favoritesmenu_lrg/FavoritesMen
 		"H: pending IDs are dropped when AssignedItem names a different item");
 	expect(/case "Cancel":/.test(pimp) && /this\.StartClosingMenu\(\)/.test(pimp),
 		"H: Tab/Cancel still closes; pending clear is on the close edge, not in SelectItem 0-11");
+}
+
+// ---- I. inventory-open assign actually commits; last-column ring stays inside the T ----
+{
+	const pick = fnText(qm, "hzqExtPick").body;
+	expect(/SelectQuickslot_mc\.visible/.test(pick) && /op:String = assign \? "assign" : "use"/.test(pick)
+		&& /hzqExtHandle\(this\.AssignedItem\)/.test(pick) && /"h" \+ hid\.toString\(10\)/.test(pick),
+		"I: overlay-visible extra click is assign (not use) and sends hHANDLE with the item");
+	function pickOp(overlay, assigned) {
+		let assign = false;
+		try { assign = assigned != null && String(assigned.sName != null ? assigned.sName : "").length > 0; } catch (eA) { assign = false; }
+		try { if (!assign && overlay != null && overlay.visible) assign = true; } catch (eOv) {}
+		return assign ? "assign" : "use";
+	}
+	expect(pickOp({ visible: true }, { sName: "Med Pack" }) === "assign",
+		"I: inventory assign mode (AssignedItem + overlay) is assign");
+	expect(pickOp({ visible: true }, { sName: "" }) === "assign",
+		"I: overlay visible still assigns when sName is empty (native ItemToBeAssigned delay)");
+	expect(pickOp({ visible: false }, null) === "use",
+		"I: ordinary Q-open extra click is still use");
+	expect(/QmGfxSlotArg/.test(game) && /IsUInt\(\)/.test(game) && /GetDataForEntry/.test(game)
+		&& !/ClearSlot\(g_qmStore/.test(game.slice(game.indexOf("std::string QmAssign("), game.indexOf("std::string QmHandleCmd("))),
+		"I: uint/int Scaleform IDs are read; assign commits SetSlot and does not ClearSlot on a miss");
+	const bld = fnText(qm, "hzqExtBuildClips").body;
+	const pitch = 72, per = 6, cx = 0, tRight = 268.8, tLeft = -267.75, tTop = -267.65, tBottom = 268.75;
+	const take = 6, col = 5;
+	const pad = 14, title = 22, extBox = 58, half = extBox / 2;
+	const y0x = tBottom + 12 + pad + title + extBox / 2;
+	const x = cx - (take - 1) * pitch / 2 + col * pitch;
+	const y = y0x;
+	expect(/this\.hzqExtPitchN\(\)/.test(bld) && /y0x:Number = box\.b \+ 12 \+ HZQ_FRAME_PAD \+ HZQ_FRAME_TITLE \+ boxN \* 0\.5/.test(bld),
+		"I: extra row sits under the T, below the EXTENDED frame title");
+	const visL = -960, visR = 960, visT = -540, visB = 540;
+	expect(x + half <= visR && x - half >= visL && y - half >= visT && y + half <= visB,
+		"I: last-column 58 px extra card (and filled ring) stays inside the visible area");
+	expect(0 + 29 <= tRight && 0 - 29 >= tLeft,
+		"I: the selected top T card (center, screenshot) sits inside the T AABB, so a T-width scrollRect cannot cut its right edge");
+	const x8 = cx - (8 - 1) * pitch / 2 + 7 * pitch;
+	expect(x8 + half > tRight && x8 + half <= visR,
+		"I: an 8-per-row extra last column sticks out of the T AABB but stays in the visible area");
+	expect(/function hzqAccentRing/.test(qm) && /function hzqFilledBorder/.test(qm)
+		&& /this\.hzqAccentRing\(g,x,y,box\)/.test(fnText(qm, "hzqRingDraw").body),
+		"I: ring is a filled border on the overlay, same size as the card");
+	expect(/function hzqInfoPlace/.test(qm) && /Extensions\.visibleRect/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /vr\.right,vr\.top/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /vr\.right,vr\.bottom/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /\(tr\.y \+ br\.y\) \* 0\.5 - H \* 0\.5/.test(fnText(qm, "hzqInfoPlace").body)
+		&& !/HZQ_EQ_RESERVE/.test(fnText(qm, "hzqInfoPlace").body)
+		&& /this\.hzqSprite\(this, -1\)/.test(fnText(qm, "hzqBuild").body),
+		"I: info panel is a menu child, placed at visibleRect center-right (right inset, vertically centered)");
+	expect(/EXTENDED FAVORITES/.test(qm) && /function hzqExtFrameDraw/.test(qm) && !/EXTENDED QUICK \/ FAVORITE SLOTS/.test(qm),
+		"I: extra grid has a dark framed window titled EXTENDED FAVORITES");
+	{
+		const frame = fnText(qm, "hzqExtFrameDraw").body;
+		const setb = fnText(qm, "hzqSet").body;
+		const face = fnText(qm, "hzqFace").body;
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\),13,this\.hzqTextAccent\(\),"bd",0\.18,true\)/.test(frame)
+			&& /this\.hzqFace\(w\)/.test(setb) && /t\.embedFonts = true/.test(setb)
+			&& /\$Horizon_Font/.test(face) && !/new TextFormat\(\s*["']/.test(frame)
+			&& !/_sans|Arial|Times|Courier|Exo 2|Exo2/.test(frame)
+			&& /0x161A20/.test(frame) && /hzqFilledBorder\(g,fx,fy,fw,fh,1,10,0x3A4450\)/.test(frame)
+			&& /drawRoundRect\(fx \+ 6,fy \+ 12,4,sh,4,4\)/.test(frame)
+			&& !/hzqFilledBorder\(g,fx,fy,fw,fh,2,10,this\.hzqAccent/.test(frame),
+			"I: EXTENDED FAVORITES title uses hzqSet -> hzqFace; panel is dark fill + gray 1px border + left accent strip, no outer accent ring");
+		expect(/this\.hzqSet\(o\.k,klab,13,/.test(fnText(qm, "hzqExtDraw").body)
+			&& /this\.hzqSet\(nt,/.test(fnText(qm, "hzqInfo").body)
+			&& /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(fnText(qm, "hzqInfo").body),
+			"I: extra key chips and the info panel text use the same hzqSet / hzqFace path");
+		expect(/this\.hzqFace\("bd"\)/.test(frame)
+			&& /this\.hzqExtFontTouch\(\)/.test(fnText(qm, "hzqRedraw").body)
+			&& /this\.hzqExtFrameDraw\(this\.hzqExtLastBox\)/.test(fnText(qm, "hzqRedraw").body)
+			&& /this\.hzqExtSlots\[i\]\.cKey = null/.test(fnText(qm, "hzqExtFontTouch").body),
+			"I: after font.marker, redraw retitles the extra frame and re-sets extra key chips through hzqFace");
+		expect(/this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimp)
+			&& /this\.hzqSet\(this\.hzqExtFrameT,this\.hzqUC\("EXTENDED FAVORITES"\)/.test(pimpL)
+			&& /t\.embedFonts = true/.test(fnText(pimp, "hzqSet").body)
+			&& /t\.embedFonts = true/.test(fnText(pimpL, "hzqSet").body),
+			"I: both movies apply the shared Horizon font helper to the extra frame title");
+	}
+	expect(/new ImageFixture\(\)/.test(fnText(qm, "hzqExtMake").body)
+		&& /LoadImageFixtureFromUIData\(img,"FavoritesIconBuffer"\)/.test(fnText(qm, "hzqExtLoadIcon").body)
+		&& !/o\.n/.test(fnText(qm, "hzqExtDraw").body)
+		&& !/empty \? "EMPTY"/.test(fnText(qm, "hzqExtDraw").body),
+		"I: extra cards show vanilla Icon_mc + key chip, no item name, no EMPTY text");
+	const loadBody = fnText(qm, "hzqExtLoadIcon").body;
+	expect(loadBody.indexOf("ic.onLoadAttemptComplete = this.hzqExtIcCb[ei]") < loadBody.indexOf("ic.LoadImageFixtureFromUIData")
+		&& /this\.hzqExtIconBound\(ic\)/.test(loadBody)
+		&& /HZQ_ICBOUND/.test(fnText(qm, "hzqExtIconBound").body)
+		&& !/clipWidth|clipHeight/.test(loadBody),
+		"I: extra LoadIcon matches vanilla: BoundClip 60x60, hook before Load, no clipWidth/clipHeight (those distort)");
+	const fitBody = fnText(qm, "hzqExtFitIcon").body;
+	expect(fitBody.indexOf("ic.scaleX = b.sx;") < fitBody.indexOf("this.hzqIcB(ic,e)")
+		&& /Math\.min\(1,Math\.min\(aw \/ nb\.width,ah \/ nb\.height\)\)/.test(fitBody)
+		&& /Number\(o\.kb\) > 0/.test(fitBody),
+		"I: extra icon fit resets to identity, then scales after the loaded bounds, below the key chip");
+	expect(/function hzqExtIcDone/.test(qm) && /function hzqExtIc13/.test(qm) && /function hzqExtIc24/.test(qm)
+		&& /this\.hzqExtIcCb = \[this\.hzqExtIc13/.test(fnText(qm, "hzqBuild").body),
+		"I: extra icon-load edge is the same per-slot callback pattern as vanilla 1-12");
+	expect(/function hzqExtFitIcon/.test(pimp) && /function hzqExtIconBound/.test(pimp)
+		&& /function hzqExtFitIcon/.test(pimpL) && /function hzqExtIconBound/.test(pimpL)
+		&& /function hzqInfoPlace/.test(pimp) && /function hzqInfoPlace/.test(pimpL),
+		"I: extra icon fit and center-right info are in both movies");
+	const infoW = 380, infoH = 120, m = 16;
+	function infoAt(visR, visT, visB) {
+		return { x: visR - m - infoW, y: (visT + visB) * 0.5 - infoH * 0.5, w: infoW, h: infoH };
+	}
+	function overlaps(a, bx, by, bw, bh) {
+		return a.x < bx + bw && a.x + a.w > bx && a.y < by + bh && a.y + a.h > by;
+	}
+	const inf1080 = infoAt(960, -540, 540);
+	const inf1440 = infoAt(1280, -720, 720);
+	const infUw = infoAt(1720, -720, 720);
+	const slotR = x + half, slotB = y + half, slotL = x - half, slotT = y - half;
+	expect(!overlaps(inf1080, slotL, slotT, slotR - slotL, slotB - slotT)
+		&& !overlaps(inf1440, slotL, slotT, slotR - slotL, slotB - slotT)
+		&& !overlaps(infUw, slotL, slotT, slotR - slotL, slotB - slotT),
+		"I: center-right info panel does not overlap the last extra slot at 1920x1080, 2560x1440, or ultrawide");
+	expect(!overlaps(inf1080, tLeft, tTop, tRight - tLeft, tBottom - tTop)
+		&& !overlaps(inf1440, tLeft, tTop, tRight - tLeft, tBottom - tTop)
+		&& !overlaps(infUw, tLeft, tTop, tRight - tLeft, tBottom - tTop),
+		"I: center-right info panel does not overlap the vanilla T at 1920x1080, 2560x1440, or ultrawide");
+	expect(!overlaps(inf1080, 960 - 280, 540 - 84, 280, 84)
+		&& !overlaps(inf1440, 1280 - 280, 720 - 84, 280, 84)
+		&& !overlaps(infUw, 1720 - 280, 720 - 84, 280, 84),
+		"I: center-right info panel does not overlap the HUD equipment card on the right edge");
+}
+
+// ---- J. weapon icons use the HUD equipment-card accent ColorTransform ----
+{
+	const eq = fnText(hud, "hzE19PlaceIcons").body;
+	const tints = fnText(qm, "hzqTints").body;
+	const apply = fnText(qm, "hzqApplyIconTint").body;
+	const isW = fnText(qm, "hzqIsWeapon").body;
+	expect(/ColorTransform\(0,0,0,1,\(col >> 16\) & 0xFF,\(col >> 8\) & 0xFF,col & 0xFF,0\)/.test(eq)
+		&& /this\.hzIconCol\(this\.hzEqLow \? HZ_AMB : HZ_ACCENT\)/.test(eq),
+		"J: equipment card tints the weapon symbol with hzIconCol(accent) and ColorTransform(0,0,0,1,r,g,b,0)");
+	expect(/this\.hzqIconCol\(this\.hzqAccent\(\)\)/.test(tints)
+		&& /this\.hzqCtW\.redMultiplier = 0/.test(tints)
+		&& /this\.hzqCtW\.redOffset = \(a >> 16\) & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.greenOffset = \(a >> 8\) & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.blueOffset = a & 0xFF/.test(tints)
+		&& /this\.hzqCtW\.alphaMultiplier = 1/.test(tints)
+		&& /this\.hzqCtW\.alphaOffset = 0/.test(tints)
+		&& !/HZ_AMB|hzEqLow/.test(tints),
+		"J: Quick Menu hzqCtW is that same add-RGB transform; color source is hzqIconCol(hzqAccent()), no ammo-amber");
+	expect(/function hzqIconCol/.test(qm) && codeOnly(fnText(qm, "hzqIconCol").body).replace(/\s+/g, "")
+		=== codeOnly(fnText(hud, "hzIconCol").body).replace(/this\.hz/g, "this.hzq").replace(/\s+/g, ""),
+		"J: hzqIconCol is the HUD hzIconCol helper (light-card contrast)");
+	expect(/this\.hzqApplyIconTint\(ic,this\.hzqIsWeapon\(it\),empty,sel,it\)/.test(fnText(qm, "hzqCard").body)
+		&& /this\.hzqApplyIconTint\(fe\["Icon_mc"\]/.test(fnText(qm, "hzqIcDone").body),
+		"J: slots 1-12 tint on card draw and after the icon-load callback");
+	expect(/if\(weap\) \{ ic\.transform\.colorTransform = this\.hzqCtW; return; \}/.test(apply)
+		&& /FT_SYMBOL/.test(apply) && /this\.hzqCtA/.test(apply) && /this\.hzqCtN/.test(apply),
+		"J: weapons always get hzqCtW; other symbols keep selected-accent; non-weapon pictures stay identity");
+	expect(/it\.bIsPower == true/.test(isW) && /it\.bIsEquippable == true/.test(isW)
+		&& /aElementalStats/.test(isW) && /sAmmoName/.test(isW),
+		"J: a favorite is a weapon when it is equippable (or has ammo/damage) and not a power");
+	function toJsIsW() {
+		const b = fnText(qm, "hzqIsWeapon").body
+			.replace(/var (\w+):[\w*.]+/g, "let $1")
+			.replace(/catch\((\w+):\w+\)/g, "catch($1)");
+		return new Function("it", b);
+	}
+	const isWeapon = toJsIsW();
+	expect(isWeapon({ sName: "Grendel", bIsEquippable: true, sAmmoName: "7.77mm" }) === true, "J: an equippable gun is a weapon");
+	expect(isWeapon({ sName: "Tanto", bIsEquippable: true }) === true, "J: melee (equippable, no ammo) is a weapon");
+	expect(isWeapon({ sName: "Med Pack", bIsEquippable: false, uCount: 4 }) === false, "J: aid is not a weapon");
+	expect(isWeapon({ sName: "Personal Atmosphere", bIsPower: true, bIsEquippable: true }) === false, "J: a power is not a weapon");
+	expect(isWeapon({ sName: "Razorback", aElementalStats: [{ iElementalType: 0, fValue: 12 }] }) === true,
+		"J: damage stats still count as a weapon if the equippable flag is missing");
+	const extW = fnText(qm, "hzqExtIsWeapon").body;
+	expect(/d\.weap === true/.test(extW) && /kind == "power"/.test(extW) && /kind == "essence"/.test(extW)
+		&& /this\.hzqIsWeapon\(this\.hzqExtIconSrc\(d\)\)/.test(extW),
+		"J: extras use the DLL weap flag (TESObjectWEAP), then the same 1-12 helper");
+	expect(/this\.hzqExtTintIcon\(o,d,empty,sel\)/.test(fnText(qm, "hzqExtDraw").body)
+		&& fnText(qm, "hzqExtDraw").body.indexOf("this.hzqExtTintIcon")
+			> fnText(qm, "hzqExtDraw").body.indexOf("o.cKey = key")
+		&& /this\.hzqExtTintIcon/.test(fnText(qm, "hzqExtIcDone").body)
+		&& /this\.hzqExtTintIcon/.test(fnText(qm, "hzqExtLoadIcon").body)
+		&& /this\.hzqApplyIconTint\(o\.ic/.test(fnText(qm, "hzqExtTintIcon").body),
+		"J: extras re-tint on every draw (accent change, no reload) and after the load callback");
+	expect(/form->Is\(RE::FormType::kWEAP\)/.test(game) && /weap\[i - hzqs::kExtFirst\]/.test(game)
+		&& /f\.length > 9 && String\(f\[9\]\) == "1"/.test(fnText(qm, "hzqExtApply").body),
+		"J: ready payload field 9 is 1 when LookupByID is TESObjectWEAP; assign/use extra is unchanged");
+	expect(!/QmAssign/.test(fnText(qm, "hzqTints").body) && !/hzqExtCmdSend/.test(fnText(qm, "hzqApplyIconTint").body)
+		&& !/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(codeOnly(tints + apply + fnText(qm, "hzqExtTintIcon").body)),
+		"J: tint is change-driven (redraw / load); no poll, no assign/key-equip change");
+	expect(/function hzqApplyIconTint/.test(pimp) && /function hzqApplyIconTint/.test(pimpL)
+		&& /hzqCtW/.test(pimp) && /hzqCtW/.test(pimpL),
+		"J: both movies carry the equipment-card weapon tint");
 }
 
 console.log("quickmenu_assign_keys_test " + (failed ? "FAILED" : "passed") + " (" + passed + " ok, " + failed + " FAIL)");

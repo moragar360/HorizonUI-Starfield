@@ -35,6 +35,18 @@ inline constexpr int kExtFirst = 13;         // first Horizon slot (1-based)
 inline constexpr float kBox = 58.f;
 inline constexpr float kGap = 12.f;
 inline constexpr float kPitch = kBox + kGap;
+inline constexpr float kExtBox = 58.f;          // extra slots match vanilla 1-12 (HZQ_BOX) at Slot Scale 1.0
+inline constexpr float kExtGap = 14.f;
+inline constexpr float kExtPitch = kExtBox + kExtGap;
+inline constexpr float kExtFramePad = 14.f;
+inline constexpr float kExtFrameTitle = 22.f;
+inline constexpr float kEqReserve = 84.f;       // HUD equipment card (HorizonAmmo_mc); overlap tests only
+inline constexpr float kHudCardW = 280.f;       // HUD cards on the right edge (equipment / quest)
+inline constexpr float kHudQuestH = 80.f;
+inline constexpr float kSafeM = 16.f;
+inline constexpr float kInfoW = 380.f;
+inline constexpr float kIcPad = 4.f;            // icon padding inside a slot card
+inline constexpr float kIcBound = 60.f;         // vanilla Icon_mc BoundClip_mc
 
 enum class Layout : int
 {
@@ -81,6 +93,9 @@ struct Assignment
 	Kind        kind = Kind::Inventory;
 	std::string base;       // the form's own display name at assign time (load-order check, S-3); last, so
 	                        // aggregate initializers that stop at kind keep working
+	int         iconType = -1;  // ImageFixture.iFixtureType; -1 = none
+	std::string iconDir;
+	std::string iconName;
 };
 
 struct Store
@@ -154,6 +169,129 @@ inline bool KeepPendingForAssigned(std::string_view pendingName, std::string_vie
 {
 	if (pendingName.empty() || assignedName.empty()) return true;
 	return NamesMatch(pendingName, assignedName);
+}
+
+// Scaleform GFx Value numbers. InventoryMenu uFormID / uHandleID are AS3 uint, which
+// the runtime stores as kUInt (sometimes kInt), not kNumber. Reading only kNumber
+// dropped every inventory ID, so QmSnapAssign never committed from Inventory.
+enum class GfxScalar : int { None = 0, Number = 1, Int = 2, UInt = 3 };
+
+inline std::uint32_t GfxU32(GfxScalar k, double number, std::int32_t i32, std::uint32_t u32)
+{
+	if (k == GfxScalar::UInt)
+		return (u32 > 0 && u32 < 0xFFFFFFFFu) ? u32 : 0;
+	if (k == GfxScalar::Int)
+		return i32 > 0 ? static_cast<std::uint32_t>(i32) : 0;
+	if (k == GfxScalar::Number && number > 0 && number < 4294967295.0)
+		return static_cast<std::uint32_t>(number);
+	return 0;
+}
+
+// Accent ring is a filled 2 px border (hzqFilledBorder / hzqKeycap sides), not a
+// stroke-only lineStyle. Outer edge is the card edge. box is HZQ_BOX (58) for
+// vanilla 1-12 and extra slots (both 58 at Slot Scale 1.0).
+inline constexpr float kAccentRingOuter = kBox;
+
+inline bool AccentRingInside(float cx, float cy, float left, float right, float top, float bottom, float box = kBox)
+{
+	const float half = box * 0.5f;
+	return cx - half >= left && cx + half <= right
+		&& cy - half >= top && cy + half <= bottom;
+}
+
+inline bool RectsOverlap(float ax, float ay, float aw, float ah, float bx, float by, float bw, float bh)
+{
+	return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+struct InfoPanelRect
+{
+	float x = 0;
+	float y = 0;
+	float w = 0;
+	float h = 0;
+};
+
+// Purpose: place the Quick Menu item info panel at center-right of the visible area.
+// Inputs: visibleRect right / top / bottom in movie-local space (origin at screen center), panel size.
+// Outputs: top-left x/y and size. Right inset kSafeM, vertically centered. No per-frame work.
+// Dependencies: kSafeM, kInfoW callers. HUD equipment / quest cards sit at the bottom-right and
+// top-right of the same edge; they do not occupy the vertical center.
+inline InfoPanelRect PlaceInfoPanel(float visRight, float visTop, float visBottom, float w, float h)
+{
+	InfoPanelRect r;
+	r.w = w;
+	r.h = h;
+	r.x = visRight - kSafeM - w;
+	r.y = (visTop + visBottom) * 0.5f - h * 0.5f;
+	return r;
+}
+
+struct ExtraIconFit
+{
+	float scale = 1.f;
+	float x = 0.f;
+	float y = 0.f;
+};
+
+// Purpose: extra-slot icon transform after the ImageFixture load callback (same rule as hzqFit).
+// Inputs: loaded picture bounds at identity (vanilla BoundClip already applied), keychip height kb.
+// Outputs: Icon_mc scale/x/y. Aspect kept, never enlarged, sits in the extra card (vanilla 58) below the keychip.
+inline ExtraIconFit FitExtraIcon(float nbX, float nbY, float nbW, float nbH, float kb)
+{
+	ExtraIconFit f;
+	const float hb = kExtBox * 0.5f;
+	float top = -hb + kIcPad;
+	if (kb > 0.f) top = (std::max)(top, -hb + kb + 2.f);
+	const float aw = kExtBox - kIcPad * 2.f;
+	const float ah = hb - kIcPad - top;
+	if (!(nbW > 0.5f) || !(nbH > 0.5f) || aw < 4.f || ah < 4.f) return f;
+	const float k = (std::min)(1.f, (std::min)(aw / nbW, ah / nbH));
+	f.scale = k;
+	f.x = -(nbX + nbW * 0.5f) * k;
+	f.y = top + ah * 0.5f - (nbY + nbH * 0.5f) * k;
+	return f;
+}
+
+inline bool ExtraIconInsideCard(const ExtraIconFit& f, float nbX, float nbY, float nbW, float nbH, float kb)
+{
+	const float hb = kExtBox * 0.5f;
+	float top = -hb + kIcPad;
+	if (kb > 0.f) top = (std::max)(top, -hb + kb + 2.f);
+	const float left = -hb + kIcPad;
+	const float right = hb - kIcPad;
+	const float bottom = hb - kIcPad;
+	const float x = f.x + nbX * f.scale;
+	const float y = f.y + nbY * f.scale;
+	const float w = nbW * f.scale;
+	const float h = nbH * f.scale;
+	return x >= left - 0.05f && x + w <= right + 0.05f
+		&& y >= top - 0.05f && y + h <= bottom + 0.05f
+		&& w <= kExtBox && h <= kExtBox;
+}
+
+inline float SlotBoxForIndex(int index)
+{
+	return (index == 0 || index >= kExtFirst) ? kExtBox : kBox;
+}
+
+inline bool SlotOverlapsInfo(const SlotPos& s, const InfoPanelRect& inf)
+{
+	const float box = SlotBoxForIndex(s.index);
+	const float half = box * 0.5f;
+	return RectsOverlap(inf.x, inf.y, inf.w, inf.h, s.x - half, s.y - half, box, box);
+}
+
+inline bool InfoClearsLayout(const InfoPanelRect& inf, const std::vector<SlotPos>& slots,
+	float tLeft, float tRight, float tTop, float tBottom)
+{
+	if (RectsOverlap(inf.x, inf.y, inf.w, inf.h, tLeft, tTop, tRight - tLeft, tBottom - tTop))
+		return false;
+	for (const auto& s : slots) {
+		if (s.native) continue;
+		if (SlotOverlapsInfo(s, inf)) return false;
+	}
+	return true;
 }
 
 // One inventory row for PickFormByDisplayName (TESFullName + form ID).
@@ -449,7 +587,13 @@ inline std::string WriteStore(const Store& st)
 		o += ",\"form\":\"" + JsonEscape(a.formHex.empty() ? FormHex(a.formId) : a.formHex) + "\"";
 		o += ",\"name\":\"" + JsonEscape(a.name) + "\"";
 		if (!a.base.empty()) o += ",\"base\":\"" + JsonEscape(a.base) + "\"";
-		o += ",\"kind\":\"" + std::string(KindName(a.kind)) + "\"}";
+		o += ",\"kind\":\"" + std::string(KindName(a.kind)) + "\"";
+		if (a.iconType >= 0 && !a.iconName.empty()) {
+			o += ",\"iconType\":" + std::to_string(a.iconType);
+			o += ",\"iconDir\":\"" + JsonEscape(a.iconDir) + "\"";
+			o += ",\"iconName\":\"" + JsonEscape(a.iconName) + "\"";
+		}
+		o += "}";
 	}
 	o += "\n  ]\n}\n";
 	return o;
@@ -558,6 +702,9 @@ inline Store ParseStore(std::string_view text)
 		a.name = JsonStr(obj, "name");
 		a.base = JsonStr(obj, "base");
 		a.kind = ParseKind(JsonStr(obj, "kind"));
+		a.iconType = static_cast<int>(JsonInt(obj, "iconType", -1));
+		a.iconDir = JsonStr(obj, "iconDir");
+		a.iconName = JsonStr(obj, "iconName");
 		if (a.index >= kExtFirst && a.index <= kMaxSlots) SetSlot(st, a);
 		pos = e + 1;
 		if (pos < text.size() && text[pos] == ']') break;
@@ -819,13 +966,12 @@ inline std::vector<SlotPos> PlaceSlots(const Settings& s, float tLeft, float tRi
 	std::vector<SlotPos> out;
 	const int n = s.extended ? ClampCount(s.slotCount) : kVanillaSlots;
 	const int per = ClampPerRow(s.slotsPerRow);
-	const float pitch = kPitch;
+	const float pitch = kExtPitch;
+	const float y0x = tBottom + 12.f + kExtFramePad + kExtFrameTitle + kExtBox * 0.5f;
 
-	auto pushRow = [&](int first /*1-based*/, int count, float y) {
+	auto pushRow = [&](int first /*1-based*/, int count, float y, float cx) {
 		const float width = (count - 1) * pitch;
-		const float x0 = (s.layout == Layout::CrossBars && first >= kExtFirst)
-			? tCx - width * 0.5f
-			: screenCx - width * 0.5f;
+		const float x0 = cx - width * 0.5f;
 		for (int i = 0; i < count; ++i) {
 			SlotPos p;
 			p.index = first + i;
@@ -849,8 +995,7 @@ inline std::vector<SlotPos> PlaceSlots(const Settings& s, float tLeft, float tRi
 			int row = 0;
 			while (left > 0) {
 				const int take = (std::min)(per, left);
-				const float y = tBottom + kGap + kBox * 0.5f + row * pitch;
-				pushRow(start, take, y);
+				pushRow(start, take, y0x + row * pitch, tCx);
 				start += take;
 				left -= take;
 				++row;
@@ -864,7 +1009,7 @@ inline std::vector<SlotPos> PlaceSlots(const Settings& s, float tLeft, float tRi
 		int row = 0;
 		while (left > 0) {
 			const int take = (std::min)(per, left);
-			pushRow(start, take, y0 + row * pitch);
+			pushRow(start, take, y0 + row * pitch, screenCx);
 			start += take;
 			left -= take;
 			++row;
@@ -878,12 +1023,12 @@ inline std::vector<SlotPos> PlaceSlots(const Settings& s, float tLeft, float tRi
 		add.index = 0;
 		if (out.empty()) {
 			add.x = screenCx;
-			add.y = tBottom + kGap + kBox * 0.5f;
+			add.y = y0x;
 		} else {
 			const auto& last = out.back();
 			if (last.native) {
 				add.x = tCx - (((std::min)(per, kMaxSlots - kVanillaSlots) - 1) * pitch) * 0.5f;
-				add.y = tBottom + kGap + kBox * 0.5f;
+				add.y = y0x;
 			} else {
 				const int extUsed = (std::max)(0, n - (s.layout == Layout::Bars ? 0 : kVanillaSlots));
 				const int col = extUsed % per;
@@ -933,28 +1078,91 @@ inline bool CanBind(const Settings& s, int slot, std::string_view raw, const Use
 	return true;
 }
 
-// Movie assign payload: "P|name" (power), "I|name" (inventory), "I|0xFORM|name" (inventory with
-// the item's form ID from the assign click), or a bare name (older movie = inventory).
+// Movie assign payload: "P|name" (power), "I|name" (inventory), "I|0xFORM|name",
+// "I|0xFORM|hHANDLE|name" (inventory handle from Number(uHandleID)), or a bare name.
+// Optional trailer "\tICON\t<ft>\t<dir>\t<img>" is the vanilla ImageFixture path.
 struct AssignExtra
 {
 	bool          power = false;
 	std::string   name;
 	std::uint32_t formId = 0;
+	std::uint32_t handle = 0;
+	int           iconType = -1;
+	std::string   iconDir;
+	std::string   iconName;
 };
+
+inline std::uint32_t ParseDecU32(std::string_view raw)
+{
+	const auto t = Trim(raw);
+	if (t.empty() || t.size() > 10) return 0;
+	std::uint64_t v = 0;
+	for (unsigned char c : t) {
+		if (c < '0' || c > '9') return 0;
+		v = v * 10u + static_cast<std::uint64_t>(c - '0');
+		if (v > 0xFFFFFFFFull) return 0;
+	}
+	return v == 0 ? 0 : static_cast<std::uint32_t>(v);
+}
+
+inline std::uint32_t ParseHandleToken(std::string_view tok)
+{
+	if (tok.size() < 2) return 0;
+	if (tok[0] != 'h' && tok[0] != 'H') return 0;
+	const auto rest = tok.substr(1);
+	if (const auto hx = ParseFormId(rest)) return hx;
+	return ParseDecU32(rest);
+}
 
 inline AssignExtra ParseAssignExtra(std::string_view raw)
 {
 	AssignExtra o;
+	const auto iconAt = raw.find("\tICON\t");
+	if (iconAt != std::string_view::npos) {
+		auto icon = raw.substr(iconAt + 6);
+		raw = raw.substr(0, iconAt);
+		const auto t1 = icon.find('\t');
+		if (t1 != std::string_view::npos) {
+			const auto ftTok = icon.substr(0, t1);
+			int ft = -1;
+			if (!ftTok.empty() && ftTok.size() <= 3) {
+				bool ok = true;
+				int v = 0;
+				for (unsigned char c : ftTok) {
+					if (c < '0' || c > '9') { ok = false; break; }
+					v = v * 10 + (c - '0');
+				}
+				if (ok) ft = v;
+			}
+			o.iconType = ft;
+			auto rest = icon.substr(t1 + 1);
+			const auto t2 = rest.find('\t');
+			if (t2 != std::string_view::npos) {
+				o.iconDir = std::string(rest.substr(0, t2));
+				o.iconName = std::string(rest.substr(t2 + 1));
+			} else {
+				o.iconDir = std::string(rest);
+			}
+		}
+	}
 	if (raw.size() >= 2 && raw[1] == '|' && (raw[0] == 'P' || raw[0] == 'I')) {
 		o.power = raw[0] == 'P';
 		raw.remove_prefix(2);
 	}
 	if (!o.power) {
-		const auto bar = raw.find('|');
+		auto bar = raw.find('|');
 		if (bar != std::string_view::npos && bar > 0) {
 			const auto id = ParseFormId(raw.substr(0, bar));
 			if (id) {
 				o.formId = id;
+				raw.remove_prefix(bar + 1);
+			}
+		}
+		bar = raw.find('|');
+		if (bar != std::string_view::npos && bar > 1) {
+			const auto h = ParseHandleToken(raw.substr(0, bar));
+			if (h) {
+				o.handle = h;
 				raw.remove_prefix(bar + 1);
 			}
 		}

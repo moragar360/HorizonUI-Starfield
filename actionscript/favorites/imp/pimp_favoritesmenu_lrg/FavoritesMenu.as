@@ -19,6 +19,7 @@ package
    import flash.geom.ColorTransform;
    import flash.geom.Rectangle;
    import flash.geom.Point;
+   import scaleform.gfx.Extensions;
    import flash.net.URLLoader;
    import flash.net.URLRequest;
    import flash.text.TextField;
@@ -386,9 +387,9 @@ package
       //    mouse only, the same rule as the vanilla Quickkey_tf. No key is hardcoded and nothing keys off Q;
       //  - a header pill above the top slot: QUICK MENU and the bound "Cancel" key: keyboard and mouse = the key text;
       //    controller = the mapped Cancel button (hzqPadKey: a glyph, or the HUD's keycap text, or nothing; never a $ name);
-      //  - an info card in ItemInfo_mc built only from the fields the game sends (FavoritesData aFavoriteItems):
-      //    sName (+ " (n)" from uCount), AMMO = sAmmoName + uAmmoCount, DAMAGE = aElementalStats (type + floor(fValue)),
-      //    SLOT = the selected slot's bound key. There is no magazine / reserve split in the data, so none is shown.
+      //  - an info card (name / ammo / damage / slot) as a child of the menu, fixed at the center-right of
+      //    Extensions.visibleRect (right inset, vertically centered). Built only from the
+      //    fields the game sends (FavoritesData aFavoriteItems / extra payload). There is no magazine / reserve split.
       // Theme: [Style] AccentColor / AccentHex / CardColor / CardHex / CardOpacity / CardBgOpacity / CardShadow / TextTone /
       // FontFace / TextScale / HeaderStyle / TextShadow, read once when the menu opens, through ports of the HUD card
       // functions (hzCardPal, hzAccPal, hzPanel, hzKeycap, ...). Switch: [Cards Extra] QuickMenuHorizon (1 default,
@@ -417,13 +418,25 @@ package
       // center disc (CenterClip_mc "Quick" backdrop hole) has radius 54. 58 x 58 leaves at least 14.6 between neighbors
       // and 4.95 to the disc, and fits the 64-wide catcher (3 each side) on both arms.
       private static const HZQ_BOX:Number = 58;
-      private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box
+      // Extra slots match vanilla 1-12 Horizon cards at Slot Scale 1.0 (same 58 box, radius 8,
+      // keychip at +5,+5, icon pad 4). HZQ_EXT_BOX is the unscaled size; live size is hzqExtBoxN().
+      private static const HZQ_EXT_BOX:Number = 58;
+      private static const HZQ_EXT_GAP:Number = 14;
+      private static const HZQ_FRAME_PAD:Number = 14;
+      private static const HZQ_FRAME_TITLE:Number = 22;
+      private static const HZQ_EQ_RESERVE:Number = 84;    // HUD equipment card height (HorizonAmmo_mc)
+      private static const HZQ_SAFE_M:Number = 16;
+      private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box (vanilla 1-12. extras scale this)
+      private static const HZQ_CHIP_PAD:Number = 5;       // extra keychip inset at Slot Scale 1.0 (vanilla +5,+5)
+      private static const HZQ_CHIP_MIN:Number = 8;       // extra chip font floor when Slot Scale shrinks the card
+      private static const HZQ_ICBOUND:Number = 60;       // vanilla Icon_mc BoundClip_mc (FavoritesEntry timeline)
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
       private static const HZQ_PADK:Object = {"A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT","F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT","a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT","i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT","T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"};
       private static const HZQ_INF_W:Number = 380;
       private var hzqOn:Boolean = false;        // Horizon look active for this open (switch on, ini read, no error)
       private var hzqOpened:Boolean = false;
+      private var hzqClipPad:Boolean = false;  // unused leftover; ring is a filled shape, not a grown scrollRect
       private var hzqErr:Boolean = false;
       private var hzqS:Object = null;           // [Style] values, read on open
       private var hzqFontLib:int = -1;          // font.marker: -1 checking, 0 absent, 1 present
@@ -445,14 +458,16 @@ package
       private var hzqInfY:Number = 0;
       private var hzqInfObj:Object = null;      // what the info card shows (selected entry, or the item being assigned)
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
-      private var hzqCtA:ColorTransform = null; // reused: accent tint for symbol icons
-      private var hzqCtM:ColorTransform = null; // reused: main text tint for symbol icons
-      private var hzqCtN:ColorTransform = null; // reused: identity (images)
+      private var hzqCtA:ColorTransform = null; // reused: accent multiply tint for non-weapon symbol icons
+      private var hzqCtM:ColorTransform = null; // reused: main text tint for non-weapon symbol icons
+      private var hzqCtN:ColorTransform = null; // reused: identity (non-weapon pictures)
+      private var hzqCtW:ColorTransform = null; // reused: equipment-card weapon tint (multiply 0, add accent RGB)
 
       private function hzqOpen() : void
       {
          this.hzqExtDone = false;   // one extra-slot confirm per open
          this.hzqLastExt = 0;
+         this.hzqClipPad = false;
          if(this.hzqOpened) { return; }
          this.hzqOpened = true;
          try { this.hzq37IniRead(this.hzqOnIni); } catch(e:Error) { this.hzqOn = false; }
@@ -477,7 +492,7 @@ package
       // defaults = HZ_SET_DEF; ranges = the HUD ini reader (horizon_block.as hzIniApply)
       private function hzqParse(txt:String) : Object
       {
-         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"Keys":["","","","","","","","","","","",""]};
+         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
          if(txt == null) { return st; }
          var sec:String = "";
          for each(var ln:String in this.hzq37Lines(txt))
@@ -503,6 +518,9 @@ package
                var lv:String = v.toLowerCase();
                st.ExtLayout = (lv == "1" || lv == "bars" || lv == "bar") ? 1 : 0;
             }
+            else if(k == "quickmenuextemptyslots") { st.ExtEmptyShow = !off; }
+            else if(k == "quickmenuextpanelopacity") { st.ExtPanelOpacity = this.hzqPct(v,92); }
+            else if(k == "quickmenuextslotscale" && !isNaN(nv)) { st.ExtSlotScale = Math.max(0.7,Math.min(1.4,nv)); }
             else if(k.indexOf("quickmenukey") == 0 && k.length > 12)
             {
                var sl:int = int(Number(k.substring(12)));
@@ -542,6 +560,167 @@ package
          var n:Number = Number(t);
          if(isNaN(n)) { return def; }
          return Math.max(0,Math.min(100,n));
+      }
+      // Extra-slot size vs vanilla 1-12 (HZQ_BOX 58). Default 1.0. F11 SLOT SCALE, 0.7-1.4.
+      private function hzqExtSc() : Number
+      {
+         var n:Number = this.hzqS != null ? Number(this.hzqS.ExtSlotScale) : 1;
+         if(isNaN(n)) { n = 1; }
+         return Math.max(0.7,Math.min(1.4,n));
+      }
+      private function hzqExtBoxN() : Number
+      {
+         return Math.max(32,Math.round(HZQ_BOX * this.hzqExtSc()));
+      }
+      // Extra keychip inset. Vanilla 1-12 stays +5,+5; extras follow Slot Scale (floor 2 px).
+      private function hzqExtChipPad() : Number
+      {
+         return Math.max(2,Math.round(HZQ_CHIP_PAD * this.hzqExtSc()));
+      }
+      // Extra chip design size 13 at Slot Scale 1.0, times TextScale. Integer pixels: GFx
+      // embedFonts drops glyphs on fractional sizes. Floor HZQ_CHIP_MIN (8), not hzqFs's 13.
+      private function hzqExtChipFs() : Number
+      {
+         var ts:Number = this.hzqS != null ? Number(this.hzqS.TextScale) : 1;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         if(HZQ_LRG) { ts *= 1.1; }
+         return Math.max(HZQ_CHIP_MIN,Math.round(13 * this.hzqExtSc() * ts));
+      }
+      // Extra icon pad follows Slot Scale so the picture stays inside the card at 0.7 and 1.4.
+      private function hzqExtIcPad() : Number
+      {
+         return Math.max(2,Math.round(HZQ_ICPAD * this.hzqExtSc()));
+      }
+      private function hzqExtPitchN() : Number
+      {
+         return this.hzqExtBoxN() + Math.max(8,Math.round(HZQ_EXT_GAP * this.hzqExtSc()));
+      }
+      // Extra-window fill 0-100 from F11 PANEL OPACITY. Default 92 (same as CardBgOpacity).
+      private function hzqExtPanelA() : Number
+      {
+         var n:Number = this.hzqS != null ? Number(this.hzqS.ExtPanelOpacity) : 92;
+         if(isNaN(n)) { n = 92; }
+         return Math.max(0,Math.min(100,n)) / 100;
+      }
+      private function hzqExtShowEmpty() : Boolean
+      {
+         return this.hzqS == null || this.hzqS.ExtEmptyShow !== false;
+      }
+      // Assign overlay / AssignedItem: empty extras stay clickable even when EMPTY SLOTS is Hide.
+      private function hzqExtAssigning() : Boolean
+      {
+         try { if(this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0) { return true; } } catch(eA:Error) { }
+         try { if(this.SelectQuickslot_mc != null && this.SelectQuickslot_mc.visible) { return true; } } catch(eO:Error) { }
+         return false;
+      }
+      // Occupied extra slots (13-N) with a stored item. Used by the NN / 12 counter; change-driven.
+      private function hzqExtOccupied() : int
+      {
+         var n:int = this.hzqExtCount();
+         var c:int = 0;
+         var s:int = 13;
+         while(s <= n)
+         {
+            var d:Object = this.hzqExtData != null ? this.hzqExtData[String(s)] : null;
+            var empty:Boolean = d == null || d.empty === true || d.name == null || String(d.name).length == 0;
+            if(!empty) { c++; }
+            s++;
+         }
+         return c;
+      }
+      private function hzqExtPad2(n:int) : String
+      {
+         if(n < 0) { n = 0; }
+         if(n < 10) { return "0" + String(n); }
+         return String(n);
+      }
+      // Purpose: whether arrows may highlight an extra slot. Hide-empty skips unused extras;
+      // inventory assign still visits them (empties are drawn then). Called from hzqExtNav only.
+      // Inputs: 1-based extra slot. Outputs: true = visitable. No per-frame work.
+      private function hzqExtNavVis(slot:int) : Boolean
+      {
+         var n:int = this.hzqExtCount();
+         if(slot < 13 || slot > n) { return false; }
+         if(this.hzqExtShowEmpty() || this.hzqExtAssigning()) { return true; }
+         var d:Object = this.hzqExtData != null ? this.hzqExtData[String(slot)] : null;
+         if(d == null || d.empty === true || d.name == null || String(d.name).length == 0) { return false; }
+         return true;
+      }
+      // First visitable extra in 13-N (scan order). 0 = none. Down from the T uses this.
+      private function hzqExtNavFirst() : int
+      {
+         var n:int = this.hzqExtCount();
+         var s:int = 13;
+         while(s <= n)
+         {
+            if(this.hzqExtNavVis(s)) { return s; }
+            s++;
+         }
+         return 0;
+      }
+      // Next visitable extra from `from` in (dx, dy). Left/Right wrap in the row; Up/Down stay in the
+      // column and skip hidden cells. Returns the slot, 0 = stay, -1 = leave extras (Up off the top).
+      private function hzqExtNavStep(from:int, dx:int, dy:int) : int
+      {
+         var n:int = this.hzqExtCount();
+         var per:int = this.hzqExtPer();
+         if(per < 1) { per = 6; }
+         var extN:int = n > 12 ? n - 12 : 0;
+         var k:int = from - 13;
+         if(k < 0) { k = 0; }
+         var col0:int = k - int(Math.floor(k / per)) * per;
+         var row0:int = int(Math.floor(k / per));
+         if(dx != 0)
+         {
+            var rowW:int = extN - row0 * per;
+            if(rowW > per) { rowW = per; }
+            if(rowW <= 0) { return 0; }
+            var col:int = col0;
+            var i:int = 0;
+            while(i < rowW)
+            {
+               col += dx;
+               if(col < 0) { col = rowW - 1; }
+               if(col >= rowW) { col = 0; }
+               var s:int = 13 + row0 * per + col;
+               if(this.hzqExtNavVis(s)) { return s; }
+               i++;
+            }
+            return 0;
+         }
+         var row:int = row0;
+         var g:int = 0;
+         while(g < 12)
+         {
+            row += dy;
+            if(row < 0) { return -1; }
+            var next:int = 13 + row * per + col0;
+            if(next < 13 || next > n) { return 0; }
+            if(this.hzqExtNavVis(next)) { return next; }
+            g++;
+         }
+         return 0;
+      }
+      // Dark rounded extra card (panel-style, 1 px gray filled border). Selected keeps the accent ring.
+      // Inputs: graphics, live box (vanilla 58 * scale), selected / dim. Outputs: fill + border + optional ring.
+      private function hzqExtSlotArt(g:Graphics, box:Number, sel:Boolean, dim:Boolean) : void
+      {
+         if(g == null || !(box > 8)) { return; }
+         var hb:Number = box * 0.5;
+         var a:Number = this.hzqExtPanelA() * (dim && !sel ? 0.55 : 1);
+         g.lineStyle();
+         g.beginFill(0x0E1218,a);
+         g.drawRoundRect(-hb,-hb,box,box,16,16);
+         g.endFill();
+         this.hzqFilledBorder(g,-hb,-hb,box,box,1,8,0x3A4450);
+         if(sel)
+         {
+            var acc:uint = this.hzqAccent();
+            g.beginFill(acc,0.13);
+            g.drawRoundRect(-hb + 1,-hb + 1,box - 2,box - 2,14,14);
+            g.endFill();
+            this.hzqAccentRing(g,0,0,box);
+         }
       }
       // ---------- theme: ports of the HUD card functions (horizon_block.as), same names with hzq ----------
       private function hzqCardPal() : Array
@@ -648,6 +827,37 @@ package
          g.drawRoundRect(x + 0.5,y + 0.5,w - 1,h - 1,rr * 2,rr * 2);
          g.endFill();
          g.lineStyle();
+      }
+      // Filled 2 px accent ring. Same filled-edge construction as hzqKeycap (the key chips on the
+      // selected top slot show all four sides in-game). Stroke-only lineStyle is clipped on the
+      // max-X edge in Scaleform GFx (in-game selected top slot). FME Selected is filled
+      // timeline art at depth 1; vanilla favoritesmenu.swf has no clipDepth masks.
+      // Purpose: all four sides of the hover/focus border, vanilla 1-12 and extra slots.
+      // Inputs: graphics, center, outer box. Outputs: fill in the accent color. No lineStyle.
+      private function hzqAccentRing(g:*, x:Number, y:Number, box:Number) : void
+      {
+         if(g == null || !(box > 8)) { return; }
+         this.hzqFilledBorder(g,x - box * 0.5,y - box * 0.5,box,box,2,8,this.hzqAccent());
+      }
+      // Purpose: a filled round-rect border with no lineStyle. GFx clips stroke-only on max-X.
+      // Inputs: graphics, top-left, size, thickness, corner radius, color. Outputs: four filled
+      // sides plus hzqKeyCorner pies. Built once per card/frame draw, never per frame.
+      private function hzqFilledBorder(g:*, x:Number, y:Number, w:Number, h:Number, t:Number, r:Number, col:uint) : void
+      {
+         if(g == null || !(w > 8) || !(h > 8)) { return; }
+         var bt:Number = t < 1 ? 1 : t;
+         var rr:Number = Math.min(r,Math.min(h,w) / 2);
+         var ri:Number = Math.max(0,rr - bt);
+         var ov:Number = Math.min(0.5,bt / 2);
+         g.lineStyle();
+         g.beginFill(col,1); g.drawRect(x + rr - ov,y,w - 2 * rr + 2 * ov,bt); g.endFill();
+         g.beginFill(col,1); g.drawRect(x + rr - ov,y + h - bt,w - 2 * rr + 2 * ov,bt); g.endFill();
+         g.beginFill(col,1); g.drawRect(x,y + rr - ov,bt,h - 2 * rr + 2 * ov); g.endFill();
+         g.beginFill(col,1); g.drawRect(x + w - bt,y + rr - ov,bt,h - 2 * rr + 2 * ov); g.endFill();
+         this.hzqKeyCorner(g,x + rr,y + rr,rr,ri,-1,-1,col);
+         this.hzqKeyCorner(g,x + w - rr,y + rr,rr,ri,1,-1,col);
+         this.hzqKeyCorner(g,x + w - rr,y + h - rr,rr,ri,1,1,col);
+         this.hzqKeyCorner(g,x + rr,y + h - rr,rr,ri,-1,1,col);
       }
       // hzKeycap + hzKeyCorner: 12 % fill and a ring border in the key color
       private function hzqKeycap(g:*, x:Number, y:Number, w:Number, h:Number, col:uint) : void
@@ -800,6 +1010,7 @@ package
          var fs:Number = this.hzqFs(size);
          var f:TextFormat = new TextFormat(this.hzqFace(w),fs,col);
          f.letterSpacing = hdr && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10;
+         t.embedFonts = true;
          t.defaultTextFormat = f;
          t.text = s;
          t.setTextFormat(f);
@@ -839,6 +1050,8 @@ package
          this.hzqCtA = new ColorTransform();
          this.hzqCtM = new ColorTransform();
          this.hzqCtN = new ColorTransform();
+         this.hzqCtW = new ColorTransform();
+         this.hzqTints();
          var cards:Array = [];
          var i:int = 0;
          while(i < 12)
@@ -875,6 +1088,7 @@ package
          if(this.hzqCtU == null) { this.hzqCtU = new ColorTransform(0,0,0,1,183,183,183,0); }
          if(this.hzqCtS == null) { this.hzqCtS = new ColorTransform(0,0,0,1,54,54,54,0); }
          this.hzqIcCb = [this.hzqIc0,this.hzqIc1,this.hzqIc2,this.hzqIc3,this.hzqIc4,this.hzqIc5,this.hzqIc6,this.hzqIc7,this.hzqIc8,this.hzqIc9,this.hzqIc10,this.hzqIc11];
+         this.hzqExtIcCb = [this.hzqExtIc13,this.hzqExtIc14,this.hzqExtIc15,this.hzqExtIc16,this.hzqExtIc17,this.hzqExtIc18,this.hzqExtIc19,this.hzqExtIc20,this.hzqExtIc21,this.hzqExtIc22,this.hzqExtIc23,this.hzqExtIc24];
          // header pill: a child of the top slot (FS_UP_3), so it fades with the slots
          if(this.Entry_6 != null && cards[6] != null)
          {
@@ -883,19 +1097,16 @@ package
             this.hzqHdrT = this.hzqTf(this.hzqHdr);
             this.hzqHdrK = this.hzqTf(this.hzqHdr);
          }
-         // info card: a child of ItemInfo_mc, centered where the game centers its rows (x = 0), top = the name bar's top
-         if(this.ItemInfo_mc != null)
-         {
-            this.hzqInf = this.hzqSprite(this.ItemInfo_mc,0);
-            this.hzqInf.name = "hzqInfo";
-            var nb:Rectangle = null;
-            try { nb = this.ItemInfo_mc.ItemNameBg_mc.getBounds(this.ItemInfo_mc); } catch(eNb:Error) { nb = null; }
-            this.hzqInfX = -HZQ_INF_W / 2;
-            this.hzqInfY = nb != null ? nb.y : 0;
-            this.hzqInfT = [];
-            var j:int = 0;
-            while(j < 7) { this.hzqInfT.push(this.hzqTf(this.hzqInf)); j++; }
-         }
+         // info card: a child of the menu (not ItemInfo_mc). Position is center-right of visibleRect
+         // (right inset, vertically centered). Vanilla ItemInfo_mc sits on the T and overlaps the top slot.
+         this.hzqInf = this.hzqSprite(this, -1);
+         this.hzqInf.name = "hzqInfo";
+         this.hzqInfX = 0;
+         this.hzqInfY = 0;
+         this.hzqInfT = [];
+         var j:int = 0;
+         while(j < 7) { this.hzqInfT.push(this.hzqTf(this.hzqInf)); j++; }
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = false; } } catch(eInfH:Error) { }
       }
       // ---------- draw ----------
       private function hzqRedraw() : void
@@ -906,14 +1117,57 @@ package
          while(i < 12) { this.hzqCard(i); i++; }
          this.hzqHeader();
          this.hzqInfo();
-         try { this.hzqExtDraw(); } catch(eExtR:Error) { }
+         try
+         {
+            this.hzqExtFontTouch();
+            this.hzqExtDraw();
+            if(this.hzqExtOn() && this.hzqExtLastBox != null) { this.hzqExtFrameDraw(this.hzqExtLastBox); }
+         }
+         catch(eExtR:Error) { }
       }
+      // Purpose: refresh the reused icon ColorTransforms from the live F11 accent / text color.
+      // Inputs: hzqS AccentColor / AccentHex / card fill (for hzqIconCol contrast). Outputs: hzqCtA / hzqCtM
+      // multiply tints for non-weapon symbols, and hzqCtW = the HUD equipment card's weapon tint
+      // (hzE19PlaceIcons: ColorTransform(0,0,0,1, r,g,b,0) with col = hzIconCol(HZ_ACCENT)).
+      // The equipment card only tints the equipped weapon (amber when ammo is low). Quick Menu has no
+      // magazine state, so weapons always use the accent. Called from hzqBuild and hzqRedraw (ini / font /
+      // data / ControlMap edges), never per frame.
       private function hzqTints() : void
       {
+         if(this.hzqCtA == null || this.hzqCtM == null || this.hzqCtW == null) { return; }
          var a:uint = this.hzqIconCol(this.hzqAccent());
          var m:uint = this.hzqMainCol();
          this.hzqCtA.redMultiplier = ((a >> 16) & 0xFF) / 255; this.hzqCtA.greenMultiplier = ((a >> 8) & 0xFF) / 255; this.hzqCtA.blueMultiplier = (a & 0xFF) / 255;
          this.hzqCtM.redMultiplier = ((m >> 16) & 0xFF) / 255; this.hzqCtM.greenMultiplier = ((m >> 8) & 0xFF) / 255; this.hzqCtM.blueMultiplier = (m & 0xFF) / 255;
+         // Same constructor as hzE19PlaceIcons; mutate the reused object so a redraw does not allocate.
+         this.hzqCtW.redMultiplier = 0; this.hzqCtW.greenMultiplier = 0; this.hzqCtW.blueMultiplier = 0; this.hzqCtW.alphaMultiplier = 1;
+         this.hzqCtW.redOffset = (a >> 16) & 0xFF; this.hzqCtW.greenOffset = (a >> 8) & 0xFF; this.hzqCtW.blueOffset = a & 0xFF; this.hzqCtW.alphaOffset = 0;
+      }
+      // Purpose: a favorite is a weapon when the game marks it equippable (or sends ammo / damage) and it is
+      // not a power. The HUD equipment card only shows TESObjectWEAP; Quick Menu matches that for slots 1-12
+      // from FavoritesData. Aid photos stay identity. Powers keep the symbol multiply tint.
+      // Inputs: aFavoriteItems / AssignedItem row. Outputs: true = apply hzqCtW.
+      private function hzqIsWeapon(it:Object) : Boolean
+      {
+         if(it == null) { return false; }
+         try { if(it.bIsPower == true) { return false; } } catch(e0:Error) { }
+         try { if(it.bIsEquippable == true) { return true; } } catch(e1:Error) { }
+         try { if(it.aElementalStats != null && it.aElementalStats.length > 0) { return true; } } catch(e2:Error) { }
+         try { if(it.sAmmoName != null && String(it.sAmmoName).length > 0) { return true; } } catch(e3:Error) { }
+         return false;
+      }
+      // Purpose: write Icon_mc.colorTransform. Weapons use the equipment-card add-RGB accent tint
+      // (hzqCtW) whether selected or not. Other symbols keep selected-accent / unselected-main.
+      // Non-weapon pictures stay identity. Empty slots stay identity.
+      // Inputs: Icon_mc, weapon flag, empty, selected, item (for FT_SYMBOL). Outputs: colorTransform.
+      private function hzqApplyIconTint(ic:*, weap:Boolean, empty:Boolean, sel:Boolean, it:Object) : void
+      {
+         if(ic == null) { return; }
+         if(empty) { ic.transform.colorTransform = this.hzqCtN; return; }
+         if(weap) { ic.transform.colorTransform = this.hzqCtW; return; }
+         var sym:Boolean = false;
+         try { sym = it != null && it.iconImage != null && it.iconImage.iFixtureType == ImageFixture.FT_SYMBOL; } catch(e1:Error) { sym = false; }
+         ic.transform.colorTransform = sym ? (sel ? this.hzqCtA : this.hzqCtM) : this.hzqCtN;
       }
       // the bound button name of a user event (ControlMapData strButtonName), trimmed; "" when unbound
       private function hzqRaw(ev:String) : String
@@ -958,6 +1212,34 @@ package
          }
          catch(e2:Error) { }
       }
+      // Parent scrollRect clips overflow on the right and bottom (x/y stay). Grow once per open
+      // so the last-column accent ring is inside the visible box. Never a per-frame walk.
+      private function hzqClipPadOnce(d:DisplayObject) : void
+      {
+         if(this.hzqClipPad || d == null) { return; }
+         this.hzqClipPad = true;
+         var p:DisplayObject = d;
+         var n:int = 0;
+         while(p != null && n < 8)
+         {
+            try
+            {
+               var m:MovieClip = p as MovieClip;
+               if(m != null)
+               {
+                  var sr:Rectangle = null;
+                  try { sr = m.scrollRect; } catch(eS:Error) { sr = null; }
+                  if(sr != null)
+                  {
+                     m.scrollRect = new Rectangle(sr.x,sr.y,sr.width + 8,sr.height + 8);
+                  }
+               }
+            }
+            catch(eP:Error) { }
+            try { p = p.parent; } catch(eN:Error) { p = null; }
+            n++;
+         }
+      }
       private function hzqCard(i:int) : void
       {
          var c:Object = this.hzqCards[i];
@@ -981,6 +1263,8 @@ package
             g.beginFill(acc,0.13);
             g.drawRoundRect(r.x + 1,r.y + 1,r.width - 2,r.height - 2,14,14);
             g.endFill();
+            // Inner filled ring on the card (same size as the overlay). Stroke-only was clipped on +x.
+            this.hzqAccentRing(g,r.x + r.width / 2,r.y + r.height / 2,r.width);
          }
          // key badge: top left, the bound Quickkey<n>, keyboard and mouse only
          var kt:String = this.hzqKb ? this.hzqKey("Quickkey" + (i + 1)) : "";
@@ -997,12 +1281,12 @@ package
             c.kb = 5 + kh;
          }
          else { k.visible = false; c.kb = 0; }
-         // the game's icon: symbols take the accent when selected, the main text color otherwise; pictures stay as they are
+         // Weapon pictures/symbols: equipment-card accent tint (hzqCtW). Other symbols: accent when
+         // selected, main text otherwise. Non-weapon pictures stay as they are.
          var ic:* = e["Icon_mc"];
          if(ic != null)
          {
-            var sym:Boolean = !empty && it.iconImage != null && it.iconImage.iFixtureType == ImageFixture.FT_SYMBOL;
-            ic.transform.colorTransform = sym ? (sel ? this.hzqCtA : this.hzqCtM) : this.hzqCtN;
+            this.hzqApplyIconTint(ic,this.hzqIsWeapon(it),empty,sel,it);
             this.hzqIcHook(i,ic);
             this.hzqFit(i);
          }
@@ -1032,6 +1316,13 @@ package
          if(fe == null) { return; }
          try { fe.onIconLoadAttemptComplete(); } catch(e0:Error) { }
          if(!this.hzqOn) { return; }
+         try
+         {
+            var it:Object = this.FavoritesInfoA != null && i < this.FavoritesInfoA.length ? this.FavoritesInfoA[i] : null;
+            var empty:Boolean = it == null || it.sName == null || String(it.sName).length == 0;
+            this.hzqApplyIconTint(fe["Icon_mc"],this.hzqIsWeapon(it),empty,i == int(this.selectedIndex),it);
+         }
+         catch(eT:Error) { }
          try { this.hzqFit(i); } catch(e1:Error) { this.hzqFail(); }
       }
       // Fit: back to the game's transform first (so it never compounds across redraws, selection, assign or a new icon in
@@ -1200,11 +1491,15 @@ package
          if(l == "energy") { return "ENERGY"; }
          return "";
       }
+      // Purpose: draw the item info card at center-right of the visible area (right inset, vertically centered).
+      // Inputs: hzqInfObj / hzqInfSel (set only on selection / assign). Outputs: panel at hzqInf.x/y.
+      // Dependencies: Extensions.visibleRect. Not on the T, extra grid, or HUD cards (top-right quest / bottom-right equipment).
       private function hzqInfo() : void
       {
          if(this.hzqInf == null) { return; }
          var o:Object = this.hzqInfObj;
          this.hzqHideInfoVan(true);
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = false; } } catch(eH:Error) { }
          var g:* = this.hzqInf.graphics;
          g.clear();
          var T:Array = this.hzqInfT;
@@ -1212,25 +1507,38 @@ package
          {
             var z:int = 0;
             while(z < T.length) { TextField(T[z]).visible = false; z++; }
+            this.hzqInf.visible = false;
             return;
          }
          var W:Number = HZQ_INF_W;
          var P:Number = 16;
          var acc:uint = this.hzqAccent();
          var empty:Boolean = String(o.sName).length == 0;
-         // name: the game's string ($EMPTY SLOT is translated by GlobalFunc.SetText), + " (n)" like the game
+         var extEmpty:Boolean = empty && this.hzqExtSel >= 13;
+         // Local coords of the sprite: panel origin (0,0). Sprite is moved after height is known.
+         this.hzqInfX = 0;
+         this.hzqInfY = 0;
          var nt:TextField = T[0];
-         this.hzqSet(nt," ",17,empty ? this.hzqDimCol() : this.hzqMainCol(),"bd",0.04,false);
-         GlobalFunc.SetText(nt,empty ? "$EMPTY SLOT" : String(o.sName),false);
-         if(!empty && uint(o.uCount) > 1) { nt.appendText(" (" + uint(o.uCount) + ")"); }
-         nt.autoSize = TextFieldAutoSize.NONE;
-         nt.wordWrap = true;
-         nt.multiline = true;
-         nt.width = W - P * 2;
-         nt.height = Math.ceil(nt.textHeight) + 4;
-         nt.x = this.hzqInfX + P;
-         nt.y = this.hzqInfY + 12;
-         nt.visible = true;
+         if(extEmpty)
+         {
+            nt.visible = false;
+            nt.height = 0;
+            nt.y = 8;
+         }
+         else
+         {
+            this.hzqSet(nt," ",17,empty ? this.hzqDimCol() : this.hzqMainCol(),"bd",0.04,false);
+            GlobalFunc.SetText(nt,empty ? "$EMPTY SLOT" : String(o.sName),false);
+            if(!empty && uint(o.uCount) > 1) { nt.appendText(" (" + uint(o.uCount) + ")"); }
+            nt.autoSize = TextFieldAutoSize.NONE;
+            nt.wordWrap = true;
+            nt.multiline = true;
+            nt.width = W - P * 2;
+            nt.height = Math.ceil(nt.textHeight) + 4;
+            nt.x = P;
+            nt.y = 12;
+            nt.visible = true;
+         }
          var rows:Array = [];
          if(!empty && o.bIsEquippable && o.sAmmoName != null && String(o.sAmmoName).length > 0)
          {
@@ -1251,10 +1559,15 @@ package
          }
          if(this.hzqInfSel && this.hzqKb)
          {
-            var sk:String = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1));
+            var sk:String = "";
+            if(this.hzqExtSel >= 13 && this.hzqS != null && this.hzqS.Keys != null)
+            {
+               sk = this.hzqExtKeyShort(String(this.hzqS.Keys[this.hzqExtSel - 13] != null ? this.hzqS.Keys[this.hzqExtSel - 13] : ""));
+            }
+            else { sk = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1)); }
             if(sk.length > 0) { rows.push(["SLOT",sk]); }
          }
-         var y:Number = nt.y + nt.height + (rows.length > 0 ? 8 : 4);
+         var y:Number = (extEmpty ? 10 : nt.y + nt.height) + (rows.length > 0 ? 8 : 4);
          var div:Number = y - 4;
          var j:int = 0;
          while(j < 3)
@@ -1265,26 +1578,53 @@ package
             {
                this.hzqSet(lt,this.hzqUC(String(rows[j][0])),13,this.hzqDimCol(),"sb",0.14,true);
                this.hzqSet(vt,String(rows[j][1]),13,this.hzqMainCol(),"sb",0.02,false);
-               lt.x = this.hzqInfX + P; lt.y = y + (vt.height - lt.height) / 2;
-               vt.x = this.hzqInfX + W - P - vt.width; vt.y = y;
+               lt.x = P; lt.y = y + (vt.height - lt.height) / 2;
+               vt.x = W - P - vt.width; vt.y = y;
                lt.visible = true; vt.visible = true;
                y += vt.height + 2;
             }
             else { lt.visible = false; vt.visible = false; }
             j++;
          }
-         var H:Number = Math.ceil(y - this.hzqInfY + 10);
-         this.hzqPanel(g,this.hzqInfX,this.hzqInfY,W,H,10,1);
-         // the accent bar on the left edge (hzAccStripe on tall cards; this card is short, so a slim bar the card's height)
+         if(extEmpty && rows.length == 0)
+         {
+            this.hzqInf.visible = false;
+            return;
+         }
+         var H:Number = Math.ceil(y + 10);
+         this.hzqPanel(g,0,0,W,H,10,1);
          g.beginFill(this.hzqIconCol(acc),1);
-         g.drawRoundRect(this.hzqInfX,this.hzqInfY + 10,3,Math.max(8,H - 20),3,3);
+         g.drawRoundRect(0,10,3,Math.max(8,H - 20),3,3);
          g.endFill();
-         if(rows.length > 0)
+         if(rows.length > 0 && !extEmpty)
          {
             g.beginFill(this.hzqLight() ? 0x0E1E1C : 0xFFFFFF,0.1);
-            g.drawRect(this.hzqInfX + P,div,W - P * 2,1);
+            g.drawRect(P,div,W - P * 2,1);
             g.endFill();
          }
+         this.hzqInfoPlace(W,H);
+         this.hzqInf.visible = true;
+         try { if(this.hzqInf.parent == this) { this.setChildIndex(this.hzqInf,this.numChildren - 1); } } catch(eZ:Error) { }
+      }
+      // Center-right of Extensions.visibleRect. Once per info redraw (selection / assign), never per frame.
+      private function hzqInfoPlace(W:Number, H:Number) : void
+      {
+         var m:Number = HZQ_SAFE_M;
+         var tr:Point = null;
+         var br:Point = null;
+         try
+         {
+            var vr:Rectangle = scaleform.gfx.Extensions.visibleRect;
+            if(vr != null && vr.width > 100)
+            {
+               tr = this.globalToLocal(new Point(vr.right,vr.top));
+               br = this.globalToLocal(new Point(vr.right,vr.bottom));
+            }
+         }
+         catch(eV:Error) { tr = null; br = null; }
+         if(br == null || tr == null || isNaN(br.x) || isNaN(br.y) || isNaN(tr.y)) { tr = new Point(960,-540); br = new Point(960,540); }
+         this.hzqInf.x = br.x - m - W;
+         this.hzqInf.y = (tr.y + br.y) * 0.5 - H * 0.5;
       }
       private function hzqHideInfoVan(hide:Boolean) : void
       {
@@ -1321,7 +1661,7 @@ package
                this.hzqExtSel = idx;
                var d:Object = this.hzqExtData[String(idx)];
                if(d != null) { this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true); }
-               else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+               else { this.hzqInfoSet({"sName":"","uCount":0},true); }
             }
             else
             {
@@ -1343,7 +1683,7 @@ package
       }
       private function hzqAssign() : void
       {
-         try { this.hzqExtPad(); this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); this.hzqRingDraw(); } } catch(e:Error) { this.hzqFail(); }
+         try { this.hzqExtPad(); this.hzqInfoSet(this.AssignedItem,false); if(this.hzqOn) { this.hzqFitAll(); } if(this.hzqExtOn()) { this.hzqExtRaise(); this.hzqExtDraw(); this.hzqRingDraw(); } } catch(e:Error) { this.hzqFail(); }
       }
       override protected function OnControlMapChanged(param1:Object) : void
       {
@@ -1390,6 +1730,7 @@ package
          if(this.hzqHdr != null) { this.hzqHdr.visible = false; }
          if(this.hzqInf != null) { this.hzqInf.visible = false; }
          try { this.hzqHideInfoVan(false); } catch(e3:Error) { }
+         try { if(this.ItemInfo_mc != null) { this.ItemInfo_mc.visible = true; } } catch(eInfR:Error) { }
          try { this.hzqExtRestore(); } catch(e4:Error) { }
       }
 
@@ -1400,8 +1741,14 @@ package
       // Index 12 stays FS_NONE (vanilla). AssignQuickkey is never sent with an index >= 12.
       private var hzqExtSel:int = 0;          // 13-24, or 0
       private var hzqExtHold:Sprite = null;
-      private var hzqRing:Sprite = null;      // accent hover/focus ring; child of the menu so Entry/Catcher cannot clip it
-      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, n:TextField, i:int}
+      private var hzqExtFrame:Sprite = null;  // framed box around the extra grid (built once)
+      private var hzqExtFrameT:TextField = null;
+      private var hzqExtFrameN:TextField = null;  // occupied counter "NN / 12"
+      private var hzqExtFrameKey:String = "";
+      private var hzqExtLastBox:Object = null;  // last layout box; retitle after font.marker without a new layout
+      private var hzqRing:Sprite = null;      // filled accent ring; child of the menu
+      private var hzqExtSlots:Array = null;   // {s:MovieClip, k:TextField, ic:ImageFixture, i:int, ib:{sx,sy,x,y}}
+      private var hzqExtIcCb:Array = null;    // per extra slot icon-load handler (hzqExtIc13 .. hzqExtIc24)
       private var hzqExtAdd:Sprite = null;
       private var hzqExtPool:Array = null;    // 12 slot clips (13-24), built once per open, reused (perf standards 2)
       private var hzqExtAddDrawn:Boolean = false;
@@ -1416,7 +1763,8 @@ package
       public var hzqExtCmd:Function = null;
       public var hzqLastExt:int = 0;    // 13-24 when an extra slot is chosen; 0 otherwise. DLL reads this; never sent as uQuickkeyIndex.
       private var hzqExtMask:int = 0;   // N-4: bit i = the DLL refused slot 13+i's key (game-bound, F11 or duplicate)
-      private static const HZQ_PITCH:Number = 70;
+      private static const HZQ_PITCH:Number = 70;           // vanilla 1-12 BARS cells (58 + 12)
+      private static const HZQ_EXT_PITCH:Number = 72;       // extra slots at scale 1.0 (58 + 14). live pitch is hzqExtPitchN()
       // Vanilla FavoritesMenu rest geometry (game 1.16.244, both scales). Live getBounds during Open
       // collapses the T to the origin, which stacked the bars on the cross and hid slots 1-12.
       private static const HZQ_REST_X:Array = [-195.75,-120.8,-40.05,40,120.8,195.8,0,0,0,0,0,0];
@@ -1464,8 +1812,8 @@ package
             this.FavoritesInfoA.push({sName:"",uCount:0,bIsEquippable:false,iconImage:{iFixtureType:0}});
          }
       }
-      // Accent hover/focus outline. Drawn on a menu-level sprite so Entry / Catcher / SelectQuickslot
-      // cannot clip any of the four sides. Same 2 px accent stroke as the card; the card look is unchanged.
+      // Accent hover/focus outline. Filled keycap-style border (FME Selected is filled timeline art).
+      // Stroke-only lineStyle is clipped on the +x edge in Scaleform GFx (in-game selected top slot).
       private function hzqRingEnsure() : void
       {
          if(this.hzqRing != null) { return; }
@@ -1483,9 +1831,9 @@ package
          var g:Graphics = this.hzqRing.graphics;
          g.clear();
          if(!this.hzqOn) { return; }
-         var acc:uint = this.hzqAccent();
          var x:Number = 0;
          var y:Number = 0;
+         var box:Number = HZQ_BOX;
          var on:Boolean = false;
          var idx:int = int(this.selectedIndex);
          if(idx >= 0 && idx < 12 && this.hzqCards != null && this.hzqCards[idx] != null)
@@ -1497,6 +1845,7 @@ package
                var p:Point = this.globalToLocal(e.localToGlobal(new Point(r.x + r.width / 2,r.y + r.height / 2)));
                x = p.x;
                y = p.y;
+               box = r.width;
                on = true;
             }
          }
@@ -1505,17 +1854,12 @@ package
             var k:int = 0;
             while(this.hzqExtSlots != null && k < this.hzqExtSlots.length)
             {
-               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); on = true; break; }
+               if(int(this.hzqExtSlots[k].i) == this.hzqExtSel) { x = Number(this.hzqExtSlots[k].x); y = Number(this.hzqExtSlots[k].y); box = this.hzqExtBoxN(); on = true; break; }
                k++;
             }
          }
          if(!on) { return; }
-         g.beginFill(0,0.01);
-         g.drawRect(x - 40,y - 40,80,80);
-         g.endFill();
-         g.lineStyle(2,acc,1,true,"none");
-         g.drawRoundRect(x - 26,y - 26,52,52,14,14);
-         g.lineStyle();
+         this.hzqAccentRing(g,x,y,box);
       }
       // InventoryMenu item objects name both uFormID and uHandleID (separate fields). FavoritesMenu
       // never reads either: AssignedItem / aFavoriteItems are used as sName, bIsPower, iconImage,
@@ -1529,6 +1873,15 @@ package
          try { n = Number(it.uFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e1:Error) { }
          try { n = Number(it.formID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e2:Error) { }
          try { n = Number(it.uBaseFormID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e3:Error) { }
+         return 0;
+      }
+      // Number() coerces AS3 uint. The DLL must also read kUInt; this hint is a backup.
+      private function hzqExtHandle(it:Object) : uint
+      {
+         if(it == null) { return 0; }
+         var n:Number;
+         try { n = Number(it.uHandleID); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e1:Error) { }
+         try { n = Number(it.uItemHandle); if(n > 0 && n < 4294967295) { return uint(n); } } catch(e2:Error) { }
          return 0;
       }
       private function hzqExtHex(id:uint) : String
@@ -1588,7 +1941,7 @@ package
          var box:Object = this.hzqExtTBox();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_PITCH;
+         var pitch:Number = this.hzqExtPitchN();
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var i:int;
          try
@@ -1599,7 +1952,7 @@ package
          if(bars)
          {
             // Clips are center-registered. Live getBounds during Open is the collapsed T, so
-            // write x/y to the grid cell center directly (no bounds delta).
+            // write x/y to the grid cell center directly (no bounds delta). Extra pitch so 13-24 line up.
             this.hzqExtMoved = true;
             var rows:int = int(Math.ceil(n / per));
             var y0:Number = box.cy - (rows - 1) * pitch / 2;
@@ -1635,7 +1988,9 @@ package
             }
             this.hzqExtMoved = false;
          }
+         this.hzqExtLastBox = box;
          this.hzqExtBuildClips(box);
+         this.hzqExtFrameDraw(box);
          this.hzqExtRaise();
       }
       // Extra slots are first-class Entry_13..Entry_24 in the same container as Entry_0..11 so
@@ -1643,6 +1998,12 @@ package
       // Purpose: inventory assign and hover+Enter can pick 13-24. Inputs: none. Outputs: z-order.
       private function hzqExtRaise() : void
       {
+         // Frame (hold) under extras, extras under the filled ring, info last. Hold last would
+         // cover the extra clips with the frame fill (mouseEnabled is false, but the art hides).
+         if(this.hzqExtHold != null)
+         {
+            try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
+         }
          var i:int = 0;
          while(this.hzqExtSlots != null && i < this.hzqExtSlots.length)
          {
@@ -1650,13 +2011,13 @@ package
             try { if(clip != null && clip.parent == this) { this.setChildIndex(clip,this.numChildren - 1); } } catch(eE:Error) { }
             i++;
          }
-         if(this.hzqExtHold != null)
-         {
-            try { if(this.hzqExtHold.parent == this) { this.setChildIndex(this.hzqExtHold,this.numChildren - 1); } } catch(eZ:Error) { }
-         }
          if(this.hzqRing != null)
          {
             try { if(this.hzqRing.parent == this) { this.setChildIndex(this.hzqRing,this.numChildren - 1); } } catch(eR:Error) { }
+         }
+         if(this.hzqInf != null)
+         {
+            try { if(this.hzqInf.parent == this) { this.setChildIndex(this.hzqInf,this.numChildren - 1); } } catch(eI:Error) { }
          }
          try
          {
@@ -1740,8 +2101,9 @@ package
          if(u == "ACTIVATE" || u == "ACCEPT" || u == "OK") { return this.hzqExtConfirm(); }
          return false;
       }
-      // Move onto / around slots 13-24. Down from the T (or the last BARS vanilla row) lands on 13-N.
-      // Up from the first extra row returns to vanilla 1-12. Left / right wrap in the extra row.
+      // Move onto / around slots 13-24. Down from the T lands on the first visitable extra (occupied
+      // when EMPTY SLOTS is Hide; slot 13 when empties are shown). Up from the first extra row
+      // returns to vanilla 1-12. Left / right wrap in the extra row. Hidden empty cells are skipped.
       private function hzqExtNav(dx:int, dy:int) : Boolean
       {
          var n:int = this.hzqExtCount();
@@ -1752,22 +2114,8 @@ package
          if(this.hzqExtSel >= 13)
          {
             var k:int = this.hzqExtSel - 13;
-            var extN:int = n - 12;
-            var col:int = k - int(Math.floor(k / per)) * per;
-            var row:int = int(Math.floor(k / per));
-            col += dx;
-            row += dy;
-            if(dx != 0)
-            {
-               var rowW:int = extN - row * per;
-               if(rowW > per) { rowW = per; }
-               if(rowW <= 0) { return true; }
-               if(col < 0) { col = rowW - 1; }
-               if(col >= rowW) { col = 0; }
-               this.hzqExtPick(13 + row * per + col,false);
-               return true;
-            }
-            if(row < 0)
+            var step:int = this.hzqExtNavStep(this.hzqExtSel,dx,dy);
+            if(step < 0)
             {
                this.hzqExtSel = 0;
                if(bars)
@@ -1781,9 +2129,7 @@ package
                this.hzqExtDraw();
                return true;
             }
-            var next:int = 13 + row * per + col;
-            if(next < 13 || next > n) { return true; }
-            this.hzqExtPick(next,false);
+            if(step >= 13 && step != this.hzqExtSel) { this.hzqExtPick(step,false); }
             return true;
          }
          var idx:int = int(this.selectedIndex);
@@ -1794,14 +2140,18 @@ package
             var nextB:int = idx + per;
             if(nextB >= 12 && nextB < n)
             {
-               this.hzqExtPick(nextB + 1,false);
+               var land:int = nextB + 1;
+               if(this.hzqExtNavVis(land)) { this.hzqExtPick(land,false); return true; }
+               var skipB:int = this.hzqExtNavStep(land,0,1);
+               if(skipB >= 13) { this.hzqExtPick(skipB,false); }
                return true;
             }
             return false;
          }
          if(idx >= 9 && idx <= 11)
          {
-            this.hzqExtPick(13,false);
+            var first:int = this.hzqExtNavFirst();
+            if(first >= 13) { this.hzqExtPick(first,false); }
             return true;
          }
          return false;
@@ -1817,6 +2167,14 @@ package
             this.hzqExtHold.mouseChildren = true;
             this.hzqExtHold.tabEnabled = false;
             this.addChild(this.hzqExtHold);
+            this.hzqExtFrame = new Sprite();
+            this.hzqExtFrame.name = "hzqExtFrame";
+            this.hzqExtFrame.mouseEnabled = false;
+            this.hzqExtFrame.mouseChildren = false;
+            this.hzqExtFrame.tabEnabled = false;
+            this.hzqExtHold.addChildAt(this.hzqExtFrame,0);
+            this.hzqExtFrameT = this.hzqTf(this.hzqExtFrame);
+            this.hzqExtFrameN = this.hzqTf(this.hzqExtFrame);
          }
          if(this.hzqExtPool == null)
          {
@@ -1844,16 +2202,23 @@ package
          this.hzqExtEnsureClips();
          var n:int = this.hzqExtCount();
          var per:int = this.hzqExtPer();
-         var pitch:Number = HZQ_PITCH;
+         var pitch:Number = this.hzqExtPitchN();
+         var boxN:Number = this.hzqExtBoxN();
          var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
          var extN:int = n > 12 ? n - 12 : 0;
+         var y0x:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + boxN * 0.5;
          this.hzqExtSlots.length = 0;   // the active subset of the pool (array reused)
          var k:int = 0;
          while(k < 12)
          {
             var o:Object = this.hzqExtPool[k];
             var on:Boolean = k < extN;
-            if(o.s.visible != on) { o.s.visible = on; }
+            var d0:Object = this.hzqExtData != null ? this.hzqExtData[String(o.i)] : null;
+            var empty0:Boolean = d0 == null || d0.empty === true || d0.name == null || String(d0.name).length == 0;
+            var hideE:Boolean = on && empty0 && !this.hzqExtShowEmpty() && !this.hzqExtAssigning();
+            var vis:Boolean = on && !hideE;
+            if(o.s.visible != vis) { o.s.visible = vis; }
+            if(on && o.s.mouseEnabled == hideE) { o.s.mouseEnabled = !hideE; }
             if(on)
             {
                var x:Number;
@@ -1878,12 +2243,25 @@ package
                   var take:int = extN - row * per;
                   if(take > per) { take = per; }
                   x = box.cx - (take - 1) * pitch / 2 + col * pitch;
-                  y = box.b + 12 + 29 + row * pitch;
+                  y = y0x + row * pitch;
                }
                if(o.s.x != x) { o.s.x = x; }
                if(o.s.y != y) { o.s.y = y; }
                o.x = x;
                o.y = y;
+               if(o.cBox !== boxN)
+               {
+                  o.cBox = boxN;
+                  o.cSel = null;
+                  try
+                  {
+                     o.s.graphics.clear();
+                     o.s.graphics.beginFill(0,0.01);
+                     o.s.graphics.drawRect(-boxN * 0.5,-boxN * 0.5,boxN,boxN);
+                     o.s.graphics.endFill();
+                  }
+                  catch(eHitB:Error) { }
+               }
                this.hzqExtSlots.push(o);
             }
             k++;
@@ -1893,7 +2271,7 @@ package
          if(showAdd)
          {
             var ax:Number = box.cx;
-            var ay:Number = box.b + 12 + 29;
+            var ay:Number = box.b + 12 + HZQ_FRAME_PAD + HZQ_FRAME_TITLE + boxN * 0.5;
             if(bars)
             {
                var rowA:int = int(Math.floor(n / per));
@@ -1934,19 +2312,26 @@ package
          var card:Sprite = this.hzqSprite(s,0);
          card.name = "hzqCard";
          var k:TextField = this.hzqTf(card);
-         var nm:TextField = this.hzqTf(card);
+         var plus:TextField = this.hzqTf(card);
+         plus.visible = false;
+         var ic:ImageFixture = new ImageFixture();
+         ic.name = "Icon_mc";
+         ic.mouseEnabled = false;
+         ic.mouseChildren = false;
+         s.addChild(ic);
+         this.hzqExtIconBound(ic);
          this.addChild(s);
          this.hzqUnclip(s);
          this.hzqExtHideVan(s);
          try
          {
             s.graphics.beginFill(0,0.01);
-            s.graphics.drawRect(-29,-29,58,58);
+            s.graphics.drawRect(-HZQ_EXT_BOX * 0.5,-HZQ_EXT_BOX * 0.5,HZQ_EXT_BOX,HZQ_EXT_BOX);
             s.graphics.endFill();
          }
          catch(eHit:Error) { }
-         // c* = what is on screen now (change-driven draw)
-         return {"s":s,"c":card,"k":k,"n":nm,"i":slot,"x":0,"y":0,"cSel":null,"cEmpty":null,"cLabel":null,"cKey":null};
+         // c* = what is on screen now (change-driven draw). No name field: name is the info panel only.
+         return {"s":s,"c":card,"k":k,"p":plus,"ic":ic,"i":slot,"x":0,"y":0,"ib":{"sx":1,"sy":1,"x":0,"y":0},"cSel":null,"cEmpty":null,"cKey":null,"cIcon":null,"cBox":null,"cHide":null};
       }
       private function hzqExtClick(e:MouseEvent) : void
       {
@@ -2011,7 +2396,7 @@ package
          {
             this.hzqInfoSet({"sName":String(d.name != null ? d.name : ""),"uCount":d.count,"sAmmoName":"","uAmmoCount":0,"aElementalStats":null},true);
          }
-         else { this.hzqInfoSet({"sName":"EMPTY","uCount":0},true); }
+         else { this.hzqInfoSet({"sName":"","uCount":0},true); }
          // Extra selection lives in hzqExtSel / hzqLastExt only. Never write selectedIndex 13-24:
          // GetEntryClip is `as FavoritesEntry` (null for these clips) and the setter then throws
          // after storing the index, which stuck vanilla 0-11 and skipped AssignQuickkey.
@@ -2026,14 +2411,17 @@ package
          {
             if(this.hzqExtDone) { return; }
             var assign:Boolean = false; try { assign = this.isAssigningItem(); } catch(eA:Error) { assign = this.AssignedItem != null && String(this.AssignedItem.sName != null ? this.AssignedItem.sName : "").length > 0; }
+            try { if(!assign && this.SelectQuickslot_mc != null && this.SelectQuickslot_mc.visible) { assign = true; } } catch(eOv:Error) { }
             var op:String = assign ? "assign" : "use";
             var extra:String = "";
             if(assign && this.AssignedItem != null)
             {
-               // Hint only: the DLL uses the open-time inventory snapshot first, then this AssignedItem hint.
+               // Hint: Number() coerces uint fields the C++ kNumber-only reader missed. DLL still snaps InventoryMenu.
                var pw:Boolean = false; try { pw = this.AssignedItem.bIsPower == true; } catch(eP:Error) { }
                var fid:uint = this.hzqExtFormId(this.AssignedItem);
-               extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + String(this.AssignedItem.sName);
+               var hid:uint = this.hzqExtHandle(this.AssignedItem);
+               extra = (pw ? "P|" : "I|") + (fid != 0 ? this.hzqExtHex(fid) + "|" : "") + (hid != 0 ? "h" + hid.toString(10) + "|" : "") + String(this.AssignedItem.sName);
+               extra += this.hzqExtIconExtra(this.AssignedItem);
             }
             var res:String = this.hzqExtCmdSend(op,slot,extra);
             if(res != "ok")
@@ -2068,66 +2456,95 @@ package
             var refuse:Boolean = d != null && d.refuse === true && d.name != null && String(d.name).length > 0;
             var empty:Boolean = !refuse && (d == null || d.empty === true || d.name == null || String(d.name).length == 0);
             var dim:Boolean = empty || refuse;
+            var hideE:Boolean = empty && !this.hzqExtShowEmpty() && !this.hzqExtAssigning();
             var key:String = "";
             if(this.hzqKb && this.hzqS != null && this.hzqS.Keys != null) { key = String(this.hzqS.Keys[slot - 13] != null ? this.hzqS.Keys[slot - 13] : ""); }
             try { this.hzqUnclip(o.s as DisplayObject); } catch(eUc:Error) { }
             try { this.hzqExtHideVan(o.s as MovieClip); } catch(eHv:Error) { }
-            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key)
+            if(o.s.visible == hideE) { o.s.visible = !hideE; }
+            if(o.s.mouseEnabled == hideE) { o.s.mouseEnabled = !hideE; }
+            if(hideE)
+            {
+               o.cHide = true;
+               i++;
+               continue;
+            }
+            var boxN:Number = this.hzqExtBoxN();
+            if(o.cSel !== sel || o.cEmpty !== empty || o.cRefuse !== refuse || o.cKey !== key || o.cBox !== boxN || o.cHide !== false)
             {
                var spr:Sprite = o.c != null ? o.c : o.s;
                var g:Graphics = spr.graphics;
                g.clear();
                var acc:uint = this.hzqAccent();
-               this.hzqPanel(g,-29,-29,58,58,8,dim && !sel ? 0.6 : 1);
-               if(sel)
-               {
-                  g.beginFill(acc,0.13);
-                  g.drawRoundRect(-28,-28,56,56,14,14);
-                  g.endFill();
-               }
+               var hb:Number = boxN * 0.5;
+               this.hzqExtSlotArt(g,boxN,sel,dim);
                if(key.length > 0)
                {
                   var klab:String = this.hzqExtKeyShort(key);
-                  this.hzqSet(o.k,klab,13,sel ? this.hzqTextAccent() : this.hzqMutCol(),"sb",0.04,false);
-                  this.hzqExtFit(o.k,klab,50);
-                  var kw:Number = Math.max(16,Math.ceil(o.k.textWidth * 1.08) + 8);
-                  var kh:Number = Math.max(16,Math.ceil(o.k.textHeight) + 3);
-                  this.hzqKeycap(g,-24,-24,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
-                  o.k.x = -24 + (kw - o.k.width) / 2;
-                  o.k.y = -24 + (kh - o.k.height) / 2;
+                  var kcol:uint = sel ? this.hzqTextAccent() : this.hzqMutCol();
+                  this.hzqSet(o.k,klab,13,kcol,"sb",0.04,false);
+                  this.hzqExtChipTune(o.k,klab,boxN,kcol);
+                  var pad:Number = this.hzqExtChipPad();
+                  var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
+                  var minBox:Number = Math.max(HZQ_CHIP_MIN,Math.round(16 * this.hzqExtSc()));
+                  var maxW:Number = boxN - pad * 2;
+                  if(maxW < HZQ_CHIP_MIN) { maxW = HZQ_CHIP_MIN; }
+                  var kw:Number = Math.ceil(o.k.textWidth * 1.08) + gap;
+                  if(kw < minBox) { kw = minBox; }
+                  if(kw > maxW) { kw = maxW; }
+                  var kh:Number = Math.ceil(o.k.textHeight) + Math.max(1,Math.round(3 * this.hzqExtSc()));
+                  if(kh < minBox) { kh = minBox; }
+                  var maxH:Number = boxN - pad * 2;
+                  if(kh > maxH) { kh = maxH; }
+                  this.hzqKeycap(g,-hb + pad,-hb + pad,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
+                  o.k.x = -hb + pad + (kw - o.k.width) / 2;
+                  o.k.y = -hb + pad + (kh - o.k.height) / 2;
                   if(!o.k.visible) { o.k.visible = true; }
+                  try { if(o.k.parent != null) { o.k.parent.addChild(o.k); } } catch(eKt:Error) { }
+                  o.kb = pad + kh;
                }
-               else if(o.k.visible) { o.k.visible = false; }
-            }
-            var label:String = empty ? "EMPTY" : String(d.name);
-            if(o.cLabel !== label || o.cEmpty !== empty || o.cRefuse !== refuse)
-            {
-               this.hzqSet(o.n,this.hzqUC(label),13,dim ? this.hzqDimCol() : this.hzqMainCol(),"rg",0.02,false);
-               this.hzqExtFit(o.n,this.hzqUC(label),50);   // one line in the 58 px box, "..." when longer
-               o.n.x = -26;
-               o.n.y = 6;
+               else { if(o.k.visible) { o.k.visible = false; } o.kb = 0; }
+               if(empty && o.p != null)
+               {
+                  this.hzqSet(o.p,"+",18,this.hzqDimCol(),"rg",0,false);
+                  o.p.alpha = 0.28;
+                  o.p.x = -o.p.width * 0.5;
+                  o.p.y = -o.p.height * 0.5;
+                  if(!o.p.visible) { o.p.visible = true; }
+               }
+               else if(o.p != null && o.p.visible) { o.p.visible = false; }
             }
             o.cSel = sel;
             o.cEmpty = empty;
             o.cRefuse = refuse;
-            o.cLabel = label;
             o.cKey = key;
+            o.cBox = boxN;
+            o.cHide = false;
+            var isig:String = d == null ? "" : String(d.name) + "|" + String(d.ft) + "|" + String(d.img);
+            if(empty) { if(o.ic != null && o.ic.visible) { o.ic.visible = false; } o.cIcon = ""; }
+            else if(o.cIcon !== isig) { this.hzqExtLoadIcon(o,d); o.cIcon = isig; }
+            else if(o.ic != null && o.ic.visible) { this.hzqExtFitIcon(o); }
+            // Tint is outside the art skip so an accent change (hzqRedraw) re-applies hzqCtW with no reload.
+            try { this.hzqExtTintIcon(o,d,empty,sel); } catch(eTn:Error) { }
             i++;
          }
          if(this.hzqExtAdd != null && !this.hzqExtAddDrawn)
          {
-            // ADD tile art is static for the open: drawn once, same Horizon card panel as the slots
+            // ADD tile: same extra-slot card as occupied extras, bright plus. Reused clip; drawn on scale / font change.
             var ag:Graphics = this.hzqExtAdd.graphics;
             ag.clear();
-            this.hzqPanel(ag,-29,-29,58,58,8,0.6);
-            var at:TextField = this.hzqTf(this.hzqExtAdd);
+            var addBox:Number = this.hzqExtBoxN();
+            this.hzqExtSlotArt(ag,addBox,false,true);
+            var at:TextField = this.hzqExtAdd.numChildren > 0 ? this.hzqExtAdd.getChildAt(0) as TextField : null;
+            if(at == null) { at = this.hzqTf(this.hzqExtAdd); }
             this.hzqSet(at,"+",22,this.hzqTextAccent(),"rg",0,false);
-            at.x = -12;
-            at.y = -16;
+            at.x = -at.width * 0.5;
+            at.y = -at.height * 0.5;
             this.hzqExtAddDrawn = true;
          }
+         if(this.hzqExtLastBox != null) { this.hzqExtFrameDraw(this.hzqExtLastBox); }
       }
-      // Short forms for long navigation key names so the 58 px Extended badge does not overflow (N-a).
+      // Short forms for long navigation key names (N-a). Home / End / NUM stay full; the chip font shrinks to fit.
       private function hzqExtKeyShort(key:String) : String
       {
          var u:String = key.toUpperCase();
@@ -2137,11 +2554,54 @@ package
          if(u == "DELETE") { return "DEL"; }
          return key;
       }
+      // Purpose: extra chip text uses the same hzqFace / embedFonts path as vanilla 1-12 (hzqSet).
+      // GFx defaultTextFormat is incomplete (null face, size 0, color 0): copying it after hzqSet
+      // made extra chips draw as dark bars with no readable glyphs. Always new TextFormat.
+      // Inputs: reused chip field, label, integer px size, hzqMutCol / hzqTextAccent.
+      // Outputs: field formatted. Filters stay from the preceding hzqSet. Change-driven only.
+      private function hzqExtChipApply(t:TextField, s:String, fs:Number, col:uint) : void
+      {
+         if(!(fs >= HZQ_CHIP_MIN)) { fs = HZQ_CHIP_MIN; }
+         fs = Math.round(fs);
+         var f:TextFormat = new TextFormat(this.hzqFace("sb"),fs,col);
+         f.letterSpacing = Math.round(fs * 0.04 * 10) / 10;
+         t.embedFonts = true;
+         t.defaultTextFormat = f;
+         t.text = s;
+         t.setTextFormat(f);
+      }
+      // Purpose: size the extra-slot key chip to Slot Scale, then shrink the font if a long name
+      // (Home, End, PgUp, Insert, NUM *) would still spill. Ellipsis is last resort at 8 px.
+      // Inputs: reused chip TextField, label, live extra box, chip color. hzqExtDraw only.
+      // Outputs: field formatted so the chip box fits inside the card. Integer px, not hzqFs's 13 floor.
+      private function hzqExtChipTune(t:TextField, str:String, boxN:Number, col:uint) : void
+      {
+         var pad:Number = this.hzqExtChipPad();
+         var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
+         var maxW:Number = boxN - pad * 2;
+         if(maxW < HZQ_CHIP_MIN) { maxW = HZQ_CHIP_MIN; }
+         var fs:Number = this.hzqExtChipFs();
+         this.hzqExtChipApply(t,str,fs,col);
+         while(fs > HZQ_CHIP_MIN && Math.ceil(t.textWidth * 1.08) + gap > maxW)
+         {
+            fs = fs - 1;
+            if(fs < HZQ_CHIP_MIN) { fs = HZQ_CHIP_MIN; }
+            this.hzqExtChipApply(t,str,fs,col);
+         }
+         if(Math.ceil(t.textWidth * 1.08) + gap > maxW)
+         {
+            var tw:Number = maxW - gap;
+            if(tw < HZQ_CHIP_MIN) { tw = HZQ_CHIP_MIN; }
+            this.hzqExtFit(t,str,tw);
+         }
+      }
       // One-line fit with "..." by halving (the scanner's pattern): about log2(length) layouts, only when a label changes.
+      // Uses getTextFormat (the live run), not defaultTextFormat: GFx's default getter can drop the face.
       private function hzqExtFit(t:TextField, str:String, maxW:Number) : void
       {
          if(t.textWidth <= maxW || str.length <= 2) { return; }
-         var f:TextFormat = t.defaultTextFormat;
+         var f:TextFormat = t.getTextFormat();
+         if(f == null || f.font == null || String(f.font).length == 0) { return; }
          var lo:int = 2;
          var hi:int = str.length - 1;
          var best:int = 2;
@@ -2157,11 +2617,285 @@ package
          }
          if(cur != best) { t.text = str.substr(0,best).replace(/\s+$/,"") + "..."; t.setTextFormat(f); }
       }
+      private function hzqExtIconExtra(it:Object) : String
+      {
+         if(it == null || it.iconImage == null) { return ""; }
+         var ft:int = -1;
+         var dir:String = "";
+         var img:String = "";
+         try { ft = int(it.iconImage.iFixtureType); } catch(e1:Error) { return ""; }
+         try { dir = String(it.iconImage.sDirectory != null ? it.iconImage.sDirectory : ""); } catch(e2:Error) { }
+         try { img = String(it.iconImage.sImageName != null ? it.iconImage.sImageName : ""); } catch(e3:Error) { }
+         if(ft < 0 || img.length == 0) { return ""; }
+         dir = dir.split("|").join("/").split(";").join("/");
+         img = img.split("|").join("/").split(";").join("/");
+         return "\tICON\t" + String(ft) + "\t" + dir + "\t" + img;
+      }
+      private function hzqExtIconSrc(d:Object) : Object
+      {
+         if(d != null && int(d.ft) >= 0 && String(d.img != null ? d.img : "").length > 0)
+         {
+            return {"iconImage":{"iFixtureType":int(d.ft),"sDirectory":String(d.dir),"sImageName":String(d.img)},"bIsPower":d.kind == "power"};
+         }
+         var want:String = d != null ? String(d.name) : "";
+         if(this.AssignedItem != null && want.length > 0 && String(this.AssignedItem.sName) == want) { return this.AssignedItem; }
+         var i:int = 0;
+         while(this.FavoritesInfoA != null && i < 12 && i < this.FavoritesInfoA.length)
+         {
+            var it:Object = this.FavoritesInfoA[i];
+            if(it != null && want.length > 0 && String(it.sName) == want && it.iconImage != null) { return it; }
+            i++;
+         }
+         return null;
+      }
+      // Purpose: extra-slot weapon flag. The DLL's ready payload sets weap=1 when LookupByID is TESObjectWEAP
+      // (the same form the HUD equipment card shows). Fallback: AssignedItem / a matching 1-12 favorite
+      // (hzqIsWeapon), or an icon path that names a weapon. Powers and Quantum Essence are never weapons.
+      // Inputs: extra payload row. Outputs: true = apply hzqCtW.
+      private function hzqExtIsWeapon(d:Object) : Boolean
+      {
+         if(d == null) { return false; }
+         if(d.kind == "power" || d.kind == "essence") { return false; }
+         if(d.weap === true) { return true; }
+         if(this.hzqIsWeapon(this.hzqExtIconSrc(d))) { return true; }
+         var path:String = (String(d.dir != null ? d.dir : "") + "/" + String(d.img != null ? d.img : "")).toLowerCase();
+         return path.indexOf("weapon") >= 0;
+      }
+      // Purpose: extra Icon_mc uses the same equipment-card accent tint as slots 1-12. Applied on draw
+      // (including accent-only redraws) and after the load callback. Empty / refuse: identity.
+      private function hzqExtTintIcon(o:Object, d:Object, empty:Boolean, sel:Boolean) : void
+      {
+         if(o == null || o.ic == null) { return; }
+         var src:Object = this.hzqExtIconSrc(d);
+         this.hzqApplyIconTint(o.ic,!empty && this.hzqExtIsWeapon(d),empty,sel,src);
+      }
+      // Vanilla FavoritesEntry.LoadIcon: clipSizer / centerClip, then onLoadAttemptComplete, then
+      // LoadImageFixtureFromUIData(..., "FavoritesIconBuffer"). FavoritesIconBuffer is the image-cache
+      // name, not a size. Timeline Icon_mc has BoundClip_mc 60 x 60; AddDisplayObject scales the
+      // loaded bitmap/symbol into that sizer. Constructed ImageFixture has no timeline BoundClip, so
+      // extras attach one (hzqExtIconBound) and fit Icon_mc after the load callback, like hzqFit.
+      private function hzqExtLoadIcon(o:Object, d:Object) : void
+      {
+         if(o == null || o.ic == null) { return; }
+         var ic:* = o.ic;
+         var src:Object = this.hzqExtIconSrc(d);
+         var img:Object = src != null ? src.iconImage : null;
+         var bad:Boolean = img == null || int(img.iFixtureType) == ImageFixture.FT_INVALID;
+         try { ic.Unload(); } catch(eU:Error) { }
+         if(bad)
+         {
+            ic.visible = false;
+            return;
+         }
+         try
+         {
+            this.hzqExtIconBound(ic);
+            if(int(img.iFixtureType) == ImageFixture.FT_SYMBOL)
+            {
+               if(src.bIsPower == true) { ic.clipSizer = "Sizer_mc"; }
+               ic.centerClip = true;
+            }
+            else
+            {
+               ic.clipSizer = "";
+               ic.centerClip = false;
+            }
+            var ei:int = int(o.i) - 13;
+            if(this.hzqExtIcCb != null && ei >= 0 && ei < this.hzqExtIcCb.length) { ic.onLoadAttemptComplete = this.hzqExtIcCb[ei]; }
+            ic.LoadImageFixtureFromUIData(img,"FavoritesIconBuffer");
+            ic.visible = true;
+            ic.mouseEnabled = false;
+            ic.mouseChildren = false;
+            this.hzqExtFitIcon(o);
+            this.hzqExtTintIcon(o,d,false,int(o.i) == this.hzqExtSel);
+         }
+         catch(eL:Error) { ic.visible = false; }
+      }
+      // Purpose: give a constructed ImageFixture the vanilla 60 x 60 BoundClip_mc sizer.
+      // Inputs: extra-slot Icon_mc. Outputs: BoundClip_mc on the fixture and its loader children.
+      // ImageFixture only copies BoundClip_mc in the constructor (timeline instances).
+      private function hzqExtIconBound(ic:ImageFixture) : void
+      {
+         if(ic == null) { return; }
+         var b:MovieClip = ic.BoundClip_mc;
+         if(b == null)
+         {
+            b = new MovieClip();
+            b.name = "BoundClip_mc";
+            b.mouseEnabled = false;
+            b.mouseChildren = false;
+            b.graphics.beginFill(0,0);
+            b.graphics.drawRect(0,0,HZQ_ICBOUND,HZQ_ICBOUND);
+            b.graphics.endFill();
+            ic.BoundClip_mc = b;
+            ic.addChild(b);
+         }
+         var i:int = 0;
+         while(i < ic.numChildren)
+         {
+            var ch:* = ic.getChildAt(i);
+            try { if(ch != null && ch != b) { ch.BoundClip_mc = b; } } catch(eB:Error) { }
+            i++;
+         }
+      }
+      private function hzqExtIc13() : void { this.hzqExtIcDone(13); }
+      private function hzqExtIc14() : void { this.hzqExtIcDone(14); }
+      private function hzqExtIc15() : void { this.hzqExtIcDone(15); }
+      private function hzqExtIc16() : void { this.hzqExtIcDone(16); }
+      private function hzqExtIc17() : void { this.hzqExtIcDone(17); }
+      private function hzqExtIc18() : void { this.hzqExtIcDone(18); }
+      private function hzqExtIc19() : void { this.hzqExtIcDone(19); }
+      private function hzqExtIc20() : void { this.hzqExtIcDone(20); }
+      private function hzqExtIc21() : void { this.hzqExtIcDone(21); }
+      private function hzqExtIc22() : void { this.hzqExtIcDone(22); }
+      private function hzqExtIc23() : void { this.hzqExtIcDone(23); }
+      private function hzqExtIc24() : void { this.hzqExtIcDone(24); }
+      private function hzqExtIcDone(slot:int) : void
+      {
+         var o:Object = this.hzqExtSlotObj(slot);
+         if(o == null || o.ic == null) { return; }
+         try { o.ic.mouseEnabled = false; o.ic.mouseChildren = false; } catch(eM:Error) { }
+         try { this.hzqExtFitIcon(o); } catch(e1:Error) { }
+         try { this.hzqExtTintIcon(o,this.hzqExtData != null ? this.hzqExtData[String(slot)] : null,false,slot == this.hzqExtSel); } catch(eT:Error) { }
+      }
+      private function hzqExtSlotObj(slot:int) : Object
+      {
+         if(this.hzqExtPool == null) { return null; }
+         var i:int = slot - 13;
+         if(i < 0 || i >= this.hzqExtPool.length) { return null; }
+         return this.hzqExtPool[i];
+      }
+      // Same rule as hzqFit: reset to the captured base (identity on constructed extras) so a second
+      // fit never compounds, measure the loaded picture / symbol, then scale by min(1, room w / w,
+      // room h / h) into the extra card (vanilla 58 * Slot Scale) below the key chip. Nothing loaded: identity stays.
+      private function hzqExtFitIcon(o:Object) : void
+      {
+         var ic:* = o.ic;
+         var e:MovieClip = o.s as MovieClip;
+         if(ic == null || e == null) { return; }
+         if(o.ib == null) { o.ib = {"sx":1,"sy":1,"x":0,"y":0}; }
+         var b:Object = o.ib;
+         ic.scaleX = b.sx;
+         ic.scaleY = b.sy;
+         ic.x = b.x;
+         ic.y = b.y;
+         if(!ic.visible) { return; }
+         var nb:Rectangle = this.hzqIcB(ic,e);
+         if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
+         var boxN:Number = this.hzqExtBoxN();
+         var hb:Number = boxN * 0.5;
+         var icPad:Number = this.hzqExtIcPad();
+         var top:Number = -hb + icPad;
+         if(Number(o.kb) > 0) { top = Math.max(top, -hb + Number(o.kb) + 2); }
+         var aw:Number = boxN - icPad * 2;
+         var ah:Number = hb - icPad - top;
+         if(aw < 4 || ah < 4) { return; }
+         var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
+         ic.scaleX = b.sx * k;
+         ic.scaleY = b.sy * k;
+         ic.x = -(nb.x + nb.width / 2 - b.x) * k;
+         ic.y = top + ah / 2 - (nb.y + nb.height / 2 - b.y) * k;
+      }
+      // Purpose: extra-slots window. Dark fill, 1 px gray filled border, left accent strip, title + occupied counter.
+      // Drawn when layout, occupancy, opacity, scale or font changes — not per selection. No accent ring on the panel.
+      private function hzqExtFrameDraw(box:Object) : void
+      {
+         if(this.hzqExtFrame == null || box == null) { return; }
+         var n:int = this.hzqExtCount();
+         var per:int = this.hzqExtPer();
+         var extN:int = n > 12 ? n - 12 : 0;
+         var bars:Boolean = int(this.hzqS.ExtLayout) != 0;
+         var addOn:Boolean = this.hzqExtAdd != null && this.hzqExtAdd.visible;
+         var occ:int = this.hzqExtOccupied();
+         var boxN:Number = this.hzqExtBoxN();
+         var pitch:Number = this.hzqExtPitchN();
+         var opa:Number = this.hzqExtPanelA();
+         var key:String = String(n) + ":" + String(per) + ":" + (bars ? "1" : "0") + ":" + (addOn ? "1" : "0") + ":" + this.hzqFace("bd") + ":" + String(occ) + ":" + String(boxN) + ":" + String(opa) + ":" + String(this.hzqAccent());
+         if(key == this.hzqExtFrameKey) { return; }
+         this.hzqExtFrameKey = key;
+         var g:Graphics = this.hzqExtFrame.graphics;
+         g.clear();
+         if(this.hzqExtFrameT != null) { this.hzqExtFrameT.visible = false; }
+         if(this.hzqExtFrameN != null) { this.hzqExtFrameN.visible = false; }
+         if(extN <= 0 && !addOn) { return; }
+         var cols:int = per;
+         var rows:int;
+         if(bars)
+         {
+            rows = int(Math.ceil((n + (addOn ? 1 : 0)) / per));
+            var take0:int = n + (addOn ? 1 : 0);
+            if(take0 > per) { take0 = per; }
+            cols = take0;
+         }
+         else
+         {
+            var vis:int = extN + (addOn ? 1 : 0);
+            cols = vis < per ? vis : per;
+            if(cols < 1) { cols = 1; }
+            rows = int(Math.ceil(vis / per));
+            if(rows < 1) { rows = 1; }
+         }
+         var fw:Number = (cols - 1) * pitch + boxN + HZQ_FRAME_PAD * 2;
+         var fh:Number = rows * pitch - (pitch - boxN) + HZQ_FRAME_PAD * 2 + HZQ_FRAME_TITLE;
+         var fx:Number = box.cx - fw * 0.5;
+         var fy:Number;
+         if(bars)
+         {
+            var rowsAll:int = int(Math.ceil(n / per));
+            fy = box.cy - (rowsAll - 1) * pitch / 2 - boxN * 0.5 - HZQ_FRAME_PAD - HZQ_FRAME_TITLE;
+         }
+         else { fy = box.b + 12; }
+         g.lineStyle();
+         g.beginFill(0x161A20,opa);
+         g.drawRoundRect(fx,fy,fw,fh,20,20);
+         g.endFill();
+         this.hzqFilledBorder(g,fx,fy,fw,fh,1,10,0x3A4450);
+         var acc:uint = this.hzqIconCol(this.hzqAccent());
+         var sh:Number = fh - 24;
+         if(sh > 8)
+         {
+            g.beginFill(acc,1);
+            g.drawRoundRect(fx + 6,fy + 12,4,sh,4,4);
+            g.endFill();
+         }
+         if(this.hzqExtFrameT != null)
+         {
+            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED FAVORITES"),13,this.hzqTextAccent(),"bd",0.18,true);
+            this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
+            this.hzqExtFrameT.y = fy + 6;
+            this.hzqExtFrameT.visible = true;
+         }
+         if(this.hzqExtFrameN != null)
+         {
+            this.hzqSet(this.hzqExtFrameN,this.hzqExtPad2(occ) + " / " + this.hzqExtPad2(extN),13,this.hzqMutCol(),"sb",0.06,false);
+            this.hzqExtFrameN.x = fx + fw - HZQ_FRAME_PAD - this.hzqExtFrameN.width;
+            this.hzqExtFrameN.y = fy + 6;
+            this.hzqExtFrameN.visible = true;
+         }
+      }
+      // Font.marker / ControlMap / ini redraw: the extra title and key chips were first drawn
+      // before $Horizon_Font was registered, and hzqExtFrameDraw skips when the layout key is
+      // unchanged. Clear those caches so hzqSet runs again through hzqFace (same as the header
+      // and info panel). Edge only, not per frame.
+      private function hzqExtFontTouch() : void
+      {
+         this.hzqExtFrameKey = "";
+         this.hzqExtAddDrawn = false;
+         if(this.hzqExtSlots == null) { return; }
+         var i:int = 0;
+         while(i < this.hzqExtSlots.length)
+         {
+            this.hzqExtSlots[i].cKey = null;
+            this.hzqExtSlots[i].cSel = null;
+            i++;
+         }
+      }
       private function hzqExtApply(pay:String) : void
       {
          this.hzqExtData = {};
          if(pay == null || pay.length == 0) { return; }
-         // header records m|<refused key mask> and c|<DLL slot count>, then 13|name|count|kind|empty|refuse;...
+         // header records m|<refused key mask> and c|<DLL slot count>, then
+         // 13|name|count|kind|empty|refuse|ft|dir|img|weap;... weap=1 is TESObjectWEAP.
          var parts:Array = pay.split(";");
          var i:int = 0;
          while(i < parts.length)
@@ -2181,7 +2915,7 @@ package
                      continue;
                   }
                   var slot:int = int(Number(f[0]));
-                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1"};
+                  this.hzqExtData[String(slot)] = {"name":f.length > 1 ? String(f[1]) : "","count":f.length > 2 ? Number(f[2]) : 0,"kind":f.length > 3 ? String(f[3]) : "inventory","empty":f.length > 4 ? String(f[4]) == "1" : (f.length <= 1 || String(f[1]).length == 0),"refuse":f.length > 5 && String(f[5]) == "1","ft":f.length > 6 ? int(Number(f[6])) : -1,"dir":f.length > 7 ? String(f[7]) : "","img":f.length > 8 ? String(f[8]) : "","weap":f.length > 9 && String(f[9]) == "1"};
                }
             }
             i++;
@@ -2245,11 +2979,10 @@ package
          while(i < n)
          {
             var d:DisplayObject = e.getChildAt(i);
-            if(d != null && d.name != "hzqCard") { d.visible = false; }
+            if(d != null && d.name != "hzqCard" && d.name != "Icon_mc") { d.visible = false; }
             i++;
          }
          try { var q:* = e["Quickkey_tf"]; if(q != null) { q.visible = false; q.alpha = 0; } } catch(eQ:Error) { }
-         try { var ic:* = e["Icon_mc"]; if(ic != null) { ic.visible = false; } } catch(eI:Error) { }
       }
       private function hzqExtRestore() : void
       {
@@ -2295,6 +3028,11 @@ package
          this.hzqExtPool = null;
          this.hzqExtAdd = null;
          this.hzqExtAddDrawn = false;
+         this.hzqExtFrame = null;
+         this.hzqExtFrameT = null;
+         this.hzqExtFrameN = null;
+         this.hzqExtFrameKey = "";
+         this.hzqExtLastBox = null;
       }
       private function hzqFail() : void
       {
@@ -2582,7 +3320,6 @@ package
          if(this.hzq37N.length > 0 && this.hzq37Step == 0) { this.hzq37Q = this.hzq37N; this.hzq37N = []; this.hzq37Begin(); }
       }
       // =================== end shared settings reader ===================
-
 
       internal function frame13() : *
       {
