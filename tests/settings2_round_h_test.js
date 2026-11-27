@@ -31,21 +31,37 @@ function fnText(src, name) {
 }
 
 const mute = fnText(as, "hz51Mute").body;
-expect(/r\.dis = false/.test(mute) && /chip == "unavail"/.test(mute),
-	"1: mute clears r.dis when the parent is on (except unavail locks)");
+expect(!/r\.dis = false/.test(mute) && /chip == "unavail"/.test(mute),
+	"1: mute never assigns r.dis = false (builder locks and unavail chips survive)");
+expect(/!locked && mute/.test(mute),
+	"1: mute only sets dis=true when the parent is off");
 expect(/CompassMarkers/.test(mute) && /ShowFollowers/.test(mute) && /FollowerColor/.test(mute),
 	"1: MARKERS is the parent of FOLLOWERS / MARKER COLOR / the other compass marker rows");
 expect(/CharacterShowSeconds/.test(mute) && /PerfDiag/.test(mute) && /QuickMenuHorizon/.test(mute),
 	"1: the same enable refresh covers Character seconds, Perf, and Quick Menu children");
+expect(insert.indexOf('{"k":"DlgMarkers","l":"QUESTION / ADVANCE MARKERS","t":"b","dis":true,"dv":false}') >= 0
+	&& insert.indexOf('{"k":"MissionToastSound","l":"GAME QUEST SOUND","t":"b","dis":true,"dv":true}') >= 0,
+	"1: DlgMarkers and MissionToastSound are builder-locked");
+expect(insert.indexOf('{"k":"_diagoff","l":"LEAVE THESE OFF","t":"x","btn":"KEEP OFF","h":"NOTE","dis":true,"dv":true}') >= 0
+	&& insert.indexOf('{"k":"_dirinst","l":"INSTALLED, ENABLED, AND VISIBLE","t":"x","btn":"—","h":"STATUS DIRECTORY","dis":true,"dv":true}') >= 0,
+	"1: KEEP OFF and STATUS DIRECTORY are builder-locked");
 
-function fakeMute(pend) {
-	const rows = [
+function copyRow(r) { return Object.assign({}, r); }
+function builderRows() {
+	return [
 		{ k: "ShowCompass", t: "b", h: "COMPASS" },
 		{ k: "CompassMarkers", t: "b", sub: true },
 		{ k: "ShowFollowers", t: "b", sub: true, l: "FOLLOWERS" },
 		{ k: "FollowerColor", t: "a", sub: true, l: "MARKER COLOR" },
-		{ k: "ShowLocations", t: "b", sub: true }
+		{ k: "ShowLocations", t: "b", sub: true },
+		{ k: "DlgMarkers", t: "b", dis: true, dv: false, l: "QUESTION / ADVANCE MARKERS" },
+		{ k: "MissionToastSound", t: "b", dis: true, dv: true, l: "GAME QUEST SOUND" },
+		{ k: "_diagoff", t: "x", dis: true, dv: true, btn: "KEEP OFF", l: "LEAVE THESE OFF" },
+		{ k: "_dirinst", t: "x", dis: true, dv: true, h: "STATUS DIRECTORY", l: "INSTALLED, ENABLED, AND VISIBLE" }
 	];
+}
+function fakeMute(pend, src) {
+	const rows = (src || builderRows()).map(copyRow);
 	const on = (k) => {
 		const v = pend[k];
 		if (v === undefined) return true;
@@ -64,16 +80,23 @@ function fakeMute(pend) {
 		if (k == "FollowerColor" && !on("ShowFollowers")) muteFlag = true;
 		if (r.t == "b" && k.indexOf("Show") == 0 && k != "ShowFollowers" && k != "ShowLocations") parentOn = on(k);
 		if (k == "CompassMarkers") markersOn = parentOn && on("CompassMarkers");
-		if (!locked) r.dis = muteFlag;
+		if (!locked && muteFlag) r.dis = true;
 	}
 	return rows;
 }
+function byK(rows, k) { return rows.find((r) => r.k === k); }
 const off = fakeMute({ ShowCompass: true, CompassMarkers: false, ShowFollowers: true });
 expect(off[1].dis !== true && off[2].dis === true && off[3].dis === true && off[4].dis === true,
 	"1: turning MARKERS off greys FOLLOWERS, MARKER COLOR, and Locations live");
 const onAgain = fakeMute({ ShowCompass: true, CompassMarkers: true, ShowFollowers: true });
-expect(onAgain[2].dis === false && onAgain[3].dis === false && onAgain[4].dis === false,
+expect(onAgain[2].dis !== true && onAgain[3].dis !== true && onAgain[4].dis !== true,
 	"1: turning MARKERS back on re-enables those rows without reopening F11");
+const afterCycle = fakeMute({ ShowCompass: true, CompassMarkers: true, ShowFollowers: true }, builderRows());
+expect(byK(afterCycle, "DlgMarkers").dis === true && byK(afterCycle, "MissionToastSound").dis === true
+	&& byK(afterCycle, "_diagoff").dis === true && byK(afterCycle, "_dirinst").dis === true,
+	"1: DlgMarkers, MissionToastSound, KEEP OFF, and STATUS DIRECTORY stay disabled after a parent toggle cycle");
+expect(byK(afterCycle, "ShowFollowers").dis !== true && byK(afterCycle, "FollowerColor").dis !== true,
+	"1: FOLLOWERS and MARKER COLOR still unlock live when MARKERS is on");
 
 const mouse = fnText(as, "hzSettingsMouse").body;
 expect(/id\.indexOf\("tog"\) == 0/.test(mouse) && /id\.indexOf\("act"\) == 0/.test(mouse),

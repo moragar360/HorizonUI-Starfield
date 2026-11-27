@@ -3871,9 +3871,18 @@ int main()
 		Expect(main.find("MsglogDeleteSelected") == std::string::npos, "no DLL erase-selected call");
 		Expect(main.find("std::string MsglogFolderPath()") != std::string::npos, "DLL folder path getter");
 		{
-			const auto get = main.find("std::string MsglogFolderPath()");
-			const auto next = main.find("void MsglogOfferNote", get);
-			const auto body = get != std::string::npos && next > get ? main.substr(get, next - get) : std::string();
+			// Skip the forward declaration (ends in ';'). HzFnBody returns empty there,
+			// so this lands on the real definition that follows.
+			std::size_t get = 0;
+			std::string body;
+			const std::string needle = "std::string MsglogFolderPath()";
+			while ((get = main.find(needle, get)) != std::string::npos) {
+				body = HzFnBody(main, get);
+				if (!body.empty())
+					break;
+				get += needle.size();
+			}
+			Expect(!body.empty(), "folder path getter is anchored on the definition, not the forward declaration");
 			Expect(body.find("FolderPathDisplay") != std::string::npos, "folder path is a display string");
 			Expect(body.find("create_directories") == std::string::npos, "folder path getter does not create the folder");
 			Expect(body.find("ofstream") == std::string::npos && body.find("FileStore") == std::string::npos,

@@ -5316,10 +5316,10 @@
       }
       // Purpose: enable or mute dependent rows from the current pending parent
       // values on every draw. A parent toggle (MARKERS, Show Compass, Horizon
-      // Style, and every other master) must re-enable children immediately —
-      // the old path only set dis=true and never cleared it, so FOLLOWERS and
-      // MARKER COLOR stayed grey after MARKERS was turned back on.
-      // Inputs: finished row list. Outputs: same list with r.dis refreshed.
+      // Style, and every other master) mutes children by setting dis=true.
+      // Never assigns dis=false: hz51Finish recopies builder rows every draw, so
+      // FOLLOWERS unlocks when the parent is on, and builder locks (DlgMarkers,
+      // MissionToastSound, KEEP OFF, STATUS DIRECTORY) always survive.
       // Unavail/module-lock (chip) is never cleared. No per-frame work.
       private function hz51Mute(rows:Array) : Array
       {
@@ -5384,17 +5384,10 @@
                r.note = "Turn on Advanced Performance Timing first. Your saved choice is kept.";
                r.n13 = true;
             }
-            if(!locked)
+            if(!locked && mute)
             {
-               if(mute)
-               {
-                  r.dis = true;
-                  if(r.dv === undefined) { r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0; }
-               }
-               else
-               {
-                  r.dis = false;
-               }
+               r.dis = true;
+               if(r.dv === undefined) { r.dv = this.hzSetPend != null ? this.hzSetPend[k] : 0; }
             }
             i++;
          }
@@ -7231,7 +7224,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       // Purpose: change-driven Live Preview while F11 is open. One representative
       // mini of the selected page group (dialogue options, HUD card, scanner
       // signal, theme, module) from pending values. CANCEL reverts because
-      // paint reads hzSetPend. No ENTER_FRAME / per-frame work.
+      // paint reads hzSetPend. Change-driven while F11 is open; no HUD-frame work.
       private function hz51PvPaint(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
          g.beginFill(uint(T.fill),0.80);

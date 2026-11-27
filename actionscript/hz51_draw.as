@@ -779,7 +779,7 @@
       // Purpose: change-driven Live Preview while F11 is open. One representative
       // mini of the selected page group (dialogue options, HUD card, scanner
       // signal, theme, module) from pending values. CANCEL reverts because
-      // paint reads hzSetPend. No ENTER_FRAME / per-frame work.
+      // paint reads hzSetPend. Change-driven while F11 is open; no HUD-frame work.
       private function hz51PvPaint(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
          g.beginFill(uint(T.fill),0.80);
