@@ -50,11 +50,16 @@ for (const m of src.matchAll(/private static const (HZQ_\w+|hzq37_\w+):\w+ = (.*
 	consts[m[1]] = eval("(" + v + ")");
 }
 
-expect(consts.HZQ_BOX === 58 && consts.HZQ_EXT_BOX === 58 && consts.HZQ_EXT_GAP === 14 && consts.HZQ_EXT_PITCH === 72,
-	"vanilla 1-12 metrics: 58 box, extras match at scale 1.0 (gap 14, pitch 72)");
-expect(/HZQ_ICPAD:Number = 4/.test(qm) && /hzqKeycap\(g,-hb \+ 5,-hb \+ 5/.test(qm)
-	&& /drawRoundRect\(-hb,-hb,box,box,16,16\)/.test(fnText(qm, "hzqExtSlotArt").body),
-	"extra slots reuse vanilla radius 8, keychip +5,+5, icon pad 4");
+expect(consts.HZQ_BOX === 58 && consts.HZQ_EXT_BOX === 58 && consts.HZQ_EXT_GAP === 14 && consts.HZQ_EXT_PITCH === 72
+	&& consts.HZQ_CHIP_PAD === 5 && consts.HZQ_CHIP_MIN === 8,
+	"vanilla 1-12 metrics: 58 box, extras match at scale 1.0 (gap 14, pitch 72); extra chip inset 5, font floor 8");
+expect(/HZQ_ICPAD:Number = 4/.test(qm) && /hzqKeycap\(g,-hb \+ pad,-hb \+ pad/.test(qm)
+	&& /drawRoundRect\(-hb,-hb,box,box,16,16\)/.test(fnText(qm, "hzqExtSlotArt").body)
+	&& /function hzqExtChipPad/.test(qm) && /function hzqExtChipTune/.test(qm)
+	&& /this\.hzqExtChipTune\(o\.k,klab,boxN\)/.test(fnText(qm, "hzqExtDraw").body)
+	&& !/hzqKeycap\(g,-hb \+ 5/.test(fnText(qm, "hzqExtDraw").body)
+	&& /hzqKeycap\(g,r\.x \+ 5,r\.y \+ 5/.test(qm),
+	"extra slots reuse vanilla radius 8; extra keychip pad/font scale from +5,+5 / 13 px; vanilla 1-12 chips stay +5,+5");
 
 expect(/LoadImageFixtureFromUIData\(img,"FavoritesIconBuffer"\)/.test(qm) && /function hzqExtTintIcon/.test(qm)
 	&& /this\.hzqCtW/.test(fnText(qm, "hzqApplyIconTint").body),
@@ -115,6 +120,112 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 	h.hzqS = { ExtSlotScale: 1, ExtPanelOpacity: 92 };
 	expect(h.hzqExtBoxN() === 58 && h.hzqExtPitchN() === 72 && h.hzqExtPanelA() === 0.92,
 		"Slot Scale 1.0 is vanilla 58 / 72; panel opacity 92 is 0.92 fill");
+}
+
+{
+	function fakeChipTf() {
+		const t = {
+			text: "",
+			embedFonts: true,
+			filters: [],
+			visible: true,
+			x: 0,
+			y: 0,
+			_fmt: { size: 13, font: "sb" },
+			get defaultTextFormat() { return this._fmt; },
+			set defaultTextFormat(f) { this._fmt = f && typeof f === "object" ? f : this._fmt; },
+			setTextFormat(f) { if (f && typeof f === "object") this._fmt = f; },
+			get _em() { const n = Number(this._fmt && this._fmt.size); return n > 0 ? n : 13; },
+			get textWidth() { return String(this.text || "").length * this._em * 0.62; },
+			get textHeight() { return this._em + 2; },
+			get width() { return this.textWidth + 4; },
+			get height() { return this.textHeight + 4; }
+		};
+		return t;
+	}
+	function chipHost(sc) {
+		const h = Object.assign({}, consts, {
+			HZQ_LRG: false,
+			hzqS: { ExtSlotScale: sc, TextScale: 1 }
+		});
+		for (const n of ["hzqExtSc", "hzqExtBoxN", "hzqExtChipPad", "hzqExtChipFs", "hzqExtIcPad",
+			"hzqExtFit", "hzqExtChipTune", "hzqExtKeyShort"]) {
+			h[n] = toJs(src, n);
+		}
+		return h;
+	}
+	function chipRect(h, label) {
+		const t = fakeChipTf();
+		const klab = h.hzqExtKeyShort(label);
+		h.hzqExtChipTune(t, klab, h.hzqExtBoxN());
+		const sc = h.hzqExtSc();
+		const pad = h.hzqExtChipPad();
+		const gap = Math.max(4, Math.round(8 * sc));
+		const minBox = Math.max(consts.HZQ_CHIP_MIN, Math.round(16 * sc));
+		const boxN = h.hzqExtBoxN();
+		const hb = boxN * 0.5;
+		let maxW = boxN - pad * 2;
+		if (maxW < consts.HZQ_CHIP_MIN) maxW = consts.HZQ_CHIP_MIN;
+		let kw = Math.ceil(t.textWidth * 1.08) + gap;
+		if (kw < minBox) kw = minBox;
+		if (kw > maxW) kw = maxW;
+		let kh = Math.ceil(t.textHeight) + Math.max(1, Math.round(3 * sc));
+		if (kh < minBox) kh = minBox;
+		const maxH = boxN - pad * 2;
+		if (kh > maxH) kh = maxH;
+		const x = -hb + pad;
+		const y = -hb + pad;
+		return {
+			t, klab, pad, boxN, hb, kw, kh, x, y,
+			fs: Number(t.defaultTextFormat.size),
+			right: x + kw,
+			bottom: y + kh,
+			kb: pad + kh
+		};
+	}
+	function iconRoom(h, kb) {
+		const boxN = h.hzqExtBoxN();
+		const hb = boxN * 0.5;
+		const pad = h.hzqExtIcPad();
+		let top = -hb + pad;
+		if (kb > 0) top = Math.max(top, -hb + kb + 2);
+		const aw = boxN - pad * 2;
+		const ah = hb - pad - top;
+		return { boxN, hb, pad, top, aw, ah, bottom: hb - pad };
+	}
+
+	const names = ["Home", "End", "PageUp", "Insert", "NUM 0"];
+	for (const sc of [0.7, 1.0, 1.4]) {
+		const h = chipHost(sc);
+		expect(Math.abs(h.hzqExtChipPad() - Math.max(2, Math.round(5 * sc))) < 1e-9
+			&& Math.abs(h.hzqExtChipFs() - Math.max(8, Math.round(13 * sc * 10) / 10)) < 1e-9,
+			"Slot Scale " + sc + ": chip pad and design font follow Slot Scale (pad "
+			+ h.hzqExtChipPad() + ", fs " + h.hzqExtChipFs() + ")");
+		for (const name of names) {
+			const r = chipRect(h, name);
+			expect(r.x >= -r.hb - 1e-6 && r.right <= r.hb + 1e-6
+				&& r.y >= -r.hb - 1e-6 && r.bottom <= r.hb + 1e-6
+				&& r.fs >= consts.HZQ_CHIP_MIN && r.kw <= r.boxN - r.pad * 2 + 1e-6,
+				"Slot Scale " + sc + " chip \"" + name + "\" -> \"" + r.klab + "\" fits in the card (fs "
+				+ r.fs + ", " + r.kw + "x" + r.kh + " in " + r.boxN + ")");
+		}
+		const tall = chipRect(h, "NUM 0");
+		const room = iconRoom(h, tall.kb);
+		expect(room.aw >= 4 && room.ah >= 4
+			&& room.top >= -room.hb - 1e-6 && room.top + room.ah <= room.hb + 1e-6
+			&& -room.hb + room.pad + tall.kw <= room.hb + 1e-6,
+			"Slot Scale " + sc + ": extra icon room stays inside the card below a long NUM 0 chip (aw "
+			+ room.aw.toFixed(1) + ", ah " + room.ah.toFixed(1) + ")");
+	}
+	const one = chipHost(1);
+	expect(one.hzqExtChipPad() === 5 && one.hzqExtChipFs() === 13 && one.hzqExtIcPad() === 4
+		&& one.hzqExtBoxN() === 58,
+		"Slot Scale 1.0 extra chip matches vanilla +5,+5 / 13 px / icon pad 4 / 58 box");
+	expect(chipHost(0.7).hzqExtChipFs() < 13 && chipHost(0.7).hzqExtChipPad() < 5,
+		"Slot Scale 0.7 shrinks extra chip font and inset below the vanilla 13 / +5");
+	expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(
+		fnText(qm, "hzqExtChipTune").body + fnText(qm, "hzqExtChipPad").body + fnText(qm, "hzqExtChipFs").body),
+		"chip scale helpers add no enterFrame or timer");
 }
 
 {

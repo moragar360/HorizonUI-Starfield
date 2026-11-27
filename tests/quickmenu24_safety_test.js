@@ -244,11 +244,13 @@ expect(/return Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\);/.test(cBod
 	let m;
 	while ((m = re.exec(ext))) sizes.push(Number(m[1]));
 	expect(sizes.length >= 3 && sizes.every((v) => v >= 13), "M-3: every Extended text size is 13 or more (" + sizes.join(", ") + ")");
-	expect(!/this\.hzqExtFit\(o\.n/.test(ext) && /this\.hzqExtFit\(o\.k,klab,50\)/.test(ext)
+	expect(!/this\.hzqExtFit\(o\.n/.test(ext) && /this\.hzqExtChipTune\(o\.k,klab,boxN\)/.test(ext)
 		&& /this\.hzqSprite\(this, -1\)/.test(qm),
 		"M-3: extra cards have no name field; the name is the center-right info panel");
-	expect(/hzqExtKeyShort/.test(ext) && /PAGEDOWN/.test(cBody(qm, "private function hzqExtKeyShort(")) && /this\.hzqExtFit\(o\.k,klab,50\);/.test(ext),
-		"N-a: long key names use a short form (PGDN) and are fitted to 50 px");
+	expect(/hzqExtKeyShort/.test(ext) && /PAGEDOWN/.test(cBody(qm, "private function hzqExtKeyShort("))
+		&& /this\.hzqExtChipTune\(o\.k,klab,boxN\);/.test(ext)
+		&& /HZQ_CHIP_MIN/.test(ext) && /Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\)/.test(cBody(qm, "private function hzqFs(")),
+		"N-a: long key names use a short form (PGDN) then shrink the extra chip font to the scaled slot; hzqFs stays 13 px for other text");
 }
 expect(/this\.hzqSet\(k,kt,13,/.test(qm) && /this\.hzqSet\(this\.hzqHdrT,this\.hzqUC\("Quick Menu"\),13,/.test(qm)
 	&& /this\.hzqSet\(this\.hzqHdrK,kt,13,/.test(qm) && /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(qm)

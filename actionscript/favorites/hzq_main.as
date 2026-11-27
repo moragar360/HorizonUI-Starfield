@@ -49,7 +49,9 @@
       private static const HZQ_FRAME_TITLE:Number = 22;
       private static const HZQ_EQ_RESERVE:Number = 84;    // HUD equipment card height (HorizonAmmo_mc)
       private static const HZQ_SAFE_M:Number = 16;
-      private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box
+      private static const HZQ_ICPAD:Number = 4;          // icon padding inside the box (vanilla 1-12. extras scale this)
+      private static const HZQ_CHIP_PAD:Number = 5;       // extra keychip inset at Slot Scale 1.0 (vanilla +5,+5)
+      private static const HZQ_CHIP_MIN:Number = 8;       // extra chip font floor when Slot Scale shrinks the card
       private static const HZQ_ICBOUND:Number = 60;       // vanilla Icon_mc BoundClip_mc (FavoritesEntry timeline)
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
@@ -192,6 +194,25 @@
       private function hzqExtBoxN() : Number
       {
          return Math.max(32,Math.round(HZQ_BOX * this.hzqExtSc()));
+      }
+      // Extra keychip inset. Vanilla 1-12 stays +5,+5; extras follow Slot Scale (floor 2 px).
+      private function hzqExtChipPad() : Number
+      {
+         return Math.max(2,Math.round(HZQ_CHIP_PAD * this.hzqExtSc()));
+      }
+      // Extra chip design size 13 at Slot Scale 1.0, times TextScale. Bypasses hzqFs's 13 px floor
+      // so a reduced extra card can still show HOME / END. Readable floor is HZQ_CHIP_MIN (8).
+      private function hzqExtChipFs() : Number
+      {
+         var ts:Number = this.hzqS != null ? Number(this.hzqS.TextScale) : 1;
+         if(isNaN(ts) || ts <= 0) { ts = 1; }
+         if(HZQ_LRG) { ts *= 1.1; }
+         return Math.max(HZQ_CHIP_MIN,Math.round(13 * this.hzqExtSc() * ts * 10) / 10);
+      }
+      // Extra icon pad follows Slot Scale so the picture stays inside the card at 0.7 and 1.4.
+      private function hzqExtIcPad() : Number
+      {
+         return Math.max(2,Math.round(HZQ_ICPAD * this.hzqExtSc()));
       }
       private function hzqExtPitchN() : Number
       {
@@ -2084,14 +2105,24 @@
                {
                   var klab:String = this.hzqExtKeyShort(key);
                   this.hzqSet(o.k,klab,13,sel ? this.hzqTextAccent() : this.hzqMutCol(),"sb",0.04,false);
-                  this.hzqExtFit(o.k,klab,50);
-                  var kw:Number = Math.max(16,Math.ceil(o.k.textWidth * 1.08) + 8);
-                  var kh:Number = Math.max(16,Math.ceil(o.k.textHeight) + 3);
-                  this.hzqKeycap(g,-hb + 5,-hb + 5,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
-                  o.k.x = -hb + 5 + (kw - o.k.width) / 2;
-                  o.k.y = -hb + 5 + (kh - o.k.height) / 2;
+                  this.hzqExtChipTune(o.k,klab,boxN);
+                  var pad:Number = this.hzqExtChipPad();
+                  var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
+                  var minBox:Number = Math.max(HZQ_CHIP_MIN,Math.round(16 * this.hzqExtSc()));
+                  var maxW:Number = boxN - pad * 2;
+                  if(maxW < HZQ_CHIP_MIN) { maxW = HZQ_CHIP_MIN; }
+                  var kw:Number = Math.ceil(o.k.textWidth * 1.08) + gap;
+                  if(kw < minBox) { kw = minBox; }
+                  if(kw > maxW) { kw = maxW; }
+                  var kh:Number = Math.ceil(o.k.textHeight) + Math.max(1,Math.round(3 * this.hzqExtSc()));
+                  if(kh < minBox) { kh = minBox; }
+                  var maxH:Number = boxN - pad * 2;
+                  if(kh > maxH) { kh = maxH; }
+                  this.hzqKeycap(g,-hb + pad,-hb + pad,kw,kh,sel ? this.hzqIconCol(acc) : this.hzqDimCol());
+                  o.k.x = -hb + pad + (kw - o.k.width) / 2;
+                  o.k.y = -hb + pad + (kh - o.k.height) / 2;
                   if(!o.k.visible) { o.k.visible = true; }
-                  o.kb = 5 + kh;
+                  o.kb = pad + kh;
                }
                else { if(o.k.visible) { o.k.visible = false; } o.kb = 0; }
                if(empty && o.p != null)
@@ -2134,7 +2165,7 @@
          }
          if(this.hzqExtLastBox != null) { this.hzqExtFrameDraw(this.hzqExtLastBox); }
       }
-      // Short forms for long navigation key names so the 58 px Extended badge does not overflow (N-a).
+      // Short forms for long navigation key names (N-a). Home / End / NUM stay full; the chip font shrinks to fit.
       private function hzqExtKeyShort(key:String) : String
       {
          var u:String = key.toUpperCase();
@@ -2143,6 +2174,37 @@
          if(u == "INSERT") { return "INS"; }
          if(u == "DELETE") { return "DEL"; }
          return key;
+      }
+      // Purpose: size the extra-slot key chip to Slot Scale, then shrink the font if a long name
+      // (Home, End, PgUp, Insert, NUM *) would still spill. Ellipsis is last resort at 8 px.
+      // Inputs: reused chip TextField, label, live extra box. Called from hzqExtDraw only (change-driven).
+      // Outputs: field formatted so the chip box fits inside the card. Does not use hzqFs's 13 px floor.
+      private function hzqExtChipTune(t:TextField, str:String, boxN:Number) : void
+      {
+         var pad:Number = this.hzqExtChipPad();
+         var gap:Number = Math.max(4,Math.round(8 * this.hzqExtSc()));
+         var maxW:Number = boxN - pad * 2;
+         if(maxW < HZQ_CHIP_MIN) { maxW = HZQ_CHIP_MIN; }
+         var fs:Number = this.hzqExtChipFs();
+         var f:TextFormat = t.defaultTextFormat;
+         f.size = fs;
+         t.defaultTextFormat = f;
+         t.text = str;
+         t.setTextFormat(f);
+         while(fs > HZQ_CHIP_MIN && Math.ceil(t.textWidth * 1.08) + gap > maxW)
+         {
+            fs = Math.max(HZQ_CHIP_MIN,Math.round((fs - 0.5) * 10) / 10);
+            f.size = fs;
+            t.defaultTextFormat = f;
+            t.text = str;
+            t.setTextFormat(f);
+         }
+         if(Math.ceil(t.textWidth * 1.08) + gap > maxW)
+         {
+            var tw:Number = maxW - gap;
+            if(tw < HZQ_CHIP_MIN) { tw = HZQ_CHIP_MIN; }
+            this.hzqExtFit(t,str,tw);
+         }
       }
       // One-line fit with "..." by halving (the scanner's pattern): about log2(length) layouts, only when a label changes.
       private function hzqExtFit(t:TextField, str:String, maxW:Number) : void
@@ -2331,10 +2393,11 @@
          if(nb == null || !(nb.width > 0.5) || !(nb.height > 0.5)) { return; }
          var boxN:Number = this.hzqExtBoxN();
          var hb:Number = boxN * 0.5;
-         var top:Number = -hb + HZQ_ICPAD;
+         var icPad:Number = this.hzqExtIcPad();
+         var top:Number = -hb + icPad;
          if(Number(o.kb) > 0) { top = Math.max(top, -hb + Number(o.kb) + 2); }
-         var aw:Number = boxN - HZQ_ICPAD * 2;
-         var ah:Number = hb - HZQ_ICPAD - top;
+         var aw:Number = boxN - icPad * 2;
+         var ah:Number = hb - icPad - top;
          if(aw < 4 || ah < 4) { return; }
          var k:Number = Math.min(1,Math.min(aw / nb.width,ah / nb.height));
          ic.scaleX = b.sx * k;
