@@ -673,7 +673,10 @@
       private function hzcScale() : Number { return Number(this.hzcCfg.SubSize) * Number(this.hzcCfg.TextScale) * (HZC_LRG ? 1.25 : 1); }
       private function hzcSet(t:TextField, s:String, role:String, size:Number, col:uint, spacing:Number, align:String) : void
       {
-         var face:String = this.hzcFits(t,s) ? this.hzcFont(role) : this.hzcGameFont;
+         // CJK uses the game Chinese face when fonts_zhcn is loaded (game
+         // language Chinese). Never embed a CJK font. Probe is cached.
+         var face:String = this.hzcFits(t,s) ? this.hzcFont(role)
+            : (this.hzcFontProbe("DFZongYi-GB Otf W5 Regular") ? "DFZongYi-GB Otf W5 Regular" : this.hzcGameFont);
          var f:TextFormat = new TextFormat(face,Math.round(size),col);
          f.letterSpacing = spacing;
          f.align = align;

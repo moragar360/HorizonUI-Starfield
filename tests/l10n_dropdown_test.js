@@ -103,8 +103,16 @@ expect(!/\$MAIN_Font/.test(fnText(insert, "hz51LangName").body)
 	"Language dropdown path never selects $MAIN_Font");
 expect(!/when ja\/zh-cn is active/.test(insert) && !/when ja\/zh-cn is active/.test(as),
 	"Clarification wording (native CJK in the dropdown when ja/zh-cn is active) is gone");
-expect(/cjk \? "\$MAIN_Font"/.test(fnText(as, "hzWT").body) || /cjk \? "\$MAIN_Font"/.test(fnText(as, "hzApplyFmt19").body),
-	"translated HUD text still uses $MAIN_Font when the string is CJK");
+expect(/cjk \? this\.hzCjkFont\(face\)/.test(fnText(as, "hzWT").body)
+	&& /cjk19 \? this\.hzCjkFont\(face\)/.test(fnText(as, "hzApplyFmt19").body),
+	"translated HUD text uses the game Chinese face (DFZongYi) when that FontLib is loaded");
+const cjkFn = fnText(as, "hzCjkFont").body;
+expect(/DFZongYi-GB Otf W5 Regular/.test(cjkFn) && !/Noto/.test(cjkFn),
+	"hzCjkFont probes the game DFZongYi face and never embeds a CJK font");
+expect(!/fontlib "fonts_zhcn"/.test(as) && !/NotoSans/.test(as) && !/Noto Sans/.test(as),
+	"HUD source does not embed Noto or add a fonts_zhcn fontlib line");
+expect(/hzL10nCjk && this\.hzFontProbe\("DFZongYi-GB Otf W5 Regular"\)/.test(fnText(as, "hzFontName").body),
+	"CJK chrome stays Exo 2 / $MAIN_Font unless DFZongYi actually renders (fonts_zhcn is language-gated)");
 
 expect(host.hz51LangName("ja") === "Japanese" && host.hz51LangName("jp") === "Japanese",
 	"Japanese dropdown entry is the English name in Exo 2");

@@ -201,6 +201,7 @@ namespace HZ
 	void PushL10nNamed(const char* a_menu, const char* a_fn);
 	void PushL10nModules();
 	void PushL10nForMenu(RE::IMenu* a_menu);
+	void PushL10nOnAdvance(RE::Scaleform::GFx::ASMovieRootBase* a_this);
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -2753,6 +2754,16 @@ namespace HZ
 	std::atomic<std::uint32_t>    g_l10nGen{0};
 	std::atomic<std::uint32_t>    g_l10nPushed{0};
 	std::atomic<bool>             g_l10nLogged{false};
+	// One-shot stamp for module movies. MenuMovieCreated only arms the
+	// root; the Invoke runs on that movie's own AdvanceFrame. Bits are
+	// 0 when idle so the hook is one relaxed load.
+	constexpr std::uint8_t        kL10nPendComms = 1;
+	constexpr std::uint8_t        kL10nPendDlg = 2;
+	constexpr std::uint8_t        kL10nPendScan = 4;
+	std::atomic<std::uint8_t>     g_l10nPendBits{0};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendComms{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendDlg{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendScan{nullptr};
 
 	// Purpose: Data/SFSE/Plugins next to HorizonUI.dll. No user-home path.
 	std::filesystem::path L10nDir()
@@ -2998,8 +3009,8 @@ namespace HZ
 	}
 
 	// Purpose: push the cached l10n payload to one live Scaleform menu. Called
-	// from PushL10n (language reload, if the menu is already open) and from
-	// PushL10nForMenu (that movie's create). Not on a timer. No disk.
+	// from PushL10nFavorites (Favorites AdvanceFrame already runs). Comms /
+	// Dialogue / Scanner use ArmL10nPend instead of this path. Not on a timer.
 	// Inputs: menu name and public SetL10n function. Outputs: one Invoke.
 	// Author: Moragar. Last modified: 2026-11-27.
 	void PushL10nNamed(const char* a_menu, const char* a_fn)
@@ -3029,42 +3040,56 @@ namespace HZ
 		PushL10nNamed("FavoritesMenu", "hzqSetL10n");
 	}
 
-	// Purpose: push the cached table to every Horizon module movie that is
-	// live. Favorites, Comms (HUDMessages), Dialogue, and Scanner. Called from
-	// PushL10n after the HUD payload lands. Movies that open later get the
-	// same payload from PushL10nForMenu. Not on a timer. No disk.
+	// Purpose: arm a one-shot l10n Invoke for a module movie. The stamp
+	// runs on that movie's own AdvanceFrame (PushL10nOnAdvance), never
+	// from MenuMovieCreated. Inputs: bit, slot, live root. Outputs: pending.
 	// Author: Moragar. Last modified: 2026-11-27.
-	void PushL10nModules()
+	void ArmL10nPend(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		RE::Scaleform::GFx::ASMovieRootBase* a_root)
 	{
-		try { PushL10nNamed("FavoritesMenu", "hzqSetL10n"); } catch (...) {}
-		try { PushL10nNamed("HUDMessagesMenu", "hzcSetL10n"); } catch (...) {}
-		try { PushL10nNamed("DialogueMenu", "hzdSetL10n"); } catch (...) {}
-		try { PushL10nNamed("MonocleMenu", "hzsSetL10n"); } catch (...) {}
+		if (!a_root || !a_bit) return;
+		a_slot.store(a_root, std::memory_order_release);
+		g_l10nPendBits.fetch_or(a_bit, std::memory_order_acq_rel);
 	}
 
-	// Purpose: push the cached l10n table onto a module movie at create.
-	// Scanner / Dialogue open after the HUD gen latch, so PushL10nModules
-	// never sees them. MenuMovieCreated is not inside AdvanceFrame
-	// (advancing root is 0); MenuLive would refuse. Invoke this movie
-	// directly, once. If another movie is already advancing, skip so we
-	// never Invoke a foreign movie from inside its AdvanceFrame.
-	// Inputs: the created IMenu. Outputs: one Invoke. No disk, no timer.
+	// Purpose: if that menu is open, arm its next AdvanceFrame to stamp
+	// the cached table. Used on language reload while the movie is live.
+	// Inputs: menu name, bit, slot. Outputs: pending or no-op. No Invoke.
 	// Author: Moragar. Last modified: 2026-11-27.
-	void PushL10nForMenu(RE::IMenu* a_menu)
+	void ArmL10nPendOpen(const char* a_menu, std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot)
 	{
 		if (!a_menu) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(a_menu)) return;
+		auto menu = ui->GetMenu(a_menu);
+		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return;
+		ArmL10nPend(a_bit, a_slot, menu->uiMovie->asMovieRoot.get());
+	}
+
+	// Purpose: one Invoke of a module SetL10n on that movie's AdvanceFrame.
+	// Consumes the pending bit first so a nested advance cannot re-enter.
+	// Re-fetches GetMenu and checks the live root so a reused address is
+	// not Invoked. Inputs: advancing root, slot, menu name, function.
+	// Outputs: at most one Invoke. No disk, no timer.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nPendOne(RE::Scaleform::GFx::ASMovieRootBase* a_this,
+		std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		const char* a_menu, const char* a_fn)
+	{
+		auto want = a_slot.load(std::memory_order_acquire);
+		if (!a_this || a_this != want) return;
+		a_slot.store(nullptr, std::memory_order_release);
+		g_l10nPendBits.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
 		if (!g_l10nReady.load(std::memory_order_acquire)) return;
-		const char* fn = nullptr;
-		if (a_menu->menuName == "HUDMessagesMenu") fn = "hzcSetL10n";
-		else if (a_menu->menuName == "DialogueMenu") fn = "hzdSetL10n";
-		else if (a_menu->menuName == "MonocleMenu") fn = "hzsSetL10n";
-		if (!fn) return;
-		if (!a_menu->uiMovie || !a_menu->uiMovie->asMovieRoot) return;
-		if (!a_menu->menuObj.IsObject() || !a_menu->menuObj.HasMember(fn)) return;
-		auto* root = a_menu->uiMovie->asMovieRoot.get();
-		if (hzlog::g_advancingMovie != hzlog::PollMovie::None
-			&& !hzlog::InvokeRootMatches(hzlog::g_advancingRoot, root))
-			return;
+		if (!a_menu || !a_fn) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(a_menu)) return;
+		auto menu = ui->GetMenu(a_menu);
+		if (!menu || !menu->uiMovie || menu->uiMovie->asMovieRoot.get() != a_this) return;
+		if (!menu->menuObj.IsObject() || !menu->menuObj.HasMember(a_fn)) return;
 		std::string payload;
 		{
 			std::lock_guard lk(g_l10nMu);
@@ -3072,7 +3097,55 @@ namespace HZ
 		}
 		if (payload.empty()) return;
 		GValue arg(payload.c_str());
-		a_menu->menuObj.Invoke(fn, nullptr, &arg, 1);
+		menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
+	}
+
+	// Purpose: consume a pending module l10n stamp after that movie's
+	// AdvanceFrame original has returned. One relaxed load when idle.
+	// Inputs: the advancing root. Outputs: at most one Invoke per movie.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nOnAdvance(RE::Scaleform::GFx::ASMovieRootBase* a_this)
+	{
+		if (!a_this) return;
+		if (g_l10nPendBits.load(std::memory_order_relaxed) == 0) return;
+		try { PushL10nPendOne(a_this, kL10nPendComms, g_l10nPendComms, "HUDMessagesMenu", "hzcSetL10n"); } catch (...) {}
+		try { PushL10nPendOne(a_this, kL10nPendDlg, g_l10nPendDlg, "DialogueMenu", "hzdSetL10n"); } catch (...) {}
+		try { PushL10nPendOne(a_this, kL10nPendScan, g_l10nPendScan, "MonocleMenu", "hzsSetL10n"); } catch (...) {}
+	}
+
+	// Purpose: push the cached table to every Horizon module movie that is
+	// live. Favorites uses MenuLive (its AdvanceFrame already runs). Comms,
+	// Dialogue, and Scanner arm a one-shot stamp on their own next
+	// AdvanceFrame. Called from PushL10n after the HUD payload lands.
+	// Movies that open later get the same arm from PushL10nForMenu.
+	// Not on a timer. No disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nModules()
+	{
+		try { PushL10nNamed("FavoritesMenu", "hzqSetL10n"); } catch (...) {}
+		try { ArmL10nPendOpen("HUDMessagesMenu", kL10nPendComms, g_l10nPendComms); } catch (...) {}
+		try { ArmL10nPendOpen("DialogueMenu", kL10nPendDlg, g_l10nPendDlg); } catch (...) {}
+		try { ArmL10nPendOpen("MonocleMenu", kL10nPendScan, g_l10nPendScan); } catch (...) {}
+	}
+
+	// Purpose: remember a module movie at MenuMovieCreated so its first
+	// real AdvanceFrame can stamp hzs/hzc/hzd SetL10n. Must not Invoke
+	// here: MenuMovieCreated is not inside AdvanceFrame, and a create-time
+	// Invoke of hzsSetL10n CTDs Scaleform (write to 0x7 in the game).
+	// Inputs: the created IMenu. Outputs: pending root. No Invoke, no disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nForMenu(RE::IMenu* a_menu)
+	{
+		if (!a_menu) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		if (!a_menu->uiMovie || !a_menu->uiMovie->asMovieRoot) return;
+		auto* root = a_menu->uiMovie->asMovieRoot.get();
+		if (a_menu->menuName == "HUDMessagesMenu")
+			ArmL10nPend(kL10nPendComms, g_l10nPendComms, root);
+		else if (a_menu->menuName == "DialogueMenu")
+			ArmL10nPend(kL10nPendDlg, g_l10nPendDlg, root);
+		else if (a_menu->menuName == "MonocleMenu")
+			ArmL10nPend(kL10nPendScan, g_l10nPendScan, root);
 	}
 
 	// Purpose: job / load thread preload of versionlib and the DLL file
@@ -6401,6 +6474,7 @@ namespace HZ
 		const auto tAdv0 = timeHud ? HzQpc() : 0;
 		if (orig)
 			orig(a_this, a_next);
+		try { PushL10nOnAdvance(a_this); } catch (...) {}
 		if (tAdv0) {
 			HzPerfNoteRoot(tAdv0, a_next);
 			if (g_perfAgg.dumping.load(std::memory_order_acquire) == 0) {

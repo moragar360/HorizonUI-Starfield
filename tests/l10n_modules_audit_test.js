@@ -86,9 +86,19 @@ expect(/hzMsglogKindLab/.test(hud) && hud.indexOf("sel.title") >= 0,
 
 expect(/PushL10nModules/.test(cpp) && /hzcSetL10n/.test(cpp) && /hzdSetL10n/.test(cpp) && /hzsSetL10n/.test(cpp),
 	"DLL pushes hzc/hzd/hzs SetL10n on language apply");
-expect(/PushL10nForMenu/.test(cpp), "DLL pushes module l10n when Dialogue / Scanner / HUDMessages open");
-expect(/a_menu->menuObj\.Invoke\(fn/.test(cpp) && /g_advancingMovie != hzlog::PollMovie::None/.test(cpp),
-	"scanner/dialogue create Invokes the created movie when no AdvanceFrame is running (MenuLive would refuse)");
+expect(/PushL10nForMenu/.test(cpp), "DLL arms module l10n when Dialogue / Scanner / HUDMessages open");
+expect(cpp.indexOf("a_menu->menuObj.Invoke(fn") < 0
+	&& /ArmL10nPend\(kL10nPendScan, g_l10nPendScan, root\)/.test(cpp),
+	"module create arms the scanner root and does not Invoke (create-time hzsSetL10n CTDs Scaleform)");
+expect(/void PushL10nOnAdvance/.test(cpp) && /PushL10nPendOne/.test(cpp),
+	"AdvanceFrame consumes the pending scanner/dialogue/comms stamp");
+expect(/try \{ PushL10nOnAdvance\(a_this\); \}/.test(cpp),
+	"HookedAdvanceFrame stamps after orig(), on that movie's own advance");
+expect(/g_l10nPendBits\.load\(std::memory_order_relaxed\) == 0/.test(cpp),
+	"idle hook is one relaxed load, not a new poll");
+expect(/hzsL10nCjk && this\.hzsProbe\("DFZongYi-GB Otf W5 Regular"\)/.test(hzs)
+	&& !/NotoSans/.test(hzs),
+	"scanner CJK uses the game DFZongYi face when that FontLib is loaded, never Noto");
 expect(!/new Timer/.test(cpp.match(/void PushL10nModules[\s\S]*?\n\t\}/)[0]),
 	"PushL10nModules has no timer");
 

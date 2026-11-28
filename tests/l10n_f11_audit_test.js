@@ -62,6 +62,10 @@ expect(/HZ51_Z_RESERVE/.test(list) && /r\.t == "z"/.test(list),
 	"z-rows (COMPACT STRIPS: SIZE and other chip+slider sizes) reserve the chip/slider column");
 expect(/wordWrap = true/.test(list) && /multiline = true/.test(list) && !/hzFitText\(ht2/.test(list),
 	"row help wraps to fit instead of chopping with an ellipsis");
+expect(/hz51T\(b,String\(r\.h\),x0,shY \+ 6,boxW,HZ51_SH_PX/.test(list)
+	&& !/Math\.min\(240, boxW \* 0\.45\)/.test(list)
+	&& /ht\.wordWrap = true/.test(list),
+	"section headers use the full group width and wrap (German RELATED APPEARANCE SETTINGS)");
 
 const z = fnText(as, "hz34ZDraw").body;
 expect(/hzLt\(glob \? "GLOBAL" : "CUSTOM"\)/.test(z), "GLOBAL/CUSTOM chip text goes through hzLt");
@@ -74,8 +78,11 @@ expect(/hzLt\("LIVE PREVIEW"\)/.test(drawSrc) && /hzLt\("SETTING DETAILS"\)/.tes
 const head = fnText(draw, "hz51DrawHead").body;
 expect(/hzLt\("HORIZON UI"\)/.test(head) && /hzLt\("SETTINGS"\)/.test(head),
 	"F11 title cluster looks up HORIZON UI and SETTINGS");
-expect(/hzTW\(t1\)/.test(head) && /hzTW\(t2\)/.test(head) && !/16 \+ 128/.test(head) && !/pillX = 250/.test(head),
-	"F11 header places SETTINGS and the version chip from measured text, not a 90px / x=250 clip");
+expect(/hzTW\(t1\)/.test(head) && /hzTW\(t2\)/.test(head) && /hzTW\(t3\)/.test(head)
+	&& /pillW:Number = Math\.max\(52, tw3 \+ 28\)/.test(head)
+	&& /tw2 = Math\.max\(24, maxR - pillW - gap - sx\)/.test(head)
+	&& !/16 \+ 128/.test(head) && !/pillX = 250/.test(head),
+	"F11 header measures SETTINGS and the version chip; the chip keeps its width and SETTINGS shrinks first");
 expect(/hz51HelpOf\(String\(r\.k\)/.test(fnText(draw, "hz51DrawRight").body),
 	"Setting Details body is hz51HelpOf (table lookup), not a raw English literal");
 
@@ -216,6 +223,18 @@ expect(lookup(de, "ARRANGE SCANNER") && lookup(de, "ARRANGE SCANNER") !== "ARRAN
 	"German ARRANGE SCANNER is translated");
 expect(lookup(de, "COMPACT MODE (STRIPS)") && lookup(de, "COMPACT MODE (STRIPS)") !== "COMPACT MODE (STRIPS)",
 	"German COMPACT MODE (STRIPS) is translated");
+expect(en["settings.ui.compact_strips_size"] === "COMPACT STRIPS: SIZE"
+	&& de["settings.ui.compact_strips_size"] && de["settings.ui.compact_strips_size"].indexOf("COMPACT STRIPS") < 0
+	&& zh["settings.ui.compact_strips_size"] && zh["settings.ui.compact_strips_size"].indexOf("COMPACT STRIPS") < 0
+	&& es["settings.ui.compact_strips_size"] && esmx["settings.ui.compact_strips_size"]
+	&& fr["settings.ui.compact_strips_size"] && pl["settings.ui.compact_strips_size"],
+	"COMPACT STRIPS: SIZE has settings.ui.compact_strips_size in all seven languages");
+expect(de["settings.line._goto_margin"] && de["settings.line._goto_margin"].indexOf("Opens Size") < 0
+	&& de["settings.line._goto_margin"].indexOf("Opens size") < 0,
+	"German BILDSCHIRMRAND row help is not leftover English");
+expect(zh["settings.line._goto_margin"] && zh["settings.line._goto_margin"].indexOf("Opens Size") < 0
+	&& zh["settings.line._goto_margin"].indexOf("Opens size") < 0,
+	"zh-cn screen-margin row help is not leftover English");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

@@ -339,8 +339,20 @@ int main()
 		"Comms, Dialogue, and Scanner movies get the same l10n payload");
 	Expect(Has(cpp, "PushL10nModules") && Has(cpp, "PushL10nForMenu"),
 		"module movies are pushed on language apply and on menu open");
-	Expect(Has(cpp, "a_menu->menuObj.Invoke(fn") && Has(cpp, "g_advancingMovie != hzlog::PollMovie::None"),
-		"module create Invokes the created movie when AdvanceFrame is not running");
+	{
+		const auto create = fnBody("void PushL10nForMenu(RE::IMenu* a_menu)");
+		Expect(!create.empty() && !Has(create, "Invoke("),
+			"module create arms a pending stamp and does not Invoke (create-time hzsSetL10n CTDs Scaleform)");
+		Expect(Has(create, "ArmL10nPend") && Has(create, "MonocleMenu") && Has(create, "kL10nPendScan"),
+			"scanner create stores the movie root for the first AdvanceFrame");
+	}
+	Expect(Has(cpp, "void PushL10nOnAdvance") && Has(cpp, "PushL10nPendOne")
+			&& Has(cpp, "try { PushL10nOnAdvance(a_this); }"),
+		"the AdvanceFrame hook stamps a pending module movie once, after orig()");
+	Expect(Has(cpp, "g_l10nPendBits.load(std::memory_order_relaxed) == 0"),
+		"idle AdvanceFrame is one relaxed load, not a poll or per-frame Invoke");
+	Expect(Has(cpp, "menu->menuObj.Invoke(a_fn") && Has(cpp, "hzsSetL10n"),
+		"scanner SetL10n still Invokes, only on that movie's AdvanceFrame");
 
 	Expect(Has(hdr, "kMaxFileBytes = 512 * 1024"), "512 KiB cap matches other JSON reads");
 	Expect(!Has(hdr, "HUSD") && !Has(cpp, "HUSD") && !Has(as, "HUSD"), "no HUSD IT in l10n sources");

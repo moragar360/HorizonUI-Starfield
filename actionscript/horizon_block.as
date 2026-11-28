@@ -942,8 +942,23 @@
       // back to SemiBold, then to the game font, so a missing / partial install never shows empty text.
       // v0.29 FontFace 2: Roboto ($Horizon_Font_Alt = Medium, _Alt_Regular, _Alt_Bold); falls back to Medium, then to
       // the matching Exo 2 face (older fonts_horizon.swf / fontconfig without Roboto), then to the game font.
+      // Purpose: the face Starfield already uses for its Chinese UI
+      // (fontconfig_zhhans: $MAIN_Font = DFZongYi-GB in fonts_zhcn).
+      // That FontLib is loaded only when the game language is Chinese.
+      // Never embed a CJK face. Probe once per name (hzFontProbe cache).
+      // Call from set-text / language apply, never per HUD tick.
+      private function hzCjkFont(face:String = null) : String
+      {
+         if(this.hzL10nUsed == "ja" || this.hzL10nUsed == "jp")
+         {
+            if(this.hzFontProbe("JP_NB Architekt Light Regular")) { return "JP_NB Architekt Light Regular"; }
+         }
+         if(this.hzFontProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
+         return this.hzFont ? this.hzFont : "$MAIN_Font";
+      }
       private function hzFontName(face:String = null) : String
       {
+         if(this.hzL10nCjk && this.hzFontProbe("DFZongYi-GB Otf W5 Regular")) { return this.hzCjkFont(face); }
          var game:String = this.hzFont ? this.hzFont : "$MAIN_Font";
          if(this.hzFontFace == 3) { return this.hzFontProbe(HZ34_SEMI) ? HZ34_SEMI : game; }   // v0.34: one weight for every face
          if(this.hzFontFace != 1 && this.hzFontFace != 2) { return game; }
@@ -4785,6 +4800,8 @@
       private var hzL10nGame:String = "";
       private var hzL10nGameName:String = "";
       private var hzL10nFiles:Array = null;
+      private var hzL10nUsed:String = "en";
+      private var hzL10nCjk:Boolean = false;
       private var hzLanguage:String = "auto";
       private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
@@ -5139,13 +5156,15 @@
                   var v:String = this.hzL10nUnesc(ln.substr(tabAt + 1));
                   if(k == "g") { this.hzL10nGame = v; }
                   else if(k == "gn") { this.hzL10nGameName = v; }
+                  else if(k == "used") { this.hzL10nUsed = v; }
                   else if(k == "files") { files = v.length > 0 ? v.split(",") : ["en"]; }
-                  else if(k != "o" && k != "used") { tab[k] = v; }
+                  else if(k != "o") { tab[k] = v; }
                }
                i++;
             }
             this.hzL10n = tab;
             this.hzL10nFiles = files;
+            this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
             this.hzL10nApplyHud();
             if(this.hzSetIsOpen)
             {
@@ -5170,8 +5189,16 @@
          }
          return fb != null ? fb : key;
       }
+      // Purpose: true for shipped CJK stems. Set once in hzSetL10n so chrome
+      // uses the game CJK FontLib (fonts_zhcn) instead of Exo 2. Not a poll.
+      private function hzL10nStemCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var c:String = s.toLowerCase();
+         return c == "zh-cn" || c == "zhhans" || c == "zhcn" || c == "zh" || c == "ja" || c == "jp";
+      }
       // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
-      // stays on Latin and $MAIN_Font is chosen per field, never per frame.
+      // stays on Latin and the game CJK face is chosen per field, never per frame.
       private function hzHasCjk(s:String) : Boolean
       {
          if(s == null) { return false; }
@@ -6937,20 +6964,25 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sx:Number = 16 + tw1 + 10;
          var t2:TextField = this.hz51T(b,setn,sx,18,280,11,"sb",uint(T.lab),2.0);
          var tw2:Number = Math.ceil(this.hzTW(t2));
-         var pillW:Number = 78;
-         var pillX:Number = sx + tw2 + 10;
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var ver:String = "v" + hv;
+         var t3:TextField = this.hz51T(b,ver,0,16,200,11,"sb",uint(T.lab),0.4);
+         var tw3:Number = Math.ceil(this.hzTW(t3));
+         var pillW:Number = Math.max(52, tw3 + 28);
+         var gap:Number = 10;
+         var pillX:Number = sx + tw2 + gap;
          if(pillX + pillW > maxR)
          {
-            pillX = Math.max(sx + 36, maxR - pillW);
-            tw2 = Math.max(24, pillX - sx - 8);
+            tw2 = Math.max(24, maxR - pillW - gap - sx);
+            pillX = sx + tw2 + gap;
          }
          t2.width = tw2 + 4;
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
-         var hv:String = HZ_BUILD;
-         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
-         this.hz51T(b,"v" + hv,pillX + 16,16,pillW - 22,11,"sb",uint(T.lab),0.4);
+         t3.x = Math.round(pillX + 16 - 2);
+         t3.width = tw3 + 4;
          this.hz51DrawCompact(b,g,T,acc,W);
       }
       private function hz51DrawTabs(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
@@ -7188,10 +7220,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                boxOpen = false;
                var shY:Number = y + 10;
-               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,Math.min(240,boxW * 0.45),HZ51_SH_PX,"bd",acc,1.4);
-               var ruleX:Number = x0 + Math.round(this.hzTW(ht) + 12);
-               this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
-               y += HZ51_SEC;
+               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,boxW,HZ51_SH_PX,"bd",acc,1.4);
+               ht.wordWrap = true;
+               ht.multiline = true;
+               var shTw:Number = Math.round(this.hzTW(ht));
+               if(shTw + 28 < boxW)
+               {
+                  var ruleX:Number = x0 + shTw + 12;
+                  this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
+               }
+               var shExtra:Number = 0;
+               if(ht.textHeight > HZ51_SH_PX + 8) { shExtra = Math.ceil(ht.textHeight - (HZ51_SH_PX + 6)); }
+               y += HZ51_SEC + shExtra;
                firstSec = false;
                boxY = y;
                if(r.t != "m" && r.t != "mb" && r.t != "mc")
@@ -11006,8 +11046,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
          if(minPx > sz) { sz = minPx; }   // v0.42.0.4: the version label passes 13 so TextScale 0.9 cannot round it to 12
          if(face == "rg" && sz <= 12) { face = "sb"; }
-         var cjk:Boolean = this.hzHasCjk(txt);
-         var f:TextFormat = new TextFormat(cjk ? "$MAIN_Font" : this.hzFontName(face),sz,col);
+         var cjk:Boolean = this.hzL10nCjk || this.hzHasCjk(txt);
+         var f:TextFormat = new TextFormat(cjk ? this.hzCjkFont(face) : this.hzFontName(face),sz,col);
          f.align = align;
          f.letterSpacing = cjk ? 0 : ls;
          t.defaultTextFormat = f;
@@ -13904,8 +13944,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          o.szAp = sz;   // 0.43.5 (PR #12 cache key): the applied pixel size, which HudScale / HoverScale floors change without o.fs changing
          var tf:TextField = TextField(o.tf);
          var keepTxt:String = o.hdr19 ? this.hzUC(tf.text) : tf.text;
-         var cjk19:Boolean = this.hzHasCjk(keepTxt);
-         var f:TextFormat = new TextFormat(cjk19 ? "$MAIN_Font" : this.hzFontName(face),sz,col);
+         var cjk19:Boolean = this.hzL10nCjk || this.hzHasCjk(keepTxt);
+         var f:TextFormat = new TextFormat(cjk19 ? this.hzCjkFont(face) : this.hzFontName(face),sz,col);
          if(o.right) { f.align = "right"; }
          if(o.center) { f.align = "center"; }
          // HeaderStyle 0: CAPS + letter-spaced titles; 1: Title Case, tight tracking

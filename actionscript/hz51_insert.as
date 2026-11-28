@@ -31,6 +31,8 @@
       private var hzL10nGame:String = "";
       private var hzL10nGameName:String = "";
       private var hzL10nFiles:Array = null;
+      private var hzL10nUsed:String = "en";
+      private var hzL10nCjk:Boolean = false;
       private var hzLanguage:String = "auto";
       private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
@@ -385,13 +387,15 @@
                   var v:String = this.hzL10nUnesc(ln.substr(tabAt + 1));
                   if(k == "g") { this.hzL10nGame = v; }
                   else if(k == "gn") { this.hzL10nGameName = v; }
+                  else if(k == "used") { this.hzL10nUsed = v; }
                   else if(k == "files") { files = v.length > 0 ? v.split(",") : ["en"]; }
-                  else if(k != "o" && k != "used") { tab[k] = v; }
+                  else if(k != "o") { tab[k] = v; }
                }
                i++;
             }
             this.hzL10n = tab;
             this.hzL10nFiles = files;
+            this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
             this.hzL10nApplyHud();
             if(this.hzSetIsOpen)
             {
@@ -416,8 +420,16 @@
          }
          return fb != null ? fb : key;
       }
+      // Purpose: true for shipped CJK stems. Set once in hzSetL10n so chrome
+      // uses the game CJK FontLib (fonts_zhcn) instead of Exo 2. Not a poll.
+      private function hzL10nStemCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var c:String = s.toLowerCase();
+         return c == "zh-cn" || c == "zhhans" || c == "zhcn" || c == "zh" || c == "ja" || c == "jp";
+      }
       // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
-      // stays on Latin and $MAIN_Font is chosen per field, never per frame.
+      // stays on Latin and the game CJK face is chosen per field, never per frame.
       private function hzHasCjk(s:String) : Boolean
       {
          if(s == null) { return false; }

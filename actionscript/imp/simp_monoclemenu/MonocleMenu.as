@@ -1294,6 +1294,7 @@ package
 
 
 
+
       // ===================== Horizon UI Scanner (monoclemenu) =====================
       // ORIGINAL CODE (Horizon UI) v0.41.0. apply_scanner_hooks.ps1 inserts this block into the game's own MonocleMenu
       // class (exported from the player's monoclemenu.swf on the PC); no game script text is stored in the kit.
@@ -1396,6 +1397,8 @@ package
       private var hzsCmpRev:int = 0;          // 0.43.3.2: bumped on every compass data event (hzsOnCmp)
       private var hzsTrC:Object = {};         // 0.43.3.2: "$KEY" -> translated text (one TextField per key per scanner open)
       private var hzsL10n:Object = null;
+      private var hzsL10nUsed:String = "en";
+      private var hzsL10nCjk:Boolean = false;
       private var hzsL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
       // Purpose: cache the HUD localization snapshot on this movie. One Invoke
       // per movie load / language reload. No file I/O. Lookups run at card /
@@ -1419,11 +1422,13 @@ package
                {
                   var k:String = ln.substr(0, tabAt);
                   var v:String = this.hzsL10nUnesc(ln.substr(tabAt + 1));
-                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+                  if(k == "used") { this.hzsL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
                }
                i++;
             }
             this.hzsL10n = tab;
+            this.hzsL10nCjk = this.hzsL10nUsed == "zh-cn" || this.hzsL10nUsed == "zhhans" || this.hzsL10nUsed == "ja" || this.hzsL10nUsed == "jp";
             this.hzsL10nC = {};
             this.hzsMNC = {};
             this.hzsMNUnk = null;
@@ -2005,6 +2010,7 @@ package
       }
       private function hzsFace(w:String) : String
       {
+         if(this.hzsL10nCjk && this.hzsProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
          var f:int = int(this.hzsC.ScanFont);
          if(f < 0 || f > 3) { f = int(this.hzsS.FontFace); }
          var game:String = this.hzsGame();

@@ -82,6 +82,8 @@
       private var hzqInfObj:Object = null;      // what the info card shows (selected entry, or the item being assigned)
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
       private var hzqL10n:Object = null;        // dotted-key table from DLL hzqSetL10n (FavoritesMenu movie)
+      private var hzqL10nUsed:String = "en";
+      private var hzqL10nCjk:Boolean = false;
       private var hzqCtA:ColorTransform = null; // reused: accent multiply tint for non-weapon symbol icons
       private var hzqCtM:ColorTransform = null; // reused: main text tint for non-weapon symbol icons
       private var hzqCtN:ColorTransform = null; // reused: identity (non-weapon pictures)
@@ -547,11 +549,13 @@
                {
                   var k:String = ln.substr(0, tabAt);
                   var v:String = ln.substr(tabAt + 1);
-                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+                  if(k == "used") { this.hzqL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
                }
                i++;
             }
             this.hzqL10n = tab;
+            this.hzqL10nCjk = this.hzqL10nUsed == "zh-cn" || this.hzqL10nUsed == "zhhans" || this.hzqL10nUsed == "ja" || this.hzqL10nUsed == "jp";
             if(this.hzqOn)
             {
                try { this.hzqHeader(); } catch(eHdr:Error) { }
@@ -691,9 +695,17 @@
          this.hzqFontOk[n] = ok ? 1 : 0;
          return ok;
       }
+      // Game Chinese UI face (fonts_zhcn / DFZongYi). Loaded only when the
+      // game language is Chinese. Never embed a CJK font.
+      private function hzqCjkFont() : String
+      {
+         if(this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
+         return "$MAIN_Font";
+      }
       // FontFace: 1 $Horizon_Font, 2 $Horizon_Font_Alt (both wait for font.marker), 0 the game font, 3 the game face of the slot key field
       private function hzqFace(w:String) : String
       {
+         if(this.hzqL10nCjk && this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return this.hzqCjkFont(); }
          var f:int = int(this.hzqS.FontFace);
          if(f == 3)
          {
@@ -735,8 +747,8 @@
       private function hzqSet(t:TextField, s:String, size:Number, col:uint, w:String, tr:Number, hdr:Boolean) : void
       {
          var fs:Number = this.hzqFs(size);
-         var cjk:Boolean = this.hzqHasCjk(s);
-         var f:TextFormat = new TextFormat(cjk ? "$MAIN_Font" : this.hzqFace(w),fs,col);
+         var cjk:Boolean = this.hzqL10nCjk || this.hzqHasCjk(s);
+         var f:TextFormat = new TextFormat(cjk ? this.hzqCjkFont() : this.hzqFace(w),fs,col);
          f.letterSpacing = cjk ? 0 : (hdr && this.hzqS != null && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10);
          t.embedFonts = true;
          t.defaultTextFormat = f;
