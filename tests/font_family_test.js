@@ -82,15 +82,18 @@ expect(/t\.text = this\.hzFontText\(txt\)/.test(fnText(as, "hzT").body)
 	&& /full = this\.hzFontText\(full\)/.test(fnText(as, "hzFitText").body)
 	&& /t\.text = this\.hzFontText\(txt\)/.test(fnText(as, "hzWT").body),
 	"Orbitron substitution is at set-text time (hzT / hzWT / hzFitText)");
-expect(/hzCmpCenter\.text = HZ_CARD\[idx\] \+ " " \+ this\.hzDot/.test(as),
-	"compass ticks use a cached hzDot, not hzFontText");
+expect(/hzCmpCenter\.text = HZ_CARD\[idx\] \+ " " \+ this\.hzMid/.test(as),
+	"compass ticks use a cached hzMid, not hzFontText");
 {
 	const i = as.indexOf("this.hzCmpCenter.text = HZ_CARD");
 	expect(i >= 0 && as.slice(i, i + 160).indexOf("hzFontText") < 0,
 		"compass heading assign does not walk the string");
 }
+expect(/private var hzMid:String/.test(as) && /private function hzDot\(d:Sprite, col:uint\)/.test(as),
+	"middot cache is hzMid; status-dot painter stays hzDot");
+expect(!/this\.hzDot\s*=/.test(as), "painter slot is never assigned a string");
 expect(/function hzFontApply/.test(as) && /hzFontApply\(\)/.test(fnText(insert, "hzSetL10n").body),
-	"language apply refreshes the live family and hzDot once");
+	"language apply refreshes the live family and hzMid once");
 expect(/HZ_FONT_COVER:Object/.test(as) && /HZ_ORB_FROM:Array/.test(as),
 	"HUD carries the generated coverage table");
 expect(/function hzcFontFamLive/.test(hzc) && /function hzdFontFamLive/.test(hzd)

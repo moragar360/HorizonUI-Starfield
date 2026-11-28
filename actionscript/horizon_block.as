@@ -184,7 +184,7 @@
       private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
       // ---- end generated font coverage ----
       private var hzFontLive:String = "Exo2"; // coverage-resolved family; INI Font= is hzFontFam
-      private var hzDot:String = "\u00B7";    // compass / note separator; Orbitron may be U+2022
+      private var hzMid:String = "\u00B7";    // compass separator; Orbitron may be U+2022. Not hzDot: that name is the status-dot painter.
       private var hzFontOk:int = -1; // -1 unknown, 0 missing, 1 available
       public var hzPlanDetails:Boolean = false;
       public var hzShowTarget:Boolean = true;
@@ -1042,11 +1042,11 @@
          return o;
       }
       // Purpose: cache live family + middot for compass ticks. Call when Font=
-      // or language changes, not per frame.
+      // or language changes, not per frame. Writes hzMid, never the hzDot painter.
       private function hzFontApply() : void
       {
          this.hzFontLive = this.hzFontFamLive();
-         this.hzDot = this.hzFontLive == "Orbitron" ? this.hzFontText("\u00B7") : "\u00B7";
+         this.hzMid = this.hzFontLive == "Orbitron" ? this.hzFontText("\u00B7") : "\u00B7";
       }
       // Purpose: Scaleform alias prefix for FontFace 1. Extra families are fontconfig maps, not a second SWF load.
       private function hzFontHorizonBase() : String
@@ -1320,7 +1320,7 @@
                var idx:int = int(Math.round(deg / 45)) % 8;
                var ds:String = String(hi);
                while(ds.length < 3) { ds = "0" + ds; }
-               this.hzCmpCenter.text = HZ_CARD[idx] + " " + this.hzDot + " " + ds + "°";
+               this.hzCmpCenter.text = HZ_CARD[idx] + " " + this.hzMid + " " + ds + "°";
             }
          }
          this.hzCmpDeg = deg;
