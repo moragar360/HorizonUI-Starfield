@@ -565,6 +565,11 @@ package
       private static const HZC_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1,"Font":1};
       private static const HZC_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       private static const HZC_EDGE:Number = 0.10;          // card edge: white @ .10, 1 px stroke
       private static const HZC_TXT:uint = 0xE8F0F5;         // default subtitle text (off-white)
       private static const HZC_GRN:uint = 0x5EE3A1;
@@ -613,6 +618,7 @@ package
       private var hzcGameFont:String = null;
       private var hzcFontOk:Object = {};
       private var hzcL10n:Object = null;
+      private var hzcL10nUsed:String = "en";
       private var hzcL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
       // Purpose: cache the HUD localization snapshot on this movie. One Invoke
       // per movie load / language reload. No file I/O. Lookups run at card /
@@ -636,7 +642,8 @@ package
                {
                   var k:String = ln.substr(0, tabAt);
                   var v:String = this.hzcL10nUnesc(ln.substr(tabAt + 1));
-                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+                  if(k == "used") { this.hzcL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
                }
                i++;
             }
@@ -1179,9 +1186,51 @@ package
          if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
          return "Exo2";
       }
-      private function hzcFontHorizonBase() : String
+      private function hzcFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzcFontFamNorm(fam);
+         var lang:String = this.hzcL10nUsed != null && this.hzcL10nUsed.length > 0 ? this.hzcL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzcFontFamLive() : String
       {
          var fam:String = this.hzcFontFamNorm(String(this.hzcCfg.Font));
+         if(this.hzcFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzcFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzcFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzcFontHorizonBase() : String
+      {
+         var fam:String = this.hzcFontFamLive();
          if(fam == "Saira") { return "$Horizon_Font_Saira"; }
          if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
          if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
@@ -1238,7 +1287,7 @@ package
          f.align = align;
          if(role == "rg") { f.leading = Math.round(size * 0.38 - 4); }
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzcFontText(s);
          t.setTextFormat(f);
       }
       private function hzcHideCards() : void

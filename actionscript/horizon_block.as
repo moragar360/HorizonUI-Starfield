@@ -178,6 +178,13 @@
       private static const HZ_FONT_IDS:Array = [1,2,0,3];
       private static const HZ_FONT_FAM_IDS:Array = ["Exo2","Saira","Orbitron","Titillium"];
       private static const HZ_FONT_FAM_NAMES:Array = ["EXO 2","SAIRA","ORBITRON","TITILLIUM WEB"];
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
+      private var hzFontLive:String = "Exo2"; // coverage-resolved family; INI Font= is hzFontFam
+      private var hzDot:String = "\u00B7";    // compass / note separator; Orbitron may be U+2022
       private var hzFontOk:int = -1; // -1 unknown, 0 missing, 1 available
       public var hzPlanDetails:Boolean = false;
       public var hzShowTarget:Boolean = true;
@@ -837,6 +844,7 @@
          var o:Object = {"tf":t,"size":size,"col":col,"right":right,"role":role,"keep":keepCol,"y0":y,"raw":null};
          if(role == "hdr") { o.raw = txt; }
          this.hzTexts.push(o);
+         txt = this.hzFontText(txt);
          t.text = role == "hdr" ? this.hzHdrCase(txt) : txt;
          this.hzApplyFmt(o);
          return t;
@@ -866,6 +874,7 @@
       private function hzSetHdr(tf:TextField, s:String) : void
       {
          if(!tf) { return; }
+         s = this.hzFontText(s);
          for each(var o:Object in this.hzTexts)
          {
             if(o.tf == tf) { o.raw = s; break; }
@@ -983,10 +992,66 @@
          if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
          return "Exo2";
       }
+      // Purpose: true when the build-time coverage table offers this family for
+      // hzL10nUsed. The table is generated from font cmaps + JSON; this is a
+      // bitmask lookup, never a TTF read.
+      private function hzFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzFontFamNorm(fam);
+         var lang:String = this.hzL10nUsed != null && this.hzL10nUsed.length > 0 ? this.hzL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      // Purpose: family that actually renders. Uncovered Font= (Polish Orbitron)
+      // draws Exo 2; hzFontFam / the INI value stay as saved.
+      private function hzFontFamLive() : String
+      {
+         var fam:String = this.hzFontFamNorm(this.hzFontFam);
+         if(this.hzFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      // Purpose: Orbitron punctuation substitutes at set-text time. Never from a
+      // HUD tick. Only when the live family is Orbitron.
+      private function hzFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      // Purpose: cache live family + middot for compass ticks. Call when Font=
+      // or language changes, not per frame.
+      private function hzFontApply() : void
+      {
+         this.hzFontLive = this.hzFontFamLive();
+         this.hzDot = this.hzFontLive == "Orbitron" ? this.hzFontText("\u00B7") : "\u00B7";
+      }
       // Purpose: Scaleform alias prefix for FontFace 1. Extra families are fontconfig maps, not a second SWF load.
       private function hzFontHorizonBase() : String
       {
-         var fam:String = this.hzFontFamNorm(this.hzFontFam);
+         var fam:String = this.hzFontFamLive();
          if(fam == "Saira") { return "$Horizon_Font_Saira"; }
          if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
          if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
@@ -1255,7 +1320,7 @@
                var idx:int = int(Math.round(deg / 45)) % 8;
                var ds:String = String(hi);
                while(ds.length < 3) { ds = "0" + ds; }
-               this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
+               this.hzCmpCenter.text = HZ_CARD[idx] + " " + this.hzDot + " " + ds + "°";
             }
          }
          this.hzCmpDeg = deg;
@@ -2957,7 +3022,7 @@
                case "containeropacity": if(!isNaN(nv)) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,nv)); this.hzT19Sig = ""; } break;
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
-               case "font": this.hzFontFam = this.hzFontFamNorm(v); break;
+               case "font": this.hzFontFam = this.hzFontFamNorm(v); this.hzFontApply(); break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
                case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); } catch(eClk:Error) { } } break;
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
@@ -5207,6 +5272,7 @@
             this.hzL10n = tab;
             this.hzL10nFiles = files;
             this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
+            this.hzFontApply();
             this.hzL10nApplyHud();
             if(this.hzSetIsOpen)
             {
@@ -5357,7 +5423,7 @@
       private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
       {
          if(tf == null || en == null) { return; }
-         tf.text = key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en);
+         tf.text = this.hzFontText(key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en));
          var o:Object = this.hzTxtObj(tf);
          if(o != null) { this.hzApplyFmt(o); }
       }
@@ -5635,7 +5701,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
-            case "Font": return "Horizon font family when FONT is Exo 2. Exo 2 is the default. Saira, Orbitron, and Titillium Web are SIL OFL faces in the Horizon font pack. A missing family falls back to Exo 2, then the game font. Your choice is kept. Roboto stays on the FONT row.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Families the active language cannot cover are hidden. Orbitron stays for English, German, French, and Spanish (a few punctuation marks are substituted). Polish uses Exo 2. A missing family falls back to Exo 2, then the game font. Your saved choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
@@ -10682,6 +10748,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var fam:String = this.hzFontFamNorm(String(p.Font));
             if(fam != this.hzFontFam) { this.hzFontFam = fam; rd = true; }
          }
+         this.hzFontApply();
          if(Math.abs(this.hzCardOpacity - Number(p.CardOpacity)) > 0.001) { this.hzCardOpacity = Number(p.CardOpacity); rd = true; }
          if(p.CardBgOpacity != undefined)
          {
@@ -11018,6 +11085,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(role == "hdr") { col = HZ_ACCENT; al = Number(HZ_TY_ALPHA.hdr); txt = this.hzHdrCase(txt); }
          else if(role == "lbl") { al = Number(HZ_TY_ALPHA.lbl); }
          else if(role == "sec") { al = Number(HZ_TY_ALPHA.sec); }
+         txt = this.hzFontText(txt);
          t.width = w; t.height = sz + 10; t.x = x; t.y = y - (sz - size) / 2;
          var f:TextFormat = new TextFormat(this.hzFontName(),sz,col);
          f.align = align;
@@ -11125,7 +11193,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          t.defaultTextFormat = f;
          t.width = Math.round(w);
          t.height = sz + 10;
-         t.text = txt;
+         t.text = this.hzFontText(txt);
          t.setTextFormat(f);
          t.textColor = col;
          if(align == "right") { t.x = Math.round(x - w + 2); }
@@ -12524,6 +12592,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       // ellipsis-fit by measuring textWidth (never wider than the field)
       private function hzFitText(tf:TextField, full:String, maxW:Number) : void
       {
+         full = this.hzFontText(full);
          tf.text = full;
          if(this.hzTW(tf) <= maxW - 4 || full.length < 2) { return; }
          var lo:int = 1;
@@ -13991,7 +14060,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          p.addChild(t);
          var o:Object = {"tf":t,"size":fs,"fs":fs,"face":face,"tone":tone,"col":col,"ls":ls,"right":align == "right","center":align == "center","y0":y,"raw":null,"role":null,"keep":true};
          this.hzTexts.push(o);
-         t.text = txt;
+         t.text = this.hzFontText(txt);
          this.hzApplyFmt(o);
          return t;
       }
@@ -14872,6 +14941,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private var hzQsTs:Number = NaN;
       private var hzQsFace:int = -1;
       private var hzQsFam:String = null;
+      private var hzQsLive:String = null;
       private var hzQsFont:String = null;
       private var hzQsFMod:* = null;
       private var hzQsLs:int = -2;
@@ -14914,7 +14984,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try
          {
             if(this.hzQName !== this.hzQsName || this.hzQObjStr !== this.hzQsObj || this.hzQDistStr !== this.hzQsDist) { return false; }
-            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzFontFam !== this.hzQsFam || this.hzLsMode != this.hzQsLs) { return false; }
+            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzFontFam !== this.hzQsFam || this.hzFontLive !== this.hzQsLive || this.hzLsMode != this.hzQsLs) { return false; }
             if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
             if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
             if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
@@ -14977,6 +15047,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzQsTs = this.hzTextScale;
             this.hzQsFace = this.hzFontFace;
             this.hzQsFam = this.hzFontFam;
+            this.hzQsLive = this.hzFontLive;
             this.hzQsFont = this.hzFont;
             this.hzQsFMod = this.hz30Mod["font"];
             this.hzQsLs = this.hzLsMode;
@@ -22959,8 +23030,22 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                if(r0.k == "Font")
                {
                   r0.dis = !pack || fv != 1;
+                  var ids:Array = [];
+                  var names:Array = [];
+                  var i:int = 0;
+                  while(i < HZ_FONT_FAM_IDS.length)
+                  {
+                     var id:String = String(HZ_FONT_FAM_IDS[i]);
+                     if(this.hzFontCovered(id)) { ids.push(id); names.push(HZ_FONT_FAM_NAMES[i]); }
+                     i++;
+                  }
+                  if(ids.length == 0) { ids = ["Exo2"]; names = ["EXO 2"]; }
+                  r0.vals = ids;
+                  r0.names = names;
+                  var saved:String = this.hzFontFamNorm(this.hzSetPend != null && this.hzSetPend.Font != undefined ? String(this.hzSetPend.Font) : this.hzFontFam);
                   if(!pack) { r0.note = "Horizon font not installed: FONT FAMILY needs it, the game font is used (your choice is kept)."; }
                   else if(fv != 1) { r0.note = "Used when FONT is Exo 2."; }
+                  else if(!this.hzFontCovered(saved)) { r0.note = this.hzLt("Not available for this language."); }
                }
             }
             if(pack) { return rows; }

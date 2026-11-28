@@ -79,6 +79,7 @@ function host() {
 		hzT19Tile() {}, hzT19U() { return 1; }, hzSnapU(v) { return Math.round(v); },
 		hzCapTop(tf, cy) { return cy - 7; },
 		hzTxtTopU(tf, top) { tf.y = top; },
+		hzFontText(s) { return s; },
 	};
 	for (const n of ["hzT19PromptPill", "hzT19WrapN", "hzT19LineAdv", "hzFitText"]) h[n] = toJs(n);
 	return h;

@@ -137,6 +137,7 @@ function host(src, names, extra) {
 	const G = Object.assign({ Sprite, TextField, TextFormat, Point, TextFieldAutoSize: { LEFT: "left" }, Math, String, Number, isNaN: (v) => Number.isNaN(Number(v)), int: (v) => Number(v) | 0, uint: (v) => Number(v) >>> 0,
 		hzVals: (o) => (o == null ? [] : Array.isArray(o) ? o.slice() : Object.keys(o).map((k) => o[k])), isTf: (o) => !!(o && o.__tf), stage: { stageWidth: 1920, stageHeight: 1080 }, getTimer: () => 0 }, CONST);
 	const h = Object.assign({ hzsS: { TextScale: 1 }, hzsTk: 1, hzsFontLib: 1, hzsCfgRev: 1, hzsVrRev: 1, hzsTPc: null, hzsTPi: 0, hzsTPMade: 0, hzsTPNew: 0,
+		hzsFontText: (s) => s,
 		hzsFace: (w) => "$Horizon_Font" + (w === "bd" ? "_Bold" : w === "rg" ? "_Regular" : ""),
 		hzsAccent: () => 0x3FD0E0, hzsOpacity: () => 0.8, hzsCs: (s) => String(s).toUpperCase(), hzsPlace() { this.places = (this.places || 0) + 1; },
 		hzsIcon: (g, kind, cx, cy, col, k) => { g.ops.push(["icon", kind, cx, cy, col, k === undefined ? 1 : k, 10]); },

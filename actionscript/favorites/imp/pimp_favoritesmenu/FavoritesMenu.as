@@ -431,6 +431,11 @@ package
       private static const HZQ_CHIP_MIN:Number = 8;       // extra chip font floor when Slot Scale shrinks the card
       private static const HZQ_ICBOUND:Number = 60;       // vanilla Icon_mc BoundClip_mc (FavoritesEntry timeline)
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
       private static const HZQ_PADK:Object = {"A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT","F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT","a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT","i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT","T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"};
       private static const HZQ_INF_W:Number = 380;
@@ -1097,9 +1102,51 @@ package
          if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
          return "Exo2";
       }
+      private function hzqFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzqFontFamNorm(fam);
+         var lang:String = this.hzqL10nUsed != null && this.hzqL10nUsed.length > 0 ? this.hzqL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzqFontFamLive() : String
+      {
+         var fam:String = this.hzqFontFamNorm(String(this.hzqS != null ? this.hzqS.Font : "Exo2"));
+         if(this.hzqFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzqFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzqFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
       private function hzqFontHorizonBase() : String
       {
-         var fam:String = this.hzqFontFamNorm(String(this.hzqS.Font));
+         var fam:String = this.hzqFontFamLive();
          if(fam == "Saira") { return "$Horizon_Font_Saira"; }
          if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
          if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
@@ -1160,7 +1207,7 @@ package
          f.letterSpacing = cjk ? 0 : (hdr && this.hzqS != null && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10);
          t.embedFonts = true;
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzqFontText(s);
          t.setTextFormat(f);
          t.filters = this.hzqS.TextShadow ? [this.hzqDarkText() ? new DropShadowFilter(1.5,90,0xFFFFFF,0.75,2,2,1.6,2) : new DropShadowFilter(1.5,60,0x000000,1,2.5,2.5,2,2)] : [];
       }
@@ -2715,7 +2762,7 @@ package
          f.letterSpacing = Math.round(fs * 0.04 * 10) / 10;
          t.embedFonts = true;
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzqFontText(s);
          t.setTextFormat(f);
       }
       // Purpose: size the extra-slot key chip to Slot Scale, then shrink the font if a long name

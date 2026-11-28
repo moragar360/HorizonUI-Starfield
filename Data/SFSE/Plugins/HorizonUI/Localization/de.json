@@ -189,7 +189,8 @@
       "font_family": "SCHRIFTFAMILIE",
       "saira": "SAIRA",
       "orbitron": "ORBITRON",
-      "titillium_web": "TITILLIUM WEB"
+      "titillium_web": "TITILLIUM WEB",
+      "not_available_for_this_language": "Für diese Sprache nicht verfügbar."
     },
     "details": {
       "_qmkeys": "Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.",

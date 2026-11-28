@@ -78,6 +78,11 @@ package
       private static const HZD_LRG:Boolean = false;
       private static const HZD_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZD_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       private static const HZD_AMB:uint = 0xF2B45F;
       private static const HZD_OK:uint = 0x5EE3A1;
       private static const HZD_BAD:uint = 0xFF5B5B;
@@ -109,6 +114,7 @@ package
       private var hzdTalkRead:Boolean = false;   // 0.43.6 r4: one settings re-read per conversation (F11 cannot open in dialogue)
       private var hzdBare:Boolean = false;   // DlgCard=0 while drawing
       private var hzdL10n:Object = null;
+      private var hzdL10nUsed:String = "en";
       private var hzdL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
       // Purpose: cache the HUD localization snapshot on this movie. One Invoke
       // per movie load / language reload. No file I/O. Lookups run at card /
@@ -132,7 +138,8 @@ package
                {
                   var k:String = ln.substr(0, tabAt);
                   var v:String = this.hzdL10nUnesc(ln.substr(tabAt + 1));
-                  if(k != "g" && k != "gn" && k != "files" && k != "o" && k != "used") { tab[k] = v; }
+                  if(k == "used") { this.hzdL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
                }
                i++;
             }
@@ -683,9 +690,51 @@ package
          if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
          return "Exo2";
       }
-      private function hzdFontHorizonBase() : String
+      private function hzdFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzdFontFamNorm(fam);
+         var lang:String = this.hzdL10nUsed != null && this.hzdL10nUsed.length > 0 ? this.hzdL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzdFontFamLive() : String
       {
          var fam:String = this.hzdFontFamNorm(String(this.hzdCfg.Font));
+         if(this.hzdFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzdFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzdFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzdFontHorizonBase() : String
+      {
+         var fam:String = this.hzdFontFamLive();
          if(fam == "Saira") { return "$Horizon_Font_Saira"; }
          if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
          if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
@@ -718,7 +767,7 @@ package
          var f:TextFormat = new TextFormat(this.hzdFont(role,s),Math.round(size),col);
          f.letterSpacing = sp; f.align = align;
          if(wrap) { f.leading = Math.round(size * 0.35 - 4); }
-         t.defaultTextFormat = f; t.text = s; t.setTextFormat(f);
+         t.defaultTextFormat = f; t.text = this.hzdFontText(s); t.setTextFormat(f);
          var lx:Number = x;
          if(!wrap && align == "right") { lx = x - t.width; }
          else if(!wrap && align == "center") { lx = x - t.width / 2; }

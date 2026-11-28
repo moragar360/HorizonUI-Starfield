@@ -200,7 +200,8 @@
       "font_family": "FAMILIA DE FUENTE",
       "saira": "SAIRA",
       "orbitron": "ORBITRON",
-      "titillium_web": "TITILLIUM WEB"
+      "titillium_web": "TITILLIUM WEB",
+      "not_available_for_this_language": "No disponible para este idioma."
     },
     "details": {
       "_qmkeys": "Haz clic en una etiqueta de tecla para asignarla. Esc cancela. Retroceso o Supr borra. Un conflicto (otra casilla, la tecla de ajustes o un control del juego) se notifica y se ignora. Las casillas van de la 13 al número de casillas, ajustadas por casillas por fila. Las casillas 1-12 conservan las teclas de favoritos del juego. Si el modo extendido está desactivado o en pausa, la cuadrícula se atenúa y se conservan las teclas guardadas.",

@@ -70,8 +70,36 @@ expect(/hzFontFace == 3/.test(name) && /hzFontFace != 1 && this\.hzFontFace != 2
 const rows = fnText(as, "hz30FontRows").body;
 expect(/r0\.k == "Font"/.test(rows) && /!pack \|\| fv != 1/.test(rows),
 	"FONT FAMILY is disabled unless the pack is present and FontFace is 1");
+expect(/hzFontCovered\(id\)/.test(rows) && /r0\.vals = ids/.test(rows),
+	"FONT FAMILY hides families the active language cannot cover");
+expect(/Not available for this language/.test(rows) && !/SetPend\.Font\s*=/.test(rows),
+	"an uncovered Font= keeps the INI value and shows a short note");
+expect(/function hzFontFamLive/.test(as) && /return "Exo2"/.test(fnText(as, "hzFontFamLive").body),
+	"uncovered Font= renders with Exo 2");
+expect(/function hzFontText/.test(as) && /hzFontFamLive\(\) != "Orbitron"/.test(fnText(as, "hzFontText").body),
+	"punctuation substitution runs only when Orbitron is the live family");
+expect(/t\.text = this\.hzFontText\(txt\)/.test(fnText(as, "hzT").body)
+	&& /full = this\.hzFontText\(full\)/.test(fnText(as, "hzFitText").body)
+	&& /t\.text = this\.hzFontText\(txt\)/.test(fnText(as, "hzWT").body),
+	"Orbitron substitution is at set-text time (hzT / hzWT / hzFitText)");
+expect(/hzCmpCenter\.text = HZ_CARD\[idx\] \+ " " \+ this\.hzDot/.test(as),
+	"compass ticks use a cached hzDot, not hzFontText");
+{
+	const i = as.indexOf("this.hzCmpCenter.text = HZ_CARD");
+	expect(i >= 0 && as.slice(i, i + 160).indexOf("hzFontText") < 0,
+		"compass heading assign does not walk the string");
+}
+expect(/function hzFontApply/.test(as) && /hzFontApply\(\)/.test(fnText(insert, "hzSetL10n").body),
+	"language apply refreshes the live family and hzDot once");
+expect(/HZ_FONT_COVER:Object/.test(as) && /HZ_ORB_FROM:Array/.test(as),
+	"HUD carries the generated coverage table");
+expect(/function hzcFontFamLive/.test(hzc) && /function hzdFontFamLive/.test(hzd)
+	&& /function hzsFontFamLive/.test(hzs) && /function hzqFontFamLive/.test(hzq),
+	"modules live-resolve Font= from the same table");
+expect(/k == "used"/.test(fnText(hzc, "hzcSetL10n").body) && /k == "used"/.test(fnText(hzd, "hzdSetL10n").body),
+	"comms and dialogue store used so coverage can hide Orbitron for Polish");
 
-expect(/case "font": this\.hzFontFam = this\.hzFontFamNorm\(v\); break;/.test(as),
+expect(/case "font": this\.hzFontFam = this\.hzFontFamNorm\(v\); this\.hzFontApply\(\); break;/.test(as),
 	"INI reader stores Font=");
 expect(/"Font":this\.hzFontFam/.test(fnText(as, "hzSetCurrent").body),
 	"OK writes Font from hzFontFam");
@@ -139,14 +167,20 @@ expect(fs.existsSync(path.join(root, "Interface/HorizonUI/fonts/exo2/Exo2-Variab
 
 expect(en.settings && en.settings.ui && en.settings.ui.font_family === "FONT FAMILY",
 	"en.json has settings.ui.font_family");
+expect(en.settings.ui.not_available_for_this_language === "Not available for this language.",
+	"en.json has the uncovered-family note");
 expect(en.settings.details.Font && en.settings.line.Font,
 	"en.json has settings.details.Font and settings.line.Font");
 
 const pick = fnText(as, "hzFontHorizonBase").body + fnText(as, "hzFontFamNorm").body
-	+ fnText(as, "hzSetLive").body;
+	+ fnText(as, "hzFontFamLive").body + fnText(as, "hzFontCovered").body
+	+ fnText(as, "hzFontText").body + fnText(as, "hzFontApply").body
+	+ fnText(as, "hzSetLive").body + fnText(as, "hz30FontRows").body;
 expect(!/new Timer/.test(pick) && !/setInterval/.test(pick) && !/URLLoader/.test(pick)
-	&& !/addEventListener/.test(pick),
+	&& !/addEventListener/.test(pick) && !/ENTER_FRAME/.test(pick),
 	"section 13: Font= switch is an alias, not a new timer or FontLib load");
+expect(!/parseCmap|readUInt16BE|readFile/.test(pick),
+	"section 13: coverage is a const table, no UI-thread font I/O");
 expect(/hzFrameN % 300 == 150/.test(as) && /hzFontRetry < 6/.test(as),
 	"section 13: late font registration still uses the existing 6-try probe, no extra timer");
 expect(!/ENTER_FRAME/.test(insert) && !/setInterval/.test(draw) && !/new Timer/.test(insert),

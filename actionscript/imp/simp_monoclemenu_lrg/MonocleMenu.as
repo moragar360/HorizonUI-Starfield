@@ -1296,6 +1296,7 @@ package
 
 
 
+
       // ===================== Horizon UI Scanner (monoclemenu) =====================
       // ORIGINAL CODE (Horizon UI) v0.41.0. apply_scanner_hooks.ps1 inserts this block into the game's own MonocleMenu
       // class (exported from the player's monoclemenu.swf on the PC); no game script text is stored in the kit.
@@ -1345,6 +1346,11 @@ package
       // the game's button bar, in its own order (hints are mirrored from these, never hard-coded)
       private static const HZS_BTNS:Array = ["AButton_mc","XButton_mc","SurfaceMapButton_mc","PhotoModeButton_mc","ZoomButton_mc","BackButton_mc"];
       private static const HZS_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       // [Scanner] keys: name, type (b 0/1, i int, f float, z size -1 or 0.60-1.60, p position -1 / L|R|C n / T|B|C n,
       // o optional -1 or min-max, s text), default, min, max. Same table and order as HorizonUI.default.ini.
       private static const HZS_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];   // v0.41.0: = scanner_keys40 (the HUD has the same table)
@@ -2027,9 +2033,51 @@ package
          if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
          return "Exo2";
       }
+      private function hzsFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzsFontFamNorm(fam);
+         var lang:String = this.hzsL10nUsed != null && this.hzsL10nUsed.length > 0 ? this.hzsL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzsFontFamLive() : String
+      {
+         var fam:String = this.hzsFontFamNorm(String(this.hzsS != null ? this.hzsS.Font : "Exo2"));
+         if(this.hzsFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzsFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzsFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
       private function hzsFontHorizonBase() : String
       {
-         var fam:String = this.hzsFontFamNorm(String(this.hzsS.Font));
+         var fam:String = this.hzsFontFamLive();
          if(fam == "Saira") { return "$Horizon_Font_Saira"; }
          if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
          if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
@@ -2173,6 +2221,7 @@ package
       }
       private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number) : void
       {
+         str = this.hzsFontText(str);
          t.text = str;
          t.setTextFormat(f);
          if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }

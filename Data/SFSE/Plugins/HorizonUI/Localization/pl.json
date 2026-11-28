@@ -200,7 +200,8 @@
       "font_family": "RODZINA CZCIONKI",
       "saira": "SAIRA",
       "orbitron": "ORBITRON",
-      "titillium_web": "TITILLIUM WEB"
+      "titillium_web": "TITILLIUM WEB",
+      "not_available_for_this_language": "Niedostępne dla tego języka."
     },
     "details": {
       "_qmkeys": "Kliknij pole klawisza, by przypisać. Esc anuluje. Backspace lub Delete czyści. Konflikt (inny slot, klawisz ustawień albo sterowanie gry) wywołuje ostrzeżenie i jest ignorowany. Kafelki to sloty 13 do Liczby slotów, zawijane według Slotów w rzędzie. Sloty 1-12 zostają przy klawiszach ulubionych gry. Jeśli tryb rozszerzony jest wył. lub wstrzymany, siatka jest szara, a zapisane klawisze zostają.",

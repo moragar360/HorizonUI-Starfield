@@ -396,6 +396,7 @@
             this.hzL10n = tab;
             this.hzL10nFiles = files;
             this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
+            this.hzFontApply();
             this.hzL10nApplyHud();
             if(this.hzSetIsOpen)
             {
@@ -546,7 +547,7 @@
       private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
       {
          if(tf == null || en == null) { return; }
-         tf.text = key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en);
+         tf.text = this.hzFontText(key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en));
          var o:Object = this.hzTxtObj(tf);
          if(o != null) { this.hzApplyFmt(o); }
       }
@@ -824,7 +825,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
-            case "Font": return "Horizon font family when FONT is Exo 2. Exo 2 is the default. Saira, Orbitron, and Titillium Web are SIL OFL faces in the Horizon font pack. A missing family falls back to Exo 2, then the game font. Your choice is kept. Roboto stays on the FONT row.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Families the active language cannot cover are hidden. Orbitron stays for English, German, French, and Spanish (a few punctuation marks are substituted). Polish uses Exo 2. A missing family falls back to Exo 2, then the game font. Your saved choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";

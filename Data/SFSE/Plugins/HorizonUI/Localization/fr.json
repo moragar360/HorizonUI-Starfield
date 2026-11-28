@@ -200,7 +200,8 @@
       "font_family": "FAMILLE DE POLICE",
       "saira": "SAIRA",
       "orbitron": "ORBITRON",
-      "titillium_web": "TITILLIUM WEB"
+      "titillium_web": "TITILLIUM WEB",
+      "not_available_for_this_language": "Non disponible pour cette langue."
     },
     "details": {
       "_qmkeys": "Cliquez une pastille pour l'assigner. Échap annule. Retour arrière ou Suppr efface. Un conflit (autre case, touche des réglages ou commande du jeu) est signalé et ignoré. Les tuiles vont de la case 13 au nombre de cases, renvoyées par Cases par ligne. Les cases 1-12 gardent les touches favorites du jeu. Si le mode étendu est éteint ou en pause, la grille est grisée et les touches enregistrées sont conservées.",
