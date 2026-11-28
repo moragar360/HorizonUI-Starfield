@@ -196,7 +196,11 @@
       "read_only_the_current_character_is_not_listed": "Tylko odczyt. Bieżąca postać nie jest na liście.",
       "no_other_character_files": "Brak plików innych postaci.",
       "messages": "wiadomości",
-      "saving": "Zapisywanie"
+      "saving": "Zapisywanie",
+      "font_family": "RODZINA CZCIONKI",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Kliknij pole klawisza, by przypisać. Esc anuluje. Backspace lub Delete czyści. Konflikt (inny slot, klawisz ustawień albo sterowanie gry) wywołuje ostrzeżenie i jest ignorowany. Kafelki to sloty 13 do Liczby slotów, zawijane według Slotów w rzędzie. Sloty 1-12 zostają przy klawiszach ulubionych gry. Jeśli tryb rozszerzony jest wył. lub wstrzymany, siatka jest szara, a zapisane klawisze zostają.",
@@ -289,6 +293,7 @@
       "CardShadow": "Siła cienia pod kartami HUD. 0 to brak. 12 to wbudowany wygląd. 100 to mocny cień.",
       "SettingsOpacity": "Jak przezroczyste jest to okno ustawień. 30 to najjaśniejsze. 100 to pełne.",
       "FontFace": "Czcionka tekstu Horizon. Exo 2 to domyślna. Jeśli czcionka Horizon nie jest zainstalowana, używana jest czcionka gry, a twój wybór zostaje.",
+      "Font": "Rodzina czcionki Horizon, gdy CZCIONKA to Exo 2. Exo 2 jest domyślna. Saira, Orbitron i Titillium Web to twarze SIL OFL w paczce czcionek Horizon. Brakująca rodzina wraca do Exo 2, potem do czcionki gry. Twój wybór zostaje. Roboto zostaje w wierszu CZCIONKA.",
       "TextScale": "Rozmiar tekstu Horizon, dodatkowo do skali HUD.",
       "TextTone": "Auto: ciemny tekst na jasnych kartach. Jasny i Ciemny wymuszają jeden ton.",
       "HeaderStyle": "Tytuły kart wielkimi literami z odstępami albo jak tytuł z ciasnymi odstępami.",
@@ -467,6 +472,7 @@
       "CardShadow": "Siła cienia pod kartami HUD.",
       "SettingsOpacity": "Jak przezroczyste jest to okno ustawień.",
       "FontFace": "Czcionka tekstu Horizon.",
+      "Font": "Rodzina tekstu Horizon, gdy CZCIONKA to Exo 2. Brakujące twarze wracają do Exo 2, potem do czcionki gry.",
       "TextScale": "Rozmiar tekstu Horizon, dodatkowo do skali HUD.",
       "TextTone": "Auto: ciemny tekst na jasnych kartach.",
       "HeaderStyle": "Tytuły kart wielkimi literami z odstępami albo jak tytuł z ciasnymi odstępami.",

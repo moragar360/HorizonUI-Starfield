@@ -27,7 +27,7 @@
         <group name="Font" type="SelectExactlyOne">
           <plugins order="Explicit">
             <plugin name="Horizon font (Exo 2 + Roboto)">
-              <description>Installs the Horizon fonts (Exo 2 and Roboto, SIL OFL 1.1): Interface\fonts_horizon.swf and Interface\fontconfig_en.txt. This replaces any other font mod's fontconfig_en.txt. Enables the font options in the F11 settings window.</description>
+              <description>Installs the Horizon fonts (Exo 2, Roboto, Saira, Orbitron, and Titillium Web, SIL OFL 1.1): Interface\fonts_horizon.swf and Interface\fontconfig_en.txt. This replaces any other font mod's fontconfig_en.txt. Enables FONT and FONT FAMILY in the F11 settings window. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.</description>
               <files>
                 <folder source="01 Horizon Font" destination="" priority="0"/>
               </files>

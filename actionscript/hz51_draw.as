@@ -107,6 +107,22 @@
             pillX = sx + tw2 + gap;
          }
          t2.width = tw2 + 4;
+         // 1000 px F11 floor: EINSTELLUNGEN can overflow the leftover slot.
+         // Shrink the SETTINGS face first, then ellipsis, so glyphs are not clipped.
+         if(Math.ceil(this.hzTW(t2)) > tw2)
+         {
+            var f2:TextFormat = t2.getTextFormat();
+            var sz2:int = int(f2.size);
+            while(sz2 > 8 && t2.textWidth > tw2)
+            {
+               sz2--;
+               f2.size = sz2;
+               t2.defaultTextFormat = f2;
+               t2.setTextFormat(f2);
+            }
+            t2.height = sz2 + 10;
+            if(t2.textWidth > tw2) { this.hzFitText(t2, setn, tw2 + 4); }
+         }
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
@@ -898,7 +914,7 @@
          if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { return "subtitle"; }
          if(k == "Dialogue" || k.indexOf("Dlg") == 0) { return "dialogue"; }
          if(k.indexOf("Scan") == 0 || (k.indexOf("Hide") == 0 && k.indexOf("Scan") > 0) || k == "DimTraitPopupDuringBioscan" || k == "TraitPopupDim" || k == "HideQuestPopupsWhileScanning" || k == "HideMainHudWhileScanning" || k == "HideWatchWhileScanning") { return "scanner"; }
-         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
+         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "Font" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
          return "card";
       }
       private function hz51PvText(b:Sprite, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object, k:String) : void
@@ -1344,7 +1360,7 @@
          var fs:Number = Math.max(9, Math.min(13, 11 * (ts > 0 ? ts : 1)));
          this.hz51T(b,face,cx + 10,cy + 8,cw - 20,fs,"bd",uint(T.txt),0.4);
          this.hz51T(b,"Sample HUD text",cx + 10,cy + 28,cw - 20,9,"rg",uint(T.lab),0.2);
-         this.hz51T(b,k == "FontFace" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
+         this.hz51T(b,k == "FontFace" || k == "Font" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
       }
       private function hz51PvModule(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {

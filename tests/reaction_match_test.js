@@ -1264,13 +1264,14 @@ function replacementProblem(arg) {
 	const hud = readText(path.join(__dirname, "..", "actionscript", "horizon_block.as"));
 	const fontFn = hud.slice(hud.indexOf("private function hzFontName"), hud.indexOf("private function hzApplyTypo"));
 	expect(fontFn.indexOf('hz30Mod["font"] !== 1') >= 0, "HUD waits for the font library");
-	expect(fontFn.indexOf('hzFontProbe("$Horizon_Font")') < fontFn.indexOf('"$Horizon_Font_Bold"'), "Bold is not looked up before the base face");
+	expect(fontFn.indexOf("hzFontHorizonBase") >= 0 && fontFn.indexOf("hzFontProbe(base)") < fontFn.indexOf('base + "_Bold"'), "Bold is not looked up before the base face");
 	const scope = readText(path.join(__dirname, "..", "actionscript", "scope", "hzp_main.as"));
 	expect(scope.indexOf("hzpFontLib !== 1") >= 0 && scope.indexOf('hzpProbe("$Horizon_Font")') < scope.indexOf('"$Horizon_Font_Bold"'), "scope waits for the font library");
 	const scopeTwin = readText(path.join(__dirname, "..", "actionscript", "scope", "imp", "pimp_scopemenu_lrg", "ScopeMenu.as"));
 	expect(scopeTwin.indexOf("hzpFontLib !== 1") >= 0, "the large scope waits for the font library");
 	const scan = readText(path.join(__dirname, "..", "actionscript", "scanner", "hzs_block.as"));
-	expect(scan.indexOf("hzsFontLib !== 1") >= 0 && scan.indexOf('hzsProbe("$Horizon_Font")') < scan.indexOf('"$Horizon_Font_Bold"'), "scanner waits for the font library");
+	expect(scan.indexOf("hzsFontLib !== 1") >= 0 && scan.indexOf("hzsFontHorizonBase") >= 0
+		&& scan.indexOf("hzsProbe(base)") < scan.indexOf('base + "_Bold"'), "scanner waits for the font library");
 	const dlg = readText(path.join(__dirname, "..", "actionscript", "comms", "hzd_block.as"));
 	const dlgFont = dlg.slice(dlg.indexOf("private function hzdFont"), dlg.indexOf("private function hzdText"));
 	expect(dlgFont.indexOf("hzdProbe.font !== 1") >= 0 && dlgFont.indexOf("hzdFontProbe(base)") < dlgFont.indexOf("hzdFontProbe(base + role)"), "dialogue waits for the font library");

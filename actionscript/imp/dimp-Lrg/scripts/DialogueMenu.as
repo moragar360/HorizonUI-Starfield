@@ -82,9 +82,9 @@ package
       private static const HZD_OK:uint = 0x5EE3A1;
       private static const HZD_BAD:uint = 0xFF5B5B;
       private static const HZD_DIFF:Array = [0x6FD39A,0xF2B45F,0xF27A5F];
-      private static const HZD_STR:Object = {"AccentHex":1,"DialogueX":1,"DialogueY":1,"DlgBgHex":1,"DlgTextHex":1};
+      private static const HZD_STR:Object = {"AccentHex":1,"DialogueX":1,"DialogueY":1,"DlgBgHex":1,"DlgTextHex":1,"Font":1};
       private static const HZD_BG:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];   // = the HUD card colors
-      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
+      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"Font":"Exo2","AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
       private var hzdIni:int = 0;            // 0 loading, 1 loaded, 2 missing (defaults)
       private var hzdProbe:Object = {};      // edi / edi2 / font: 1 found, 0 not found
       private var hzdOn:Boolean = false;     // Horizon list in charge
@@ -666,6 +666,31 @@ package
       }
       // role: "" names / labels (SemiBold), "_Regular" body, "_Bold" keycaps. DlgFont -1 = [Style] FontFace.
       // 3 = the game's semibold face (one weight for every role), game font if that name does not resolve.
+      private function hzdFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzdFontHorizonBase() : String
+      {
+         var fam:String = this.hzdFontFamNorm(String(this.hzdCfg.Font));
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzdFont(role:String, s:String) : String
       {
          var f:int = int(this.hzdCfg.DlgFont) >= 0 ? int(this.hzdCfg.DlgFont) : int(this.hzdCfg.FontFace);
@@ -674,8 +699,12 @@ package
          if(f == 3) { return this.hzdFontProbe(HZD_SEMI) ? HZD_SEMI : this.hzdGame(); }
          // marker still loading or absent: game font. Bold waits until the base face renders.
          if(this.hzdProbe.font !== 1 || f <= 0 || f > 2) { return this.hzdGame(); }
-         var base:String = f == 2 ? "$Horizon_Font_Alt" : "$Horizon_Font";
-         if(!this.hzdFontProbe(base)) { return this.hzdGame(); }
+         var base:String = f == 2 ? "$Horizon_Font_Alt" : this.hzdFontHorizonBase();
+         if(!this.hzdFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzdFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return this.hzdGame(); }
+         }
          if(role.length > 0 && this.hzdFontProbe(base + role)) { return base + role; }
          return base;
       }

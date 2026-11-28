@@ -169,11 +169,15 @@
       // v0.18
       public var hzTextTone:int = 0; // 0 auto (from card color), 1 light text, 2 dark text
       private static const HZ_TONE_NAMES:Array = ["AUTO","LIGHT TEXT","DARK TEXT"];
-      public var hzFontFace:int = 1; // 0 game font, 1 Exo 2 via $Horizon_Font, 2 Roboto via $Horizon_Font_Alt (v0.29; needs fonts_horizon.swf + fontconfig)
-      // v0.29: shown in this order; the stored ini values stay 0 = game, 1 = Exo 2 (unchanged meaning), 2 = Roboto (new)
+      public var hzFontFace:int = 1; // 0 game font, 1 Horizon family via Font= / $Horizon_Font*, 2 Roboto via $Horizon_Font_Alt (v0.29; needs fonts_horizon.swf + fontconfig)
+      // v0.29: shown in this order; the stored ini values stay 0 = game, 1 = Horizon family (unchanged meaning), 2 = Roboto (new)
       // v0.34: 3 = the game's own semibold face (run-time name only, never bundled; falls back to the game font)
+      // [Style] Font= picks the Horizon family when FontFace is 1. FontFace 0/1/2/3 stay.
+      public var hzFontFam:String = "Exo2";
       private static const HZ_FONT_NAMES:Array = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
       private static const HZ_FONT_IDS:Array = [1,2,0,3];
+      private static const HZ_FONT_FAM_IDS:Array = ["Exo2","Saira","Orbitron","Titillium"];
+      private static const HZ_FONT_FAM_NAMES:Array = ["EXO 2","SAIRA","ORBITRON","TITILLIUM WEB"];
       private var hzFontOk:int = -1; // -1 unknown, 0 missing, 1 available
       public var hzPlanDetails:Boolean = false;
       public var hzShowTarget:Boolean = true;
@@ -938,8 +942,11 @@
          }
       }
 
-      // FontFace 1: Exo 2 faces from fonts_horizon.swf ($Horizon_Font = SemiBold, _Regular, _Bold); each face falls
-      // back to SemiBold, then to the game font, so a missing / partial install never shows empty text.
+      // FontFace 1: Horizon family from fonts_horizon.swf. Font=Exo2 uses $Horizon_Font (SemiBold, _Regular, _Bold).
+      // Font=Saira / Orbitron / Titillium use $Horizon_Font_Saira / _Orbitron / _Titillium with the same suffixes.
+      // Each face falls back to that family's base, then Exo 2, then the game font, so a missing install never shows empty text.
+      // Scaleform fontconfig loads those aliases at movie start (same as Roboto). F11 only switches the alias; there is
+      // no extra SWF load on pick (a runtime FontLib load would be new I/O). Probe cache is hzFontProbe.
       // v0.29 FontFace 2: Roboto ($Horizon_Font_Alt = Medium, _Alt_Regular, _Alt_Bold); falls back to Medium, then to
       // the matching Exo 2 face (older fonts_horizon.swf / fontconfig without Roboto), then to the game font.
       // Purpose: the face Starfield already uses for its Chinese UI
@@ -955,6 +962,35 @@
          }
          if(this.hzFontProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
          return this.hzFont ? this.hzFont : "$MAIN_Font";
+      }
+      // Purpose: canonical [Style] Font= token. Exo2 is the default. Unknown values keep Exo 2.
+      // Inputs: INI or F11 string. Outputs: Exo2, Saira, Orbitron, or Titillium.
+      // Author: Moragar. Last modified: 2026-11-28.
+      private function hzFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      // Purpose: Scaleform alias prefix for FontFace 1. Extra families are fontconfig maps, not a second SWF load.
+      private function hzFontHorizonBase() : String
+      {
+         var fam:String = this.hzFontFamNorm(this.hzFontFam);
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
       }
       private function hzFontName(face:String = null) : String
       {
@@ -972,12 +1008,17 @@
             this.hzFontOk = 1;
             return "$Horizon_Font_Alt";
          }
+         var base:String = this.hzFontHorizonBase();
          // Bold and Regular wait until the base face really renders, so they are not looked up before the library is ready
-         if(!this.hzFontProbe("$Horizon_Font")) { return game; }
-         want = face == "rg" ? "$Horizon_Font_Regular" : (face == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(want == "$Horizon_Font" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+         if(!this.hzFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return game; }
+         }
+         want = face == "rg" ? base + "_Regular" : (face == "bd" ? base + "_Bold" : base);
+         if(want == base || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
          this.hzFontOk = 1;
-         return "$Horizon_Font";
+         return base;
       }
 
       // Live typography update (TextScale / HeaderStyle / TextShadow / card color).
@@ -2916,6 +2957,7 @@
                case "containeropacity": if(!isNaN(nv)) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,nv)); this.hzT19Sig = ""; } break;
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
+               case "font": this.hzFontFam = this.hzFontFamNorm(v); break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
                case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); } catch(eClk:Error) { } } break;
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
@@ -5293,6 +5335,11 @@
             this.hz51Exo2Arr(r.names as Array);
             return;
          }
+         if(String(r.k) == "Font")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
          this.hz51LocArr(r.opts as Array);
          this.hz51LocArr(r.names as Array);
       }
@@ -5588,6 +5635,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Exo 2 is the default. Saira, Orbitron, and Titillium Web are SIL OFL faces in the Horizon font pack. A missing family falls back to Exo 2, then the game font. Your choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
@@ -6237,6 +6285,7 @@
          if(id == "typ")
          {
             return this.hz30FontRows([{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"h":"TYPE"},
+               {"k":"Font","l":"FONT FAMILY","t":"l","vals":HZ_FONT_FAM_IDS,"names":HZ_FONT_FAM_NAMES},
                {"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},
                {"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES},
                {"k":"HeaderStyle","l":"HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},
@@ -6978,6 +7027,22 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             pillX = sx + tw2 + gap;
          }
          t2.width = tw2 + 4;
+         // 1000 px F11 floor: EINSTELLUNGEN can overflow the leftover slot.
+         // Shrink the SETTINGS face first, then ellipsis, so glyphs are not clipped.
+         if(Math.ceil(this.hzTW(t2)) > tw2)
+         {
+            var f2:TextFormat = t2.getTextFormat();
+            var sz2:int = int(f2.size);
+            while(sz2 > 8 && t2.textWidth > tw2)
+            {
+               sz2--;
+               f2.size = sz2;
+               t2.defaultTextFormat = f2;
+               t2.setTextFormat(f2);
+            }
+            t2.height = sz2 + 10;
+            if(t2.textWidth > tw2) { this.hzFitText(t2, setn, tw2 + 4); }
+         }
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
@@ -7769,7 +7834,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { return "subtitle"; }
          if(k == "Dialogue" || k.indexOf("Dlg") == 0) { return "dialogue"; }
          if(k.indexOf("Scan") == 0 || (k.indexOf("Hide") == 0 && k.indexOf("Scan") > 0) || k == "DimTraitPopupDuringBioscan" || k == "TraitPopupDim" || k == "HideQuestPopupsWhileScanning" || k == "HideMainHudWhileScanning" || k == "HideWatchWhileScanning") { return "scanner"; }
-         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
+         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "Font" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
          return "card";
       }
       private function hz51PvText(b:Sprite, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object, k:String) : void
@@ -8215,7 +8280,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var fs:Number = Math.max(9, Math.min(13, 11 * (ts > 0 ? ts : 1)));
          this.hz51T(b,face,cx + 10,cy + 8,cw - 20,fs,"bd",uint(T.txt),0.4);
          this.hz51T(b,"Sample HUD text",cx + 10,cy + 28,cw - 20,9,"rg",uint(T.lab),0.2);
-         this.hz51T(b,k == "FontFace" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
+         this.hz51T(b,k == "FontFace" || k == "Font" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
       }
       private function hz51PvModule(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
@@ -8560,7 +8625,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"CardShadow":this.hzCardShadow,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"CardShadow":this.hzCardShadow,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"Font":this.hzFontFam,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
@@ -10612,6 +10677,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var rd:Boolean = false;
          if(p.TextTone != undefined && this.hzTextTone != int(p.TextTone)) { this.hzTextTone = int(p.TextTone); rd = true; }
          if(p.FontFace != undefined && this.hzFontFace != Math.max(0,Math.min(3,int(p.FontFace)))) { this.hzFontFace = Math.max(0,Math.min(3,int(p.FontFace))); rd = true; }
+         if(p.Font != undefined)
+         {
+            var fam:String = this.hzFontFamNorm(String(p.Font));
+            if(fam != this.hzFontFam) { this.hzFontFam = fam; rd = true; }
+         }
          if(Math.abs(this.hzCardOpacity - Number(p.CardOpacity)) > 0.001) { this.hzCardOpacity = Number(p.CardOpacity); rd = true; }
          if(p.CardBgOpacity != undefined)
          {
@@ -10818,6 +10888,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          a.push("TextTone=" + int(p.TextTone));
          a.push("; Font: 1 Exo 2 (default), 2 Roboto, 0 game font, 3 game font semibold (built into the game, nothing to install). Exo 2 / Roboto need Interface/fonts_horizon.swf + fontconfig; the game font is used if missing");
          a.push("FontFace=" + int(p.FontFace));
+         a.push("; Horizon family when FontFace=1: Exo2 (default), Saira, Orbitron, Titillium. SIL OFL. Missing faces fall back to Exo 2, then the game font.");
+         a.push("Font=" + this.hzFontFamNorm(p.Font != undefined ? String(p.Font) : this.hzFontFam));
          a.push("; Planet card time: 0 off, 1 LOCAL planet time (GAME hh:mm UT where there is no local day), 2 PC/REAL clock, 3 both");
          a.push("TimeDisplay=" + int(p.TimeDisplay));
          a.push("; Clock format for LOCAL, GAME, and PC: 0 12-hour (AM/PM), 1 24-hour");
@@ -10996,7 +11068,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","Language":"auto","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","Language":"auto","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"Font":"Exo2","TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -14062,7 +14134,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try { fn = this.hzFontName(o && o.face != null ? String(o.face) : null); } catch(eFn:Error) { fn = ""; }
          // FontFace / TextScale / HeaderStyle / resolved face (late fontlibs) must miss. Include them so F11 apply misses.
          if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
-            && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
+            && o.twFace == this.hzFontFace && o.twFam === this.hzFontFam && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
             && o.twFn === fn && o.twSz === o.szAp && !isNaN(Number(o.twW)))
          {
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
@@ -14099,6 +14171,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             o.twLsVal = o.ls;
             o.twLsMode = this.hzLsMode;
             o.twFace = this.hzFontFace;
+            o.twFam = this.hzFontFam;
             o.twTs = this.hzTextScale;
             o.twHdr = this.hzHeaderStyle;
             o.twFn = fn;
@@ -14798,6 +14871,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private var hzQsHdr:int = -1;
       private var hzQsTs:Number = NaN;
       private var hzQsFace:int = -1;
+      private var hzQsFam:String = null;
       private var hzQsFont:String = null;
       private var hzQsFMod:* = null;
       private var hzQsLs:int = -2;
@@ -14840,7 +14914,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try
          {
             if(this.hzQName !== this.hzQsName || this.hzQObjStr !== this.hzQsObj || this.hzQDistStr !== this.hzQsDist) { return false; }
-            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzLsMode != this.hzQsLs) { return false; }
+            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzFontFam !== this.hzQsFam || this.hzLsMode != this.hzQsLs) { return false; }
             if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
             if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
             if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
@@ -14902,6 +14976,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzQsHdr = this.hzHeaderStyle;
             this.hzQsTs = this.hzTextScale;
             this.hzQsFace = this.hzFontFace;
+            this.hzQsFam = this.hzFontFam;
             this.hzQsFont = this.hzFont;
             this.hzQsFMod = this.hz30Mod["font"];
             this.hzQsLs = this.hzLsMode;
@@ -22877,8 +22952,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try
          {
             var fv:int = this.hzSetPend ? int(this.hzSetPend.FontFace) : this.hzFontFace;
-            for each(var r0:Object in rows) { if(r0.k == "FontFace" && fv == 3) { r0.note = this.hz34SemiNote(); } }
-            if(this.hz30FontAvail()) { return rows; }
+            var pack:Boolean = this.hz30FontAvail();
+            for each(var r0:Object in rows)
+            {
+               if(r0.k == "FontFace" && fv == 3) { r0.note = this.hz34SemiNote(); }
+               if(r0.k == "Font")
+               {
+                  r0.dis = !pack || fv != 1;
+                  if(!pack) { r0.note = "Horizon font not installed: FONT FAMILY needs it, the game font is used (your choice is kept)."; }
+                  else if(fv != 1) { r0.note = "Used when FONT is Exo 2."; }
+               }
+            }
+            if(pack) { return rows; }
             for each(var r:Object in rows)
             {
                if(r.k == "FontFace")

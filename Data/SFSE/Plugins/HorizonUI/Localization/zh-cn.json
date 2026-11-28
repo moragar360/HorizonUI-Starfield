@@ -198,7 +198,11 @@
       "saving": "正在保存",
       "removes_n_shown_unpinned_messages_hidden_message": "将删除 {n} 条显示中的未固定消息。隐藏的消息会保留。无法撤销。",
       "starts_empty_messages_from_before_this_log_was_o": "开始时为空。此日志开启之前的消息无法恢复。",
-      "removes_every_unpinned_message_for_this_characte": "将删除该角色的每条未固定消息。固定项会保留。无法撤销。"
+      "removes_every_unpinned_message_for_this_characte": "将删除该角色的每条未固定消息。固定项会保留。无法撤销。",
+      "font_family": "字体族",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.",
@@ -291,6 +295,7 @@
       "CardShadow": "HUD 卡片下方阴影强度。0 为无。12 是内置外观。100 是很重的阴影。",
       "SettingsOpacity": "本设置窗口有多透明。30 最淡。100 实心。",
       "FontFace": "Horizon 文字的字体。Exo 2 是默认。未安装 Horizon 字体时改用游戏字体，并保留你的选择。简体中文走游戏的 $MAIN_Font，Exo 2 不含汉字。",
+      "Font": "当字体为 Exo 2 时的 Horizon 字体族。Exo 2 是默认。Saira、Orbitron 和 Titillium Web 是 Horizon 字体包中的 SIL OFL 字体。缺少的族会回退到 Exo 2，再回退到游戏字体。你的选择会保留。Roboto 仍在字体一行。",
       "TextScale": "Horizon 文字大小，叠在 HUD 缩放之上。",
       "TextTone": "自动：浅色卡片用深色字。浅色 / 深色强制一种字色。",
       "HeaderStyle": "卡片标题用拉开的大写，或用紧凑的标题大小写。",
@@ -469,6 +474,7 @@
       "CardShadow": "HUD 卡片下方阴影强度。0 为无。12 是内置外观。100 是很重的阴影。",
       "SettingsOpacity": "本设置窗口有多透明。30 最淡。100 实心。",
       "FontFace": "Horizon 文字的字体。Exo 2 是默认。未安装 Horizon 字体时改用游戏字体，并保留你的选择。简体中文走游戏的 $MAIN_Font，Exo 2 不含汉字。",
+      "Font": "当字体为 Exo 2 时的 Horizon 字体族。缺少的字体会回退到 Exo 2，再回退到游戏字体。",
       "TextScale": "Horizon 文字大小，叠在 HUD 缩放之上。",
       "TextTone": "自动：浅色卡片用深色字。浅色 / 深色强制一种字色。",
       "HeaderStyle": "卡片标题用拉开的大写，或用紧凑的标题大小写。",

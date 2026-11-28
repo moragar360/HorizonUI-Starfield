@@ -185,7 +185,11 @@
       "saving": "Speichern",
       "removes_n_shown_unpinned_messages_hidden_message": "Entfernt {n} angezeigte, nicht angeheftete Nachrichten. Ausgeblendete bleiben. Das kann nicht rückgängig gemacht werden.",
       "starts_empty_messages_from_before_this_log_was_o": "Beginnt leer. Nachrichten von vor diesem Protokoll können nicht wiederhergestellt werden.",
-      "removes_every_unpinned_message_for_this_characte": "Entfernt jede nicht angeheftete Nachricht dieses Charakters. Anheftungen bleiben. Das kann nicht rückgängig gemacht werden."
+      "removes_every_unpinned_message_for_this_characte": "Entfernt jede nicht angeheftete Nachricht dieses Charakters. Anheftungen bleiben. Das kann nicht rückgängig gemacht werden.",
+      "font_family": "SCHRIFTFAMILIE",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.",
@@ -278,6 +282,7 @@
       "CardShadow": "Stärke des Schattens unter HUD-Karten. 0 bedeutet kein Schatten, 12 ist die Standarddarstellung, 100 ein starker Schatten.",
       "SettingsOpacity": "Transparenz dieses Einstellungsfensters. 30 ist am transparentesten, 100 vollständig deckend.",
       "FontFace": "Schrift für Horizon-Texte. Exo 2 ist der Standard. Ist eine Horizon-Schrift nicht installiert, wird die Spielschrift verwendet und deine Auswahl bleibt gespeichert.",
+      "Font": "Horizon-Schriftfamilie, wenn SCHRIFT Exo 2 ist. Exo 2 ist der Standard. Saira, Orbitron und Titillium Web sind SIL-OFL-Schriften im Horizon-Schriftpaket. Eine fehlende Familie fällt auf Exo 2 zurück, dann auf die Spielschrift. Deine Auswahl bleibt. Roboto bleibt in der SCHRIFT-Zeile.",
       "TextScale": "Größe der Horizon-Texte zusätzlich zur HUD-Skalierung.",
       "TextTone": "Auto verwendet dunklen Text auf hellen Karten. Hell und Dunkel erzwingen die jeweilige Texthelligkeit.",
       "HeaderStyle": "Kartentitel in gesperrten Großbuchstaben oder mit großen Wortanfängen und engem Abstand.",
@@ -456,6 +461,7 @@
       "CardShadow": "Stärke des Schattens unter HUD-Karten.",
       "SettingsOpacity": "Transparenz dieses Einstellungsfensters.",
       "FontFace": "Schrift für Horizon-Texte.",
+      "Font": "Familie für Horizon-Text, wenn SCHRIFT Exo 2 ist. Fehlende Gesichter fallen auf Exo 2 zurück, dann auf die Spielschrift.",
       "TextScale": "Größe der Horizon-Texte zusätzlich zur HUD-Skalierung.",
       "TextTone": "Auto verwendet dunklen Text auf hellen Karten.",
       "HeaderStyle": "Kartentitel in gesperrten Großbuchstaben oder mit großen Wortanfängen und engem Abstand.",

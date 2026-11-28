@@ -202,6 +202,7 @@ namespace HZ
 	void PushL10nModules();
 	void PushL10nForMenu(RE::IMenu* a_menu);
 	void PushL10nOnAdvance(RE::Scaleform::GFx::ASMovieRootBase* a_this);
+	void ClearL10nPendClosed(const RE::BSFixedString& a_name);
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -1201,6 +1202,11 @@ namespace HZ
 						if (a_event.opening) g_scanOpenEdge.store(true, std::memory_order_release);
 						g_scanOpen.store(a_event.opening, std::memory_order_release);
 					}
+				}
+				// Close drops a module l10n stamp that never Advanced, so idle
+				// AdvanceFrame stays one relaxed load. Event path, not a poll.
+				if (!a_event.opening) {
+					try { ClearL10nPendClosed(a_event.menuName); } catch (...) {}
 				}
 				const auto& t = HzMenus();
 				for (std::size_t i = 0; i < kMenuN; ++i) {
@@ -2761,6 +2767,7 @@ namespace HZ
 	constexpr std::uint8_t        kL10nPendDlg = 2;
 	constexpr std::uint8_t        kL10nPendScan = 4;
 	std::atomic<std::uint8_t>     g_l10nPendBits{0};
+	std::atomic<std::uint8_t>     g_l10nPendRetry{0};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendComms{nullptr};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendDlg{nullptr};
 	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendScan{nullptr};
@@ -3050,7 +3057,52 @@ namespace HZ
 	{
 		if (!a_root || !a_bit) return;
 		a_slot.store(a_root, std::memory_order_release);
+		g_l10nPendRetry.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
 		g_l10nPendBits.fetch_or(a_bit, std::memory_order_acq_rel);
+	}
+
+	// Purpose: drop a pending module l10n stamp. Used on menu close and
+	// after a successful Invoke. Inputs: bit and slot. Outputs: idle bit
+	// for that movie. Author: Moragar. Last modified: 2026-11-28.
+	void ClearL10nPend(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot)
+	{
+		if (!a_bit) return;
+		a_slot.store(nullptr, std::memory_order_release);
+		g_l10nPendBits.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
+		g_l10nPendRetry.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
+	}
+
+	// Purpose: if a comms / dialogue / scanner movie closed before its
+	// first AdvanceFrame, drop the pending stamp so every other movie's
+	// AdvanceFrame is one relaxed load again. Inputs: closed menu name.
+	// Outputs: cleared bit/slot or no-op. Event-driven, not a poll.
+	// Author: Moragar. Last modified: 2026-11-28.
+	void ClearL10nPendClosed(const RE::BSFixedString& a_name)
+	{
+		if (a_name == "HUDMessagesMenu")
+			ClearL10nPend(kL10nPendComms, g_l10nPendComms);
+		else if (a_name == "DialogueMenu")
+			ClearL10nPend(kL10nPendDlg, g_l10nPendDlg);
+		else if (a_name == "MonocleMenu")
+			ClearL10nPend(kL10nPendScan, g_l10nPendScan);
+	}
+
+	// Purpose: HasMember miss / failed Invoke may retry once on the next
+	// AdvanceFrame of this movie. A second miss consumes so the bit cannot
+	// stick as a poll. Inputs: bit, slot, this root. Outputs: re-armed or idle.
+	// Author: Moragar. Last modified: 2026-11-28.
+	void L10nPendRetryOnce(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		RE::Scaleform::GFx::ASMovieRootBase* a_this)
+	{
+		const auto retried = g_l10nPendRetry.load(std::memory_order_relaxed);
+		if (retried & a_bit) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		g_l10nPendRetry.fetch_or(a_bit, std::memory_order_acq_rel);
+		a_slot.store(a_this, std::memory_order_release);
 	}
 
 	// Purpose: if that menu is open, arm its next AdvanceFrame to stamp
@@ -3069,11 +3121,13 @@ namespace HZ
 	}
 
 	// Purpose: one Invoke of a module SetL10n on that movie's AdvanceFrame.
-	// Consumes the pending bit first so a nested advance cannot re-enter.
-	// Re-fetches GetMenu and checks the live root so a reused address is
-	// not Invoked. Inputs: advancing root, slot, menu name, function.
-	// Outputs: at most one Invoke. No disk, no timer.
-	// Author: Moragar. Last modified: 2026-11-27.
+	// Claims the slot first so a nested advance cannot re-enter. Consumes
+	// the bit only after a successful Invoke. A HasMember miss (function
+	// not on menuObj yet) re-arms for one more AdvanceFrame of this movie,
+	// then gives up. Closed / ABA movies consume so idle stays one load.
+	// Inputs: advancing root, slot, menu name, function.
+	// Outputs: at most one Invoke per call, at most one retry. No disk, no timer.
+	// Author: Moragar. Last modified: 2026-11-28.
 	void PushL10nPendOne(RE::Scaleform::GFx::ASMovieRootBase* a_this,
 		std::uint8_t a_bit,
 		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
@@ -3082,22 +3136,46 @@ namespace HZ
 		auto want = a_slot.load(std::memory_order_acquire);
 		if (!a_this || a_this != want) return;
 		a_slot.store(nullptr, std::memory_order_release);
-		g_l10nPendBits.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
-		if (!g_l10nReady.load(std::memory_order_acquire)) return;
-		if (!a_menu || !a_fn) return;
+		if (!g_l10nReady.load(std::memory_order_acquire) || !a_menu || !a_fn) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
 		auto ui = RE::UI::GetSingleton();
-		if (!ui || !ui->IsMenuOpen(a_menu)) return;
+		if (!ui || !ui->IsMenuOpen(a_menu)) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
 		auto menu = ui->GetMenu(a_menu);
-		if (!menu || !menu->uiMovie || menu->uiMovie->asMovieRoot.get() != a_this) return;
-		if (!menu->menuObj.IsObject() || !menu->menuObj.HasMember(a_fn)) return;
+		if (!menu || !menu->uiMovie || menu->uiMovie->asMovieRoot.get() != a_this) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		if (!menu->menuObj.IsObject() || !menu->menuObj.HasMember(a_fn)) {
+			L10nPendRetryOnce(a_bit, a_slot, a_this);
+			return;
+		}
 		std::string payload;
 		{
 			std::lock_guard lk(g_l10nMu);
 			payload = g_l10n.payload;
 		}
-		if (payload.empty()) return;
+		if (payload.empty()) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
 		GValue arg(payload.c_str());
-		menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
+		bool ok = false;
+		try {
+			ok = menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
+		} catch (...) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		if (ok) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		L10nPendRetryOnce(a_bit, a_slot, a_this);
 	}
 
 	// Purpose: consume a pending module l10n stamp after that movie's

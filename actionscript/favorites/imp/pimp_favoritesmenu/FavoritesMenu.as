@@ -495,7 +495,7 @@ package
       // defaults = HZ_SET_DEF; ranges = the HUD ini reader (horizon_block.as hzIniApply)
       private function hzqParse(txt:String) : Object
       {
-         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
+         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"Font":"Exo2","TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
          if(txt == null) { return st; }
          var sec:String = "";
          for each(var ln:String in this.hzq37Lines(txt))
@@ -540,6 +540,7 @@ package
                else if(k == "cardshadow") { st.CardShadow = this.hzqPct(v,12); }
                else if(k == "texttone" && !isNaN(nv)) { st.TextTone = Math.max(0,Math.min(2,int(nv))); }
                else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
+               else if(k == "font") { st.Font = this.hzqFontFamNorm(v); }
                else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                else if(k == "textshadow") { st.TextShadow = !off && v.length > 0; }
@@ -1079,7 +1080,32 @@ package
          if(this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
          return "$MAIN_Font";
       }
-      // FontFace: 1 $Horizon_Font, 2 $Horizon_Font_Alt (both wait for font.marker), 0 the game font, 3 the game face of the slot key field
+      private function hzqFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzqFontHorizonBase() : String
+      {
+         var fam:String = this.hzqFontFamNorm(String(this.hzqS.Font));
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
+      // FontFace: 1 $Horizon_Font family (Font=), 2 $Horizon_Font_Alt (both wait for font.marker), 0 the game font, 3 the game face of the slot key field
       private function hzqFace(w:String) : String
       {
          if(this.hzqL10nCjk && this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return this.hzqCjkFont(); }
@@ -1098,10 +1124,15 @@ package
             if(want == "$Horizon_Font_Alt" || this.hzqProbe(want)) { return want; }
             return "$Horizon_Font_Alt";
          }
-         if(!this.hzqProbe("$Horizon_Font")) { return "$MAIN_Font"; }
-         want = w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font";
-         if(want == "$Horizon_Font" || this.hzqProbe(want)) { return want; }
-         return "$Horizon_Font";
+         var base:String = this.hzqFontHorizonBase();
+         if(!this.hzqProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzqProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return "$MAIN_Font"; }
+         }
+         want = w == "bd" ? base + "_Bold" : base;
+         if(want == base || this.hzqProbe(want)) { return want; }
+         return base;
       }
       private function hzqFs(size:Number) : Number
       {

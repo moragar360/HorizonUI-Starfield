@@ -196,7 +196,11 @@
       "read_only_the_current_character_is_not_listed": "Lecture seule. Le personnage actuel n'est pas listé.",
       "no_other_character_files": "Aucun autre fichier de personnage.",
       "messages": "messages",
-      "saving": "Enregistrement"
+      "saving": "Enregistrement",
+      "font_family": "FAMILLE DE POLICE",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Cliquez une pastille pour l'assigner. Échap annule. Retour arrière ou Suppr efface. Un conflit (autre case, touche des réglages ou commande du jeu) est signalé et ignoré. Les tuiles vont de la case 13 au nombre de cases, renvoyées par Cases par ligne. Les cases 1-12 gardent les touches favorites du jeu. Si le mode étendu est éteint ou en pause, la grille est grisée et les touches enregistrées sont conservées.",
@@ -289,6 +293,7 @@
       "CardShadow": "Force de l'ombre sous les cartes du HUD. 0 = aucune. 12 = l'apparence intégrée. 100 = une ombre forte.",
       "SettingsOpacity": "Transparence de cette fenêtre de réglages. 30 est le plus léger. 100 est opaque.",
       "FontFace": "Police du texte Horizon. Exo 2 est le défaut. Si une police Horizon n'est pas installée, la police du jeu est utilisée et votre choix est conservé.",
+      "Font": "Famille de police Horizon lorsque POLICE est Exo 2. Exo 2 est le défaut. Saira, Orbitron et Titillium Web sont des faces SIL OFL du pack de polices Horizon. Une famille absente retombe sur Exo 2, puis sur la police du jeu. Votre choix est conservé. Roboto reste sur la ligne POLICE.",
       "TextScale": "Taille du texte Horizon, en plus de l'échelle HUD.",
       "TextTone": "Auto met du texte foncé sur les fonds clairs. Clair et Foncé imposent un ton.",
       "HeaderStyle": "Titres de cartes en capitales espacées, ou en casse titre avec un espacement serré.",
@@ -467,6 +472,7 @@
       "CardShadow": "Force de l'ombre sous les cartes du HUD.",
       "SettingsOpacity": "Transparence de cette fenêtre de réglages.",
       "FontFace": "Police du texte Horizon.",
+      "Font": "Famille du texte Horizon lorsque POLICE est Exo 2. Les faces absentes retombent sur Exo 2, puis sur la police du jeu.",
       "TextScale": "Taille du texte Horizon, en plus de l'échelle HUD.",
       "TextTone": "Auto met du texte foncé sur les fonds clairs.",
       "HeaderStyle": "Titres de cartes en capitales espacées, ou en casse titre avec un espacement serré.",

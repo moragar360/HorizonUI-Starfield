@@ -261,7 +261,7 @@
       {
          this.hzsT0 = getTimer();
          this.hzsC = this.hzsDefaults();
-         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"Font":"Exo2","HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsL = new Sprite();
          this.hzsL.mouseEnabled = false;
          this.hzsL.mouseChildren = false;
@@ -422,7 +422,7 @@
       private function hzsParse(txt:String) : void
       {
          var c:Object = this.hzsDefaults();
-         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"Font":"Exo2","HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsPerfDiag = false;
          this.hzsPerfMode = 0;
          this.hzsPerfScan = true;
@@ -453,6 +453,7 @@
                   else if(k == "compact") { st.Compact = (nv >= 0.5 || v.toLowerCase() == "true") ? 1 : 0; }
                   else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
+                  else if(k == "font") { st.Font = this.hzsFontFamNorm(v); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
@@ -712,6 +713,31 @@
          this.hzsFontLib = 0;
          this.hzsFontLdr = null;
       }
+      private function hzsFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzsFontHorizonBase() : String
+      {
+         var fam:String = this.hzsFontFamNorm(String(this.hzsS.Font));
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzsFace(w:String) : String
       {
          if(this.hzsL10nCjk && this.hzsProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
@@ -729,10 +755,15 @@
             if(want == "$Horizon_Font_Alt" || this.hzsProbe(want)) { return want; }
             return "$Horizon_Font_Alt";
          }
-         if(!this.hzsProbe("$Horizon_Font")) { return game; }
-         want = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(want == "$Horizon_Font" || this.hzsProbe(want)) { return want; }
-         return "$Horizon_Font";
+         var base:String = this.hzsFontHorizonBase();
+         if(!this.hzsProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzsProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return game; }
+         }
+         want = w == "rg" ? base + "_Regular" : (w == "bd" ? base + "_Bold" : base);
+         if(want == base || this.hzsProbe(want)) { return want; }
+         return base;
       }
       private function hzsGame() : String
       {

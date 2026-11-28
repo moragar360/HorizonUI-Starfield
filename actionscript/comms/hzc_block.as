@@ -37,7 +37,7 @@
       // ini is re-applied whenever the file text changes (not only on a new HzRev) so ARRANGE positions always arrive.
       private static const HZC_LRG:Boolean = __HZC_LRG__;
       private static const HZC_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
-      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1};
+      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1,"Font":1};
       private static const HZC_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
       private static const HZC_EDGE:Number = 0.10;          // card edge: white @ .10, 1 px stroke
       private static const HZC_TXT:uint = 0xE8F0F5;         // default subtitle text (off-white)
@@ -45,7 +45,7 @@
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","CardOpacity":1,"CardBgOpacity":92,"Compact":0,"HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"Font":"Exo2","AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","CardOpacity":1,"CardBgOpacity":92,"Compact":0,"HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -636,14 +636,44 @@
          return ok;
       }
       // role: "nm" names (SemiBold / Medium), "rg" body. SubFont -1 = [Style] FontFace. Chosen face -> base face -> game font.
+      private function hzcFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzcFontHorizonBase() : String
+      {
+         var fam:String = this.hzcFontFamNorm(String(this.hzcCfg.Font));
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzcFont(role:String) : String
       {
          var f:int = int(this.hzcCfg.SubFont) >= 0 ? int(this.hzcCfg.SubFont) : int(this.hzcCfg.FontFace);
          if(f == 3) { return this.hzcFontProbe(HZC_SEMI) ? HZC_SEMI : this.hzcGameFont; }   // one weight for every role
          // marker still loading or absent: game font, so a missing $Horizon_ face is not looked up
          if(this.hzcProbe.font !== 1) { return this.hzcGameFont; }
-         var base:String = f == 2 ? "$Horizon_Font_Alt" : (f == 1 ? "$Horizon_Font" : null);
-         if(base == null || !this.hzcFontProbe(base)) { return this.hzcGameFont; }
+         var base:String = f == 2 ? "$Horizon_Font_Alt" : (f == 1 ? this.hzcFontHorizonBase() : null);
+         if(base == null) { return this.hzcGameFont; }
+         if(!this.hzcFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzcFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return this.hzcGameFont; }
+         }
          var want:String = role == "rg" ? base + "_Regular" : base;
          if(want != base && this.hzcFontProbe(want)) { return want; }
          return base;

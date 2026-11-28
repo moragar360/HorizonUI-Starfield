@@ -1,0 +1,28 @@
+; Pack-time maps for fonts_horizon.swf. Merge these $Horizon_Font* lines into
+; Interface\fontconfig_en.txt when the font SWF is rebuilt. Do not load extra
+; FontLibs at runtime: Starfield reads fontconfig at movie start, and a second
+; SWF load would be new I/O on the UI thread.
+;
+; FontFace 0/1/2/3 stay. [Style] Font= picks the Horizon family when FontFace=1.
+; FontFace 2 stays Roboto ($Horizon_Font_Alt*).
+;
+; map "$Horizon_Font" = "Exo 2 SemiBold" Normal
+; map "$Horizon_Font_Regular" = "Exo 2 Regular" Normal
+; map "$Horizon_Font_Bold" = "Exo 2 Bold" Normal
+; map "$Horizon_Font_Saira" = "Saira SemiBold" Normal
+; map "$Horizon_Font_Saira_Regular" = "Saira Regular" Normal
+; map "$Horizon_Font_Saira_Bold" = "Saira Bold" Normal
+; map "$Horizon_Font_Orbitron" = "Orbitron SemiBold" Normal
+; map "$Horizon_Font_Orbitron_Regular" = "Orbitron Regular" Normal
+; map "$Horizon_Font_Orbitron_Bold" = "Orbitron Bold" Normal
+; map "$Horizon_Font_Titillium" = "Titillium Web SemiBold" Normal
+; map "$Horizon_Font_Titillium_Regular" = "Titillium Web Regular" Normal
+; map "$Horizon_Font_Titillium_Bold" = "Titillium Web Bold" Normal
+;
+; Source OFL files (SIL Open Font License 1.1) live next to this file:
+;   exo2/     Exo 2 (already the FontFace 1 default)
+;   saira/    Saira
+;   orbitron/ Orbitron
+;   titilliumweb/ Titillium Web
+;
+; Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.

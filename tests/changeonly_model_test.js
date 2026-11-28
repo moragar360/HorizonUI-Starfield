@@ -314,7 +314,7 @@ TextField.prototype.getTextFormat = function() { return cloneFmt(this._fmt); };
 Object.defineProperty(TextField.prototype, "length", { get: function() { return this._text.length; } });
 
 // ---- hosts ----
-const QFUNCS = ["hzTxtObj", "hzFitText", "hzTW", "hzUC", "hzTxtTop", "hz27QLayout", "hzFontName", "hzApplyFmt", "hzApplyFmt19", "hzTextSz19",
+const QFUNCS = ["hzTxtObj", "hzFitText", "hzTW", "hzUC", "hzTxtTop", "hz27QLayout", "hzFontFamNorm", "hzFontHorizonBase", "hzFontName", "hzApplyFmt", "hzApplyFmt19", "hzTextSz19",
 	"hzVitTextSz", "hzChipSz", "hzChipSzOn", "hzHdrCase", "hzHdr19", "hzSetSz", "hzLayNow", "hzT", "hz27QBuild", "hzQSync"];   // 0.43.4: hzSetSz calls hzLayNow on a size change
 const QNEW_ONLY = ["hzQsSame", "hzQsKeep", "hzQsTops", "hzQsField", "hzQOneLine", "hzQWrapTo", "hzQWrapStd", "hzQWrapCmp", "hzCQW", "hzCQSize"];
 const QCHANGED = ["hzTxtObj", "hzApplyFmt", "hzQSync"];
@@ -327,13 +327,13 @@ function makeQHost(kind, env) {
 		HZ_TY_SIZE: { hdr: 10, val: 16, valS: 14, lbl: 9, sec: 12, big: 24 }, HZ_TY_ALPHA: { hdr: 0.85, val: 1, valS: 1, lbl: 0.6, sec: 0.78, big: 1 },
 		HZ34_SEMI: "$Semi_Face",
 		hzPerfOn: true, hzPerfN: null, hzPcFmt: 0, hzPcQsSkip: 0, hzPcQsRun: 0, hzPcTxHit: 0, hzPcTxMiss: 0,
-		hzTexts: [], hzTextTf: [], hzSz: [], hzLsMode: -1, hzFont: "$MAIN_Font", hzFontFace: 1, hz30Mod: { font: 1 }, hzFontOk: 0,
+		hzTexts: [], hzTextTf: [], hzSz: [], hzLsMode: -1, hzFont: "$MAIN_Font", hzFontFace: 1, hzFontFam: "Exo2", hz30Mod: { font: 1 }, hzFontOk: 0,
 		hzFontOkMap: {}, hzAfRemeasure: false, hzAfRemeasureAt: 0, hzFrameN: 1, hzTextScale: 1, hzHeaderStyle: 0, hzTextShadow: false,
 		hz30Hover: 1, hz30TgSc: 0, hzLaidOut: true, hzDark: false,
 		hzQName: "", hzQObjStr: "", hzQDistStr: "", hz27QSubs: [], hz27QL: [], hz27QLD: [], hz27QH: 78,
 		hzQ19T: null, hzQ19D: null, hzQ19O: null, hzCQ19T: null, hzCQ19D: null, hzCQ19O: null, HorizonQuest_mc: { _mc: 1 },
 		hzQsOk: false, hzQsR: null, hzQsName: null, hzQsObj: null, hzQsDist: null, hzQsSubN: -1, hzQsSubD: null, hzQsSubT: null, hzQsSubO: null,
-		hzQsHdr: -1, hzQsTs: NaN, hzQsFace: -1, hzQsFont: null, hzQsFMod: null, hzQsLs: -2, hzQsQL: null, hzQsQLD: null, hzQsQLN: -1, hzQsH: NaN, hzQsMc: null,
+		hzQsHdr: -1, hzQsTs: NaN, hzQsFace: -1, hzQsFam: "Exo2", hzQsFont: null, hzQsFMod: null, hzQsLs: -2, hzQsQL: null, hzQsQLD: null, hzQsQLN: -1, hzQsH: NaN, hzQsMc: null,
 		// 0.43.3.0 quest log: the old-vs-new equivalence below runs with QuestsWrap 0 at the classic width 380 (today's
 		// one-line card); the wrap layout is covered by tests/quest_wrap_test.js
 		hzQW: 380, hzQMaxH: 160, hzQWrap: false, hzQPW: 380, hzQDW: 380, hzCQDW: 420, hzCQH: 36, hzCQPW: 420, hzCQOMv: false, hzQsW: NaN, hzQsMh: NaN, hzQsWr: null,
@@ -607,6 +607,7 @@ console.log("    events: " + Object.keys(tally).sort().map((k) => k + "=" + tall
 		["HeaderStyle", (h) => { h.hzHeaderStyle = 1 - h.hzHeaderStyle; }],
 		["TextScale", (h) => { h.hzTextScale = 1.2; }],
 		["FontFace", (h) => { h.hzFontFace = 2; }],
+		["Font family", (h) => { h.hzFontFam = "Saira"; }],
 		["letter-spacing mode", (h) => { h.hzLsMode = 1; }],
 		["format epoch (one field re-formatted)", (h) => { h.hzApplyFmt(h.hzTxtObj(h.hz27QLD[2])); }],
 		["registry fs", (h) => { h.hzTxtObj(h.hzQ19O).fs = 14; }],

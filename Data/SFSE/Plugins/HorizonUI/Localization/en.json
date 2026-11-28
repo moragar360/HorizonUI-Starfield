@@ -196,7 +196,11 @@
       "read_only_the_current_character_is_not_listed": "Read-only. The current character is not listed.",
       "no_other_character_files": "No other character files.",
       "messages": "messages",
-      "saving": "Saving"
+      "saving": "Saving",
+      "font_family": "FONT FAMILY",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Click a key chip to bind. Esc cancels. Backspace or Delete clears. A clash (another slot, the settings key, or a game control) is warned and ignored. Tiles are slots 13 through Slot Count, wrapped by Slots per Row. Slots 1-12 keep the game's own favorite keys. If Extended Mode is off or paused, the grid is grayed and saved keys are kept.",
@@ -289,6 +293,7 @@
       "CardShadow": "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.",
       "SettingsOpacity": "How see-through this settings window is. 30 is the lightest. 100 is solid.",
       "FontFace": "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.",
+      "Font": "Horizon font family when FONT is Exo 2. Exo 2 is the default. Saira, Orbitron, and Titillium Web are SIL OFL faces in the Horizon font pack. A missing family falls back to Exo 2, then the game font. Your choice is kept. Roboto stays on the FONT row.",
       "TextScale": "Size of Horizon text, on top of HUD scale.",
       "TextTone": "Auto uses dark text on light card colors. Light and Dark force one tone.",
       "HeaderStyle": "Card titles in spaced capital letters, or in title case with tight spacing.",
@@ -467,6 +472,7 @@
       "CardShadow": "Strength of the shadow under HUD cards.",
       "SettingsOpacity": "How see-through this settings window is.",
       "FontFace": "Font for Horizon text.",
+      "Font": "Family for Horizon text when FONT is Exo 2. Missing faces fall back to Exo 2, then the game font.",
       "TextScale": "Size of Horizon text, on top of HUD scale.",
       "TextTone": "Auto uses dark text on light card colors.",
       "HeaderStyle": "Card titles in spaced capital letters, or in title case with tight spacing.",

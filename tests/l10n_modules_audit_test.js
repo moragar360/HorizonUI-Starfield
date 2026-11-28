@@ -96,6 +96,11 @@ expect(/try \{ PushL10nOnAdvance\(a_this\); \}/.test(cpp),
 	"HookedAdvanceFrame stamps after orig(), on that movie's own advance");
 expect(/g_l10nPendBits\.load\(std::memory_order_relaxed\) == 0/.test(cpp),
 	"idle hook is one relaxed load, not a new poll");
+expect(/ClearL10nPendClosed/.test(cpp) && /if \(!a_event\.opening\)/.test(cpp),
+	"menu close clears pending l10n bits so idle stays one load");
+expect(/L10nPendRetryOnce/.test(cpp) && /ok = menu->menuObj\.Invoke\(a_fn/.test(cpp)
+	&& /if \(ok\)/.test(cpp),
+	"HasMember miss retries once; the stamp is consumed after a successful Invoke");
 expect(/hzsL10nCjk && this\.hzsProbe\("DFZongYi-GB Otf W5 Regular"\)/.test(hzs)
 	&& !/NotoSans/.test(hzs),
 	"scanner CJK uses the game DFZongYi face when that FontLib is loaded, never Noto");

@@ -198,7 +198,11 @@
       "saving": "Guardando",
       "removes_n_shown_unpinned_messages_hidden_message": "Quita {n} mensajes visibles no fijados. Los ocultos se quedan. No se puede deshacer.",
       "starts_empty_messages_from_before_this_log_was_o": "Empieza vacío. Los mensajes de antes de este registro no se pueden recuperar.",
-      "removes_every_unpinned_message_for_this_characte": "Quita todos los mensajes no fijados de este personaje. Los fijados se quedan. No se puede deshacer."
+      "removes_every_unpinned_message_for_this_characte": "Quita todos los mensajes no fijados de este personaje. Los fijados se quedan. No se puede deshacer.",
+      "font_family": "FAMILIA DE FUENTE",
+      "saira": "SAIRA",
+      "orbitron": "ORBITRON",
+      "titillium_web": "TITILLIUM WEB"
     },
     "details": {
       "_qmkeys": "Haz clic en una etiqueta de tecla para asignarla. Esc cancela. Retroceso o Delete borra. Un conflicto (otra casilla, la tecla de ajustes o un control del juego) se notifica y se ignora. Las casillas van de la 13 al número de casillas, ajustadas por casillas por fila. Las casillas 1-12 conservan las teclas de favoritos del juego. Si el modo extendido está desactivado o en pausa, la cuadrícula se atenúa y se conservan las teclas guardadas.",
@@ -291,6 +295,7 @@
       "CardShadow": "Intensidad de la sombra bajo las tarjetas del HUD. 0 la elimina, 12 es el aspecto predeterminado y 100 es una sombra intensa.",
       "SettingsOpacity": "Transparencia de esta ventana de ajustes. 30 es el valor más transparente y 100 es opaco.",
       "FontFace": "Fuente del texto de Horizon. Exo 2 es la predeterminada. Si una fuente de Horizon no está instalada, se usa la del juego y se conserva tu elección.",
+      "Font": "Familia de fuente Horizon cuando FUENTE es Exo 2. Exo 2 es la predeterminada. Saira, Orbitron y Titillium Web son caras SIL OFL del paquete de fuentes Horizon. Una familia ausente vuelve a Exo 2 y luego a la fuente del juego. Tu elección se conserva. Roboto sigue en la fila FUENTE.",
       "TextScale": "Tamaño del texto de Horizon, adicional a la escala del HUD.",
       "TextTone": "Auto usa texto oscuro sobre tarjetas claras. Claro y Oscuro fuerzan el tono correspondiente.",
       "HeaderStyle": "Títulos de tarjetas en mayúsculas espaciadas o con iniciales mayúsculas y espaciado reducido.",
@@ -469,6 +474,7 @@
       "CardShadow": "Intensidad de la sombra bajo las tarjetas del HUD.",
       "SettingsOpacity": "Transparencia de esta ventana de ajustes.",
       "FontFace": "Fuente del texto de Horizon.",
+      "Font": "Familia del texto Horizon cuando FUENTE es Exo 2. Las caras ausentes vuelven a Exo 2 y luego a la fuente del juego.",
       "TextScale": "Tamaño del texto de Horizon, adicional a la escala del HUD.",
       "TextTone": "Auto usa texto oscuro sobre tarjetas claras.",
       "HeaderStyle": "Títulos de tarjetas en mayúsculas espaciadas o con iniciales mayúsculas y espaciado reducido.",

@@ -305,7 +305,7 @@ int main()
 
 	Expect(Has(ini, "Language=auto"), "default.ini has the new Language key");
 	Expect(Has(ini, "[Hotkeys]") && Has(ini, "SettingsKey=F11"), "every previous default.ini key block remains (Hotkeys)");
-	Expect(Has(ini, "ShowJetpack=1") && Has(ini, "FontFace=1") && Has(ini, "QuickMenuHorizon=1"), "Cards / Style / Quick Menu keys are unchanged");
+	Expect(Has(ini, "ShowJetpack=1") && Has(ini, "FontFace=1") && Has(ini, "Font=Exo2") && Has(ini, "QuickMenuHorizon=1"), "Cards / Style / Quick Menu keys are unchanged");
 
 	Expect(Has(as, "function hzSetL10n") && Has(as, "function hzL("), "HUD has hzSetL10n and hzL");
 	Expect(Has(as, "LANGUAGE / LOCALIZATION") || Has(insert, "LANGUAGE / LOCALIZATION"), "Settings 2.0 has the Language page");
@@ -351,6 +351,18 @@ int main()
 		"the AdvanceFrame hook stamps a pending module movie once, after orig()");
 	Expect(Has(cpp, "g_l10nPendBits.load(std::memory_order_relaxed) == 0"),
 		"idle AdvanceFrame is one relaxed load, not a poll or per-frame Invoke");
+	Expect(Has(cpp, "ClearL10nPendClosed") && Has(cpp, "if (!a_event.opening)"),
+		"menu close clears pending l10n bits so a never-advanced movie cannot stick the idle path");
+	{
+		const auto pend = fnBody("void PushL10nPendOne(RE::Scaleform::GFx::ASMovieRootBase* a_this");
+		Expect(Has(pend, "HasMember(a_fn)") && Has(pend, "L10nPendRetryOnce")
+				&& Has(pend, "bool ok = false") && Has(pend, "ok = menu->menuObj.Invoke(a_fn"),
+			"HasMember miss retries once on the next AdvanceFrame; the bit is consumed after a successful Invoke");
+		Expect(Has(pend, "if (ok)") && Has(pend, "ClearL10nPend(a_bit, a_slot)"),
+			"a successful module SetL10n Invoke is what drops the pending bit");
+		Expect(!Has(pend, "new Timer") && !Has(pend, "setInterval"),
+			"module stamp retry is the next AdvanceFrame, not a poll");
+	}
 	Expect(Has(cpp, "menu->menuObj.Invoke(a_fn") && Has(cpp, "hzsSetL10n"),
 		"scanner SetL10n still Invokes, only on that movie's AdvanceFrame");
 

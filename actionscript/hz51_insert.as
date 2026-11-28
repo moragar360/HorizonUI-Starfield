@@ -524,6 +524,11 @@
             this.hz51Exo2Arr(r.names as Array);
             return;
          }
+         if(String(r.k) == "Font")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
          this.hz51LocArr(r.opts as Array);
          this.hz51LocArr(r.names as Array);
       }
@@ -819,6 +824,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Exo 2 is the default. Saira, Orbitron, and Titillium Web are SIL OFL faces in the Horizon font pack. A missing family falls back to Exo 2, then the game font. Your choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
@@ -1468,6 +1474,7 @@
          if(id == "typ")
          {
             return this.hz30FontRows([{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"h":"TYPE"},
+               {"k":"Font","l":"FONT FAMILY","t":"l","vals":HZ_FONT_FAM_IDS,"names":HZ_FONT_FAM_NAMES},
                {"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},
                {"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES},
                {"k":"HeaderStyle","l":"HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},

@@ -76,7 +76,7 @@ expect(fnText(as, "hzBuildIniText").body.indexOf("[General]") >= 0 && fnText(as,
 
 expect(/"Language":"auto"/.test(as), "HZ_SET_DEF Language=auto");
 expect(/^\[General\]/m.test(ini) && /Language=auto/.test(ini), "default.ini Language=auto");
-expect(/SettingsKey=F11/.test(ini) && /ShowJetpack=1/.test(ini) && /FontFace=1/.test(ini), "existing INI keys are kept");
+expect(/SettingsKey=F11/.test(ini) && /ShowJetpack=1/.test(ini) && /FontFace=1/.test(ini) && /Font=Exo2/.test(ini), "existing INI keys are kept, Font=Exo2 is the Horizon family");
 
 expect(/function hzSetL10n/.test(as) && /function hzL\(/.test(as), "hzSetL10n / hzL exist");
 const setL = fnText(as, "hzSetL10n").body;

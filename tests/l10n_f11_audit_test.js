@@ -81,8 +81,10 @@ expect(/hzLt\("HORIZON UI"\)/.test(head) && /hzLt\("SETTINGS"\)/.test(head),
 expect(/hzTW\(t1\)/.test(head) && /hzTW\(t2\)/.test(head) && /hzTW\(t3\)/.test(head)
 	&& /pillW:Number = Math\.max\(52, tw3 \+ 28\)/.test(head)
 	&& /tw2 = Math\.max\(24, maxR - pillW - gap - sx\)/.test(head)
+	&& /sz2 > 8 && t2\.textWidth > tw2/.test(head)
+	&& /hzFitText\(t2, setn, tw2 \+ 4\)/.test(head)
 	&& !/16 \+ 128/.test(head) && !/pillX = 250/.test(head),
-	"F11 header measures SETTINGS and the version chip; the chip keeps its width and SETTINGS shrinks first");
+	"F11 header measures SETTINGS and the version chip; the chip keeps its width, SETTINGS shrinks first, then font then ellipsis so EINSTELLUNGEN cannot clip at the 1000 px floor");
 expect(/hz51HelpOf\(String\(r\.k\)/.test(fnText(draw, "hz51DrawRight").body),
 	"Setting Details body is hz51HelpOf (table lookup), not a raw English literal");
 
