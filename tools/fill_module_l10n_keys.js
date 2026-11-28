@@ -240,7 +240,7 @@ const TABLES = {
 			h_ago: " godz. temu",
 			d_ago: " dn. temu",
 			no_messages_for_the_types_that_are_shown_stored: "Brak wiadomości dla pokazanych typów. Zapisane zostają.",
-			"Starts empty. Messages from before this log was on cannot be recovered.": "Zaczyna pusto. Wiadomości sprzed włączenia dziennika nie wrócą.",
+			"Starts empty. Messages from before this log was on cannot be recovered.": "Na początku pusty. Wiadomości sprzed włączenia dziennika nie da się odzyskać.",
 			from_a_later_point: "od późniejszego momentu",
 			local: "lokalny",
 			memory_only_existing_files_stay_on_disk: "Tylko pamięć. Istniejące pliki zostają na dysku.",
