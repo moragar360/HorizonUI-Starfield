@@ -3042,19 +3042,37 @@ namespace HZ
 		try { PushL10nNamed("MonocleMenu", "hzsSetL10n"); } catch (...) {}
 	}
 
-	// Purpose: push l10n to a module movie at create time, so Dialogue and
-	// Scanner (opened after the HUD gen latch) still get the table. HUD
-	// Messages is almost always live with the HUD; this covers a late adopt.
+	// Purpose: push the cached l10n table onto a module movie at create.
+	// Scanner / Dialogue open after the HUD gen latch, so PushL10nModules
+	// never sees them. MenuMovieCreated is not inside AdvanceFrame
+	// (advancing root is 0); MenuLive would refuse. Invoke this movie
+	// directly, once. If another movie is already advancing, skip so we
+	// never Invoke a foreign movie from inside its AdvanceFrame.
+	// Inputs: the created IMenu. Outputs: one Invoke. No disk, no timer.
 	// Author: Moragar. Last modified: 2026-11-27.
 	void PushL10nForMenu(RE::IMenu* a_menu)
 	{
 		if (!a_menu) return;
-		if (a_menu->menuName == "HUDMessagesMenu")
-			PushL10nNamed("HUDMessagesMenu", "hzcSetL10n");
-		else if (a_menu->menuName == "DialogueMenu")
-			PushL10nNamed("DialogueMenu", "hzdSetL10n");
-		else if (a_menu->menuName == "MonocleMenu")
-			PushL10nNamed("MonocleMenu", "hzsSetL10n");
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		const char* fn = nullptr;
+		if (a_menu->menuName == "HUDMessagesMenu") fn = "hzcSetL10n";
+		else if (a_menu->menuName == "DialogueMenu") fn = "hzdSetL10n";
+		else if (a_menu->menuName == "MonocleMenu") fn = "hzsSetL10n";
+		if (!fn) return;
+		if (!a_menu->uiMovie || !a_menu->uiMovie->asMovieRoot) return;
+		if (!a_menu->menuObj.IsObject() || !a_menu->menuObj.HasMember(fn)) return;
+		auto* root = a_menu->uiMovie->asMovieRoot.get();
+		if (hzlog::g_advancingMovie != hzlog::PollMovie::None
+			&& !hzlog::InvokeRootMatches(hzlog::g_advancingRoot, root))
+			return;
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) return;
+		GValue arg(payload.c_str());
+		a_menu->menuObj.Invoke(fn, nullptr, &arg, 1);
 	}
 
 	// Purpose: job / load thread preload of versionlib and the DLL file

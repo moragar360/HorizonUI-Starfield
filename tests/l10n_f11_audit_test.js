@@ -71,6 +71,11 @@ expect(/hzLt\("MODULE"\)/.test(drawSrc) && /hzLt\("ENABLE"\)/.test(drawSrc) && /
 	"module chrome MODULE / ENABLE / UNAVAILABLE is looked up");
 expect(/hzLt\("LIVE PREVIEW"\)/.test(drawSrc) && /hzLt\("SETTING DETAILS"\)/.test(drawSrc),
 	"LIVE PREVIEW and SETTING DETAILS headers are looked up");
+const head = fnText(draw, "hz51DrawHead").body;
+expect(/hzLt\("HORIZON UI"\)/.test(head) && /hzLt\("SETTINGS"\)/.test(head),
+	"F11 title cluster looks up HORIZON UI and SETTINGS");
+expect(/hzTW\(t1\)/.test(head) && /hzTW\(t2\)/.test(head) && !/16 \+ 128/.test(head) && !/pillX = 250/.test(head),
+	"F11 header places SETTINGS and the version chip from measured text, not a 90px / x=250 clip");
 expect(/hz51HelpOf\(String\(r\.k\)/.test(fnText(draw, "hz51DrawRight").body),
 	"Setting Details body is hz51HelpOf (table lookup), not a raw English literal");
 
@@ -94,11 +99,12 @@ const zh = {}; flatten(load("zh-cn"), "", zh);
 const es = {}; flatten(load("es"), "", es);
 const esmx = {}; flatten(load("es-mx"), "", esmx);
 const fr = {}; flatten(load("fr"), "", fr);
+const pl = {}; flatten(load("pl"), "", pl);
 function detailsOf(table, k) {
 	return table.settings && table.settings.details ? table.settings.details[k] : undefined;
 }
-const enJ = load("en"), deJ = load("de"), zhJ = load("zh-cn"), esJ = load("es"), mxJ = load("es-mx"), frJ = load("fr");
-let missingEn = 0, missingDe = 0, missingZh = 0, missingEs = 0, missingMx = 0, missingFr = 0;
+const enJ = load("en"), deJ = load("de"), zhJ = load("zh-cn"), esJ = load("es"), mxJ = load("es-mx"), frJ = load("fr"), plJ = load("pl");
+let missingEn = 0, missingDe = 0, missingZh = 0, missingEs = 0, missingMx = 0, missingFr = 0, missingPl = 0;
 for (const k of keys) {
 	if (!detailsOf(enJ, k)) missingEn++;
 	if (!detailsOf(deJ, k)) missingDe++;
@@ -106,6 +112,7 @@ for (const k of keys) {
 	if (!detailsOf(esJ, k)) missingEs++;
 	if (!detailsOf(mxJ, k)) missingMx++;
 	if (!detailsOf(frJ, k)) missingFr++;
+	if (!detailsOf(plJ, k)) missingPl++;
 }
 expect(missingEn === 0, "en.json has settings.details for every hz51Help case (" + keys.length + ")");
 expect(missingDe === 0, "de.json has settings.details for every hz51Help case");
@@ -113,6 +120,7 @@ expect(missingZh === 0, "zh-cn.json has settings.details for every hz51Help case
 expect(missingEs === 0, "es.json has settings.details for every hz51Help case");
 expect(missingMx === 0, "es-mx.json has settings.details for every hz51Help case");
 expect(missingFr === 0, "fr.json has settings.details for every hz51Help case");
+expect(missingPl === 0, "pl.json has settings.details for every hz51Help case");
 
 expect(en["settings.line.ScanHighlightArea"] && en["settings.line.ScanHighlightArea"].indexOf("How far from the screen center") === 0,
 	"English Highlight Area row line is the first sentence");
@@ -144,6 +152,13 @@ expect(fr["settings.line.ScanCompactAll"] && /MODE COMPACT/.test(fr["settings.li
 expect(fr["settings.details.modban"] && fr["settings.details.modban"].indexOf("This add-on") < 0,
 	"French module details are translated");
 expect(fr["hud.hud_label.press"] === "APPUYEZ", "French PRESS is APPUYEZ");
+expect(pl["settings.line.ScanHighlightArea"] && pl["settings.line.ScanHighlightArea"].indexOf("How far") < 0,
+	"Polish Highlight Area row line is not English");
+expect(pl["settings.line.ScanCompactAll"] && /KOMPAKT/.test(pl["settings.line.ScanCompactAll"]),
+	"Polish Compact-all subtitle is translated");
+expect(pl["settings.details.modban"] && pl["settings.details.modban"].indexOf("This add-on") < 0,
+	"Polish module details are translated");
+expect(pl["hud.hud_label.press"] === "NACIŚNIJ", "Polish PRESS is NACIŚNIJ");
 
 const f11Draw = (insert + "\n" + draw).replace(/private function hz51Pv[A-Za-z]+\([\s\S]*?(?=\n      private function )/g, "");
 const rawHelp = f11Draw.match(/hz51T\(b,"[A-Za-z][^"]{12,}"/g) || [];
@@ -193,6 +208,14 @@ expect(en["settings.line.Language"] && de["settings.line.Language"]
 	"German Horizon Language row help is translated");
 expect(/hzLt\(String\(it\.s\)\)/.test(draw) && /hzLt\(String\(grp\.g\)\)/.test(draw),
 	"sidebar subtitles and group headers go through hzLt");
+expect(de["hud.hud_label.settings"] && de["hud.hud_label.settings"].indexOf("EINSTELL") === 0,
+	"German SETTINGS is EINSTELLUNGEN (the string that used to clip before the version chip)");
+expect(pl["hud.hud_label.settings"] && pl["hud.hud_label.settings"].length > 8,
+	"Polish SETTINGS is a long label the header reflow must fit");
+expect(lookup(de, "ARRANGE SCANNER") && lookup(de, "ARRANGE SCANNER") !== "ARRANGE SCANNER",
+	"German ARRANGE SCANNER is translated");
+expect(lookup(de, "COMPACT MODE (STRIPS)") && lookup(de, "COMPACT MODE (STRIPS)") !== "COMPACT MODE (STRIPS)",
+	"German COMPACT MODE (STRIPS) is translated");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

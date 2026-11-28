@@ -147,6 +147,15 @@ expect(fr["hud.hud_label.local_game"] === "LOC./JEU" && fr["hud.hud_label.pc_rea
 expect(fr["hud.hud_label.local_game"] !== fr["settings.ui.local_game"]
 	&& fr["hud.hud_label.pc_real"] !== fr["settings.ui.pc_real"],
 	"French HUD clock keys differ from Settings so the explicit hud.hud_label lookup is required");
+const pl = {};
+flatten(JSON.parse(fs.readFileSync(path.join(locDir, "pl.json"), "utf8")), "", pl);
+expect(pl["settings.ui.local_game"] === "LOKAL/GRA" && pl["settings.ui.pc_real"] === "PC/REALNY",
+	"Settings Polish LOCAL/GAME and PC/REAL strings are short HUD labels");
+expect(pl["hud.hud_label.local_game"] === "LOK./GRA" && pl["hud.hud_label.pc_real"] === "PC/CZAS",
+	"HUD Polish clock labels are LOK./GRA and PC/CZAS");
+expect(pl["hud.hud_label.local_game"] !== pl["settings.ui.local_game"]
+	&& pl["hud.hud_label.pc_real"] !== pl["settings.ui.pc_real"],
+	"Polish HUD clock keys differ from Settings so the explicit hud.hud_label lookup is required");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

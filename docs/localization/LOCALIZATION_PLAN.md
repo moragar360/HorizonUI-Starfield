@@ -82,8 +82,9 @@ Data/SFSE/Plugins/HorizonUI/Localization/
   es.json
   es-mx.json
   fr.json
+  pl.json
   zh-cn.json
-  (it, ja, pl, pt-br fall back to English until a translator ships them)
+  (it, ja, pt-br fall back to English until a translator ships them)
 ```
 
 The DLL is already the file owner for Message Log JSON and Quick Slots JSON. Localization is the same idea: read once, off the UI thread, cache forever.
@@ -272,7 +273,7 @@ Map:
 | `pt-br.json` | `ptbr`, `pt-br`, `brazilian` |
 | `zh-cn.json` | `zh-cn`, `zhhans`, `zh`, `schinese` |
 
-Missing overlay → English. Unknown token stays as a lowercased community stem. Korean and Greek are not listed. Dropdown labels are native names with English in parentheses (`Deutsch (German)`). The Language list is the ten Steam stems even when only `en` / `de` / `zh-cn` files exist. `fr.json` is shipped.
+Missing overlay → English. Unknown token stays as a lowercased community stem. Korean and Greek are not listed. Dropdown labels are native names with English in parentheses (`Deutsch (German)`). The Language list is the ten Steam stems even when only `en` / `de` / `zh-cn` files exist. `fr.json` and `pl.json` are shipped.
 
 **Cost vs 0.43.4:** a few INI string reads at init. **Pass.**
 
@@ -632,7 +633,7 @@ This is the bar. If a phase misses it, that phase does not ship.
 
 - FOMOD installer localization (Vortex/MO2 language)
 - Full INI comment translation
-- Shipping `it.json` / `ja.json` / `pl.json` / `pt-br.json` when translators arrive (stems and fallback already exist; missing file is English). `es.json`, `es-mx.json`, and `fr.json` are shipped.
+- Shipping `it.json` / `ja.json` / `pt-br.json` when translators arrive (stems and fallback already exist; missing file is English). `es.json`, `es-mx.json`, `fr.json`, and `pl.json` are shipped.
 - Live language switch without restart
 - Native `$HZ_` export
 - Papyrus (none)

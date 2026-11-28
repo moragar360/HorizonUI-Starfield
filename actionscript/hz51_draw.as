@@ -83,15 +83,29 @@
       private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          this.hz51Hair(g,0,HZ51_HEAD - 1,W,1,uint(T.txt),0.10);
-         this.hz51T(b,this.hzLt("HORIZON UI"),16,14,150,16,"bd",uint(T.txt),2.4);
-         this.hz51T(b,this.hzLt("SETTINGS"),16 + 128,18,90,11,"sb",uint(T.lab),2.0);
-         var hv:String = HZ_BUILD;
-         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var lay:Object = this.hz51HeadSlots();
+         var maxR:Number = Number(lay.cx) - 8;
+         var title:String = this.hzLt("HORIZON UI");
+         var setn:String = this.hzLt("SETTINGS");
+         var t1:TextField = this.hz51T(b,title,16,14,280,16,"bd",uint(T.txt),2.4);
+         var tw1:Number = Math.ceil(this.hzTW(t1));
+         t1.width = tw1 + 4;
+         var sx:Number = 16 + tw1 + 10;
+         var t2:TextField = this.hz51T(b,setn,sx,18,280,11,"sb",uint(T.lab),2.0);
+         var tw2:Number = Math.ceil(this.hzTW(t2));
          var pillW:Number = 78;
-         var pillX:Number = 250;
+         var pillX:Number = sx + tw2 + 10;
+         if(pillX + pillW > maxR)
+         {
+            pillX = Math.max(sx + 36, maxR - pillW);
+            tw2 = Math.max(24, pillX - sx - 8);
+         }
+         t2.width = tw2 + 4;
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
          this.hz51T(b,"v" + hv,pillX + 16,16,pillW - 22,11,"sb",uint(T.lab),0.4);
          this.hz51DrawCompact(b,g,T,acc,W);
       }
