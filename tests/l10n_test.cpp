@@ -430,6 +430,31 @@ int main()
 			"es-mx overlay wins over es for Latin American wording");
 	}
 
+	const auto fr = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/fr.json");
+	Expect(!fr.empty() && Has(fr, "\"language\": \"fr\"") && Has(fr, "SANT") && Has(fr, "FRAN"),
+		"shipped fr.json is French");
+	Expect(!(fr.size() >= 3 && static_cast<unsigned char>(fr[0]) == 0xEF
+			&& static_cast<unsigned char>(fr[1]) == 0xBB && static_cast<unsigned char>(fr[2]) == 0xBF),
+		"fr.json is UTF-8 with no BOM");
+	Expect(Exo2Can("Fran\xC3\xA7" "ais") && Exo2Can("FRAN\xC3\x87" "AIS")
+			&& Exo2Can("\xC3\xA0\xC3\xA9\xC3\xA8\xC3\xAA\xC3\xAB\xC3\xAE\xC3\xAF\xC3\xB4\xC3\xB9\xC3\xBB\xC3\xBC\xC3\xA7"),
+		"Exo2Can: Francais and French diacritics");
+	{
+		const auto shippedDir = std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization");
+		const auto tfr = Load(shippedDir, "fr", "en");
+		Expect(tfr.usedCode == "fr" && Get(tfr, "hud.health", "X") == "SANT\xC3\x89",
+			"shipped fr.json overlays English");
+		Expect(Get(tfr, "settings.language.fr", "X") == "FRAN\xC3\x87" "AIS",
+			"Language dropdown shows Francais natively");
+		std::unordered_map<std::string, std::string> flat;
+		Expect(ParseFlat(fr, flat), "ParseFlat: shipped French table");
+		bool glyphOk = true;
+		for (const auto& kv : flat) {
+			if (!Exo2Can(kv.second)) { glyphOk = false; break; }
+		}
+		Expect(glyphOk, "every shipped fr.json string is in the Exo 2 glyph set");
+	}
+
 	if (g_fail) {
 		std::cerr << "\n" << g_fail << " failed, " << g_ok << " passed\n";
 		return 1;

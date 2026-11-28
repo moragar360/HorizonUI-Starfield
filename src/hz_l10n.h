@@ -530,7 +530,7 @@ inline std::vector<std::string> ListLangFiles(const std::filesystem::path& a_dir
 }
 
 // Auto is prepended in ActionScript. Official Steam stems always appear so a
-// missing fr.json still shows Français (French) and falls back to English.
+// missing it.json still shows Italiano (Italian) and falls back to English.
 inline std::vector<std::string> DropdownCodes(const std::filesystem::path& a_dir)
 {
 	std::vector<std::string> out;

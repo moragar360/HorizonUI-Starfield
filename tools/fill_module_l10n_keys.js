@@ -209,6 +209,51 @@ const TABLES = {
 			saving: "Guardando"
 		}
 	},
+	fr: {
+		dlg: { of: "SUR", above: "AU-DESSUS" },
+		comms: { level_up_you_are_now_level_n: "Niveau supérieur ! Vous êtes maintenant niveau {n}." },
+		scan: {
+			landing_zone: "Zone d'atterrissage",
+			follower: "Suiveur",
+			discovered: "Découvert",
+			companion_ship: "Vaisseau compagnon",
+			still_some_to_find_here: "il reste des choses ici",
+			none_in_this_biome: "rien dans ce biome",
+			nothing_left_to_find_here: "plus rien à trouver ici",
+			no_bounty: "Aucune prime",
+			no_social_skill_to_use: "aucune compétence sociale"
+		},
+		ui: {
+			all: "TOUT",
+			pin: "FIXER",
+			horizon_ui_message_log: "HORIZON UI · JOURNAL",
+			find_ellipsis: "Chercher...",
+			find_keyboard_only: "Chercher (clavier seul)",
+			clear_this_session: "Effacer cette session ?",
+			"Removes {n} shown unpinned messages. Hidden messages stay. Can't be undone.": "Retire {n} messages visibles non fixés. Les messages masqués restent. Irréversible.",
+			pinned_n_cap: "FIXÉS {n} / {cap}",
+			today_this_session: "Aujourd'hui · cette session",
+			this_session: "Cette session",
+			today_earlier: "Aujourd'hui · plus tôt",
+			earlier: "Plus tôt",
+			min_ago: " min",
+			h_ago: " h",
+			d_ago: " j",
+			no_messages_for_the_types_that_are_shown_stored: "Aucun message pour les types affichés. Les messages stockés restent.",
+			"Starts empty. Messages from before this log was on cannot be recovered.": "Vide au départ. Les messages d'avant l'activation de ce journal ne peuvent pas être récupérés.",
+			from_a_later_point: "à partir d'un moment plus tard",
+			local: "local",
+			memory_only_existing_files_stay_on_disk: "Mémoire seulement. Les fichiers existants restent sur le disque.",
+			show_hides_rows_in_this_log_record_chooses_what: "AFFICHER masque des lignes de ce journal. ENREG. choisit ce qui est sauvé.",
+			old_characters_n_files: "ANCIENS PERSONNAGES ({n} FICHIERS)",
+			clear_all_history: "Effacer tout l'historique ?",
+			"Removes every unpinned message for this character. Pins stay. Can't be undone.": "Retire chaque message non fixé de ce personnage. Les messages fixés restent. Irréversible.",
+			read_only_the_current_character_is_not_listed: "Lecture seule. Le personnage actuel n'est pas listé.",
+			no_other_character_files: "Aucun autre fichier de personnage.",
+			messages: "messages",
+			saving: "Enregistrement"
+		}
+	},
 	"zh-cn": {
 		dlg: { of: "/", above: "上方" },
 		comms: { level_up_you_are_now_level_n: "升级！你现在是等级 {n}。" },

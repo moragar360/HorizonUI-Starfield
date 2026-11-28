@@ -70,6 +70,8 @@ host.hz51LangOpts = toJs(insert, "hz51LangOpts").bind(host);
 
 expect(host.hzExo2Can("Deutsch (German)") && host.hzExo2Can("Español (Spanish)") && host.hzExo2Can("Français (French)"),
 	"Exo 2 can draw German / Spanish / French native names");
+expect(host.hzExo2Can("Français") && host.hzExo2Can("FRANÇAIS") && host.hzExo2Can("çœæ"),
+	"Exo 2 can draw Français natively including French diacritics");
 expect(host.hzExo2Can("Polski") && host.hzExo2Can("Português (Brasil)") && host.hzExo2Can("Italiano (Italian)"),
 	"Exo 2 can draw Polish / Portuguese / Italian");
 expect(!host.hzExo2Can("日本語 (Japanese)") && !host.hzExo2Can("简体中文 (Simplified Chinese)"),
@@ -120,12 +122,15 @@ expect(!String(host.hz51LangName("pt-br")).includes("...") && host.hz51LangName(
 host.hzL10n = {
 	"settings.language.ja": "日本語 (Japanese)",
 	"settings.language.zh-cn": "简体中文 (Simplified Chinese)",
-	"settings.language.de": "Deutsch (German)"
+	"settings.language.de": "Deutsch (German)",
+	"settings.language.fr": "FRANÇAIS"
 };
 expect(host.hz51LangName("ja") === "Japanese" && host.hz51LangName("zh-cn") === "Simplified Chinese",
 	"Final rule: overlay native CJK names still become English in Exo 2 (Clarification superseded)");
 expect(host.hz51LangName("de") === "Deutsch (German)",
 	"an overlay that stays in Exo 2 keeps the native name");
+expect(host.hz51LangName("fr") === "FRANÇAIS",
+	"a French overlay keeps Français natively in Exo 2");
 host.hzL10n = null;
 
 const steam = ["en", "de", "fr", "it", "es", "es-mx", "ja", "pl", "pt-br", "zh-cn"];
@@ -152,6 +157,8 @@ expect(/txt = this\.hz51Exo2Text\(txt\)/.test(draw) && /var maxTw:Number = this\
 	"closed chip and list width follow the longest Exo-2 label, not only the selected English row");
 
 const langs = en.settings.language;
+expect(langs.fr === "Français (French)",
+	"en.json ships Français natively for the French dropdown row");
 expect(langs.ja === "Japanese" && langs["zh-cn"] === "Simplified Chinese",
 	"en.json ships English-only ja / zh-cn dropdown labels");
 expect(langs["es-mx"] === "Español (Latinoamérica)" && langs["pt-br"] === "Português (Brasil)",
