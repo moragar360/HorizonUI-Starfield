@@ -79,8 +79,14 @@ const setL = fnText(as, "hzSetL10n").body;
 expect(/hzL10nGame/.test(setL) && /hzL10nFiles/.test(setL), "one payload fills the detected language and the file list");
 expect(/URLLoader/.test(setL) === false && /LoadVars/.test(setL) === false, "AS receiver does no file I/O");
 
-expect(/DetectGameLanguage/.test(cpp) && /appmanifest_1716740/.test(cpp) && /sLanguage:General/.test(cpp),
-	"GAME LANGUAGE is live sLanguage:General or the Steam/INI stack, cached at start");
+expect(/DetectGameLanguage/.test(cpp) && /appmanifest_1716740/.test(cpp) && /L10nAdoptLiveIfReady/.test(cpp),
+	"GAME LANGUAGE is the Steam/INI stack at init; live sLanguage:General may correct a non-English engine value after data load");
+expect(/hz51Line\(k, r\)/.test(fnText(as, "hz51Finish").body) && /r\.dis/.test(fnText(as, "hz51Finish").body),
+	"disabled GAME LANGUAGE row uses the short line, not the long details string");
+expect(/wordWrap = true/.test(fnText(as, "hz51DrawList").body) && !/hzFitText\(ht2/.test(fnText(as, "hz51DrawList").body),
+	"row help wraps instead of ellipsizing");
+expect(/tf\.height = Math.max\(48, dH - 56\)/.test(fnText(as, "hz51DrawRight").body),
+	"SETTING DETAILS fills the box instead of shrinking to a one-line textHeight");
 expect(/L10nLoad/.test(cpp) && /PushL10n/.test(cpp), "DLL load + latched push");
 expect(cpp.indexOf("void Poll()") >= 0, "Poll still exists");
 function cppFn(name) {

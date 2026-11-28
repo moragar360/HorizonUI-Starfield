@@ -29,6 +29,8 @@ const cpp = rd("src/main.cpp");
 expect(/function hzcSetL10n/.test(hzc) && /function hzcLt\(/.test(hzc), "HUDMessagesMenu has hzcSetL10n / hzcLt");
 expect(/function hzdSetL10n/.test(hzd) && /function hzdLt\(/.test(hzd), "DialogueMenu has hzdSetL10n / hzdLt");
 expect(/function hzsSetL10n/.test(hzs) && /function hzsLt\(/.test(hzs), "MonocleMenu has hzsSetL10n / hzsLt");
+expect(/private var hzsL:Sprite/.test(hzs) && /function hzsLk\(/.test(hzs) && !/function hzsL\(/.test(hzs),
+	"scanner lookup is hzsLk; hzsL stays the layer Sprite (same-name ABC CTDs on open)");
 
 expect(hzc.indexOf('this.hzcLt("SPEAKING")') >= 0, "speaker card SPEAKING is Horizon chrome through hzcLt");
 expect(hzc.indexOf('this.hzcLt(String(HZC_TST_HEAD[st]))') >= 0, "mission toast heads go through hzcLt at toast build");
@@ -57,8 +59,8 @@ expect(hzs.indexOf('this.hzsCs("Landing zone")') >= 0 && hzs.indexOf('this.hzsCs
 	"scanner Horizon subs (Landing zone / Companion) go through hzsCs");
 
 const tick = fnText(hzs, "hzsTick");
-expect(tick && tick.body.indexOf("hzsLt(") < 0 && tick.body.indexOf("hzsL(") < 0,
-	"hzsTick does not call hzsL/hzsLt directly (memo lives in hzsCs)");
+expect(tick && tick.body.indexOf("hzsLt(") < 0 && tick.body.indexOf("hzsLk(") < 0,
+	"hzsTick does not call hzsLk/hzsLt directly (memo lives in hzsCs)");
 const toast = fnText(hzc, "hzcToastFrame");
 expect(toast && toast.body.indexOf("hzcLt(") < 0 && toast.body.indexOf("hzcL(") < 0,
 	"toast ENTER_FRAME does not look up strings");

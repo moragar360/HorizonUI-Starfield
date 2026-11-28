@@ -61,8 +61,8 @@ expect(/EXTENDED SLOT KEYS/.test(quick) && /QuickMenuExtEmptySlots/.test(quick),
 const t19 = fnText(as, "hzT19Tick").body;
 expect(/!this\.hzShowTarget/.test(t19) && /hzT19Off/.test(t19),
 	"6: Target Card off restores and hides the Horizon prompt so vanilla is untouched");
-expect(/hzTgSnap\(d, true\)/.test(as) && /hideA && a < 0.05/.test(fnText(as, "hzTgSnap").body),
-	"6: HideA of mid-rollOn prompt art stores shown alpha 1 so Hover + Container off restores the name and TALK row");
+expect(/hzTgSnap\(d, true\)/.test(as) && /if\(hideA\)/.test(fnText(as, "hzTgSnap").body) && /vis = true/.test(fnText(as, "hzTgSnap").body),
+	"6: HideA of mid-rollOn prompt art stores shown alpha 1 and visible true so Hover-off restores the name and TALK row");
 
 const btn = fnText(as, "hzSetBtn").body;
 expect(/28 - t\.textHeight/.test(btn),

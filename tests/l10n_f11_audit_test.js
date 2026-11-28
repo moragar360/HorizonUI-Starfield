@@ -1,6 +1,6 @@
 // F11 localization audit: every Setting Details / row line / module body
 // is looked up by setting key (settings.details.<k> / settings.line.<k>),
-// z-row help is clipped before the GLOBAL chip, and draw chrome uses hzLt.
+// z-row labels reserve the chip column, row help wraps, and draw chrome uses hzLt.
 // Run: node tests/l10n_f11_audit_test.js
 // Author: Moragar. Last modified: 2026-11-27.
 "use strict";
@@ -60,9 +60,8 @@ expect(!/r\.note = this\.hzLt/.test(locOne) && !/r\.inote = this\.hzLt/.test(loc
 const list = fnText(draw, "hz51DrawList").body;
 expect(/HZ51_Z_RESERVE/.test(list) && /r\.t == "z"/.test(list),
 	"z-rows (COMPACT STRIPS: SIZE and other chip+slider sizes) reserve the chip/slider column");
-expect(/hzFitText\(ht2, help, labW\)/.test(list),
-	"row help truncates with an ellipsis before the control column");
-expect(/wordWrap = false/.test(list), "row help stays one line (row height is 48px)");
+expect(/wordWrap = true/.test(list) && /multiline = true/.test(list) && !/hzFitText\(ht2/.test(list),
+	"row help wraps to fit instead of chopping with an ellipsis");
 
 const z = fnText(as, "hz34ZDraw").body;
 expect(/hzLt\(glob \? "GLOBAL" : "CUSTOM"\)/.test(z), "GLOBAL/CUSTOM chip text goes through hzLt");

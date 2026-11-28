@@ -193,6 +193,8 @@ namespace HZ
 	void FilesJobPreload();
 	static int HzAddrSlot(std::uint64_t a_id);
 	void L10nLoadOnce();
+	void L10nApply(const std::string& a_override, bool a_forceReload);
+	void L10nAdoptLiveIfReady();
 	void L10nReloadIfLanguage(const std::string& a_v);
 	void PushL10n();
 	void PushL10nFavorites();
@@ -2747,6 +2749,7 @@ namespace HZ
 	std::string                   g_l10nGameHeld;
 	std::atomic<bool>             g_l10nReady{false};
 	std::atomic<bool>             g_l10nGameLatched{false};
+	std::atomic<bool>             g_l10nLiveCheck{false};
 	std::atomic<std::uint32_t>    g_l10nGen{0};
 	std::atomic<std::uint32_t>    g_l10nPushed{0};
 	std::atomic<bool>             g_l10nLogged{false};
@@ -2824,59 +2827,80 @@ namespace HZ
 	}
 
 	// Purpose: Starfield sLanguage once at init. Cached. Never polled.
-	// Live INISettingCollection sLanguage:General wins when the collection
-	// is already loaded (that is the value the string files used). Otherwise
-	// the game INI stack: Starfield.ini, Starfield_<Steam lang>.ini from
-	// appmanifest_1716740.acf UserConfig.language, Prefs, Custom last-wins.
-	// Steam ACF is the language when no INI sets sLanguage (German Steam
-	// writes Starfield_de.ini; Prefs/Custom stay empty). Registry is unused.
-	// File I/O stays on the job thread. Author: Moragar. Last modified: 2026-11-27.
+	// File stack only at plugin load: Starfield.ini, Starfield_<Steam lang>.ini
+	// from appmanifest_1716740.acf, Prefs, Custom last-wins. Steam ACF is the
+	// language when no INI sets sLanguage (German Steam writes Starfield_de.ini;
+	// Prefs/Custom stay empty). Live INISettingCollection sLanguage:General is
+	// NOT used here: at SFSE load it is the compile default "en", which hid
+	// Starfield_de.ini and showed ENGLISH while quest text was German.
+	// A later one-shot live read (after kPostDataLoad, on the job thread)
+	// may adopt a non-English engine value. Registry is unused. File I/O
+	// stays on the job thread. Author: Moragar. Last modified: 2026-11-27.
 	std::string L10nDetectGame()
 	{
 		if (g_l10nGameLatched.load(std::memory_order_acquire)) {
 			std::lock_guard lk(g_l10nMu);
 			return g_l10nGameHeld;
 		}
-		std::string mapped;
-		const char* src = "ini stack";
-		const auto live = L10nReadLiveSLanguage();
-		const auto liveMapped = hzl10n::MapCode(live);
-		if (!live.empty() && !liveMapped.empty() && liveMapped != "auto") {
-			mapped = liveMapped;
-			src = "sLanguage:General";
-		} else {
-			wchar_t exe[MAX_PATH]{};
-			GetModuleFileNameW(nullptr, exe, MAX_PATH);
-			const auto exeDir = std::filesystem::path(exe).parent_path();
-			std::string acf, gameIni, prefs, custom;
-			hzl10n::ReadUtf8File(exeDir / L"Starfield.ini", gameIni);
-			hzl10n::ReadUtf8File(exeDir.parent_path().parent_path() / L"appmanifest_1716740.acf", acf);
-			std::unordered_map<std::string, std::string> langIni;
-			const auto steam = hzl10n::MapCode(hzl10n::ParseSteamAcfLanguage(acf));
-			if (!steam.empty() && steam != "auto") {
-				const auto fn = hzl10n::LanguageIniName(steam);
-				std::string body;
-				if (hzl10n::ReadUtf8File(exeDir / fn, body)) langIni[fn] = std::move(body);
-			}
-			PWSTR docs = nullptr;
-			if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
-				std::filesystem::path base(docs);
-				::CoTaskMemFree(docs);
-				base /= L"My Games";
-				base /= L"Starfield";
-				hzl10n::ReadUtf8File(base / L"StarfieldPrefs.ini", prefs);
-				hzl10n::ReadUtf8File(base / L"StarfieldCustom.ini", custom);
-			}
-			mapped = hzl10n::DetectGameLanguage(acf, gameIni, langIni, prefs, custom);
+		wchar_t exe[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, exe, MAX_PATH);
+		const auto exeDir = std::filesystem::path(exe).parent_path();
+		std::string acf, gameIni, prefs, custom;
+		hzl10n::ReadUtf8File(exeDir / L"Starfield.ini", gameIni);
+		hzl10n::ReadUtf8File(exeDir.parent_path().parent_path() / L"appmanifest_1716740.acf", acf);
+		std::unordered_map<std::string, std::string> langIni;
+		const auto steam = hzl10n::MapCode(hzl10n::ParseSteamAcfLanguage(acf));
+		if (!steam.empty() && steam != "auto") {
+			const auto fn = hzl10n::LanguageIniName(steam);
+			std::string body;
+			if (hzl10n::ReadUtf8File(exeDir / fn, body)) langIni[fn] = std::move(body);
 		}
+		PWSTR docs = nullptr;
+		if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
+			std::filesystem::path base(docs);
+			::CoTaskMemFree(docs);
+			base /= L"My Games";
+			base /= L"Starfield";
+			hzl10n::ReadUtf8File(base / L"StarfieldPrefs.ini", prefs);
+			hzl10n::ReadUtf8File(base / L"StarfieldCustom.ini", custom);
+		}
+		auto mapped = hzl10n::DetectGameLanguage(acf, gameIni, langIni, prefs, custom);
 		if (mapped.empty() || mapped == "auto") mapped = "en";
 		{
 			std::lock_guard lk(g_l10nMu);
 			g_l10nGameHeld = mapped;
 		}
 		g_l10nGameLatched.store(true, std::memory_order_release);
-		REX::INFO("l10n: game language {} ({})", mapped, src);
+		REX::INFO("l10n: game language {} (ini stack)", mapped);
 		return mapped;
+	}
+
+	// Purpose: one-shot after kPostDataLoad. Live sLanguage:General is trusted
+	// only when it is a non-English mapped code (the engine applied a language
+	// INI). Live "en" is the compile default and must not replace a German
+	// Steam/INI-stack result. JSON reload stays on the job thread.
+	// Inputs: flag from OnMessage. Outputs: maybe a table reload.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void L10nAdoptLiveIfReady()
+	{
+		if (!g_l10nLiveCheck.exchange(false, std::memory_order_acq_rel)) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		const auto live = L10nReadLiveSLanguage();
+		const auto mapped = hzl10n::MapCode(live);
+		if (mapped.empty() || mapped == "auto" || mapped == "en") return;
+		std::string held, ov;
+		{
+			std::lock_guard lk(g_l10nMu);
+			held = g_l10nGameHeld;
+			ov = g_l10nOverrideHeld;
+		}
+		if (mapped == held) return;
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10nGameHeld = mapped;
+		}
+		REX::INFO("l10n: game language {} (sLanguage:General after data load; was {})", mapped, held);
+		try { L10nApply(ov == "auto" ? std::string() : ov, true); } catch (...) {}
 	}
 
 	std::string L10nReadOverride()
@@ -3041,6 +3065,7 @@ namespace HZ
 		HzAddrLoad();
 		PreloadDllFileVersion();
 		L10nLoadOnce();
+		try { L10nAdoptLiveIfReady(); } catch (...) {}
 	}
 
 	static int HzAddrSlot(std::uint64_t a_id)
@@ -6554,6 +6579,7 @@ namespace HZ
 			RegisterMenuOpenCloseSink();   // perf round 2: event-kept open-menu set for the HUD menu check
 			LoadIni();
 			try { QmDetectOnce(); } catch (...) {}
+			g_l10nLiveCheck.store(true, std::memory_order_release);
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });
 				REX::INFO("hotkey poller registered");

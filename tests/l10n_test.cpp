@@ -270,12 +270,18 @@ int main()
 	Expect(Has(preload, "L10nLoad"), "FilesJobPreload loads localization (file I/O off the UI thread)");
 
 	const auto detect = fnBody("std::string L10nDetectGame()");
-	Expect(Has(detect, "DetectGameLanguage") && Has(detect, "appmanifest_1716740") && Has(detect, "sLanguage:General"),
-		"L10nDetectGame uses live sLanguage:General then the game INI stack + Steam ACF");
+	Expect(Has(detect, "DetectGameLanguage") && Has(detect, "appmanifest_1716740"),
+		"L10nDetectGame uses the game INI stack + Steam ACF at init");
+	Expect(!Has(detect, "L10nReadLiveSLanguage") && !Has(detect, "sLanguage:General"),
+		"init detect does not latch live sLanguage:General (engine default is en)");
 	Expect(!Has(detect, "StarfieldCustom.ini\", L\"StarfieldPrefs.ini\""),
 		"L10nDetectGame no longer stops at the first Documents INI");
-	Expect(Has(cpp, "L10nReadLiveSLanguage") && Has(cpp, "HzL10nLangSEH"),
-		"live sLanguage:General is one SEH read, not a poll");
+	Expect(Has(cpp, "L10nReadLiveSLanguage") && Has(cpp, "HzL10nLangSEH") && Has(cpp, "L10nAdoptLiveIfReady"),
+		"live sLanguage:General is one SEH read after data load, not a poll");
+	const auto adopt = fnBody("void L10nAdoptLiveIfReady()");
+	Expect(Has(adopt, "mapped == \"en\"") && Has(adopt, "sLanguage:General after data load"),
+		"live en cannot replace a German INI-stack result");
+	Expect(Has(preload, "L10nAdoptLiveIfReady"), "live adopt runs on the job thread with JSON load");
 	Expect(!Has(poll, "L10nDetectGame") && !Has(poll, "ParseSteamAcfLanguage"),
 		"Poll does not re-detect the game language");
 

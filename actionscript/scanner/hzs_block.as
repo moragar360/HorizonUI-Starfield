@@ -162,7 +162,9 @@
          }
          return o;
       }
-      private function hzsL(key:String, fb:String) : String
+      // Named hzsLk so it cannot share a slot with the Horizon layer sprite hzsL.
+      // A function and a var of the same name is illegal ABC and CTDs MonocleMenu on open.
+      private function hzsLk(key:String, fb:String) : String
       {
          if(this.hzsL10n != null)
          {
@@ -231,7 +233,7 @@
             var i:int = 0;
             while(i < pfx.length)
             {
-               var v:String = this.hzsL(String(pfx[i]) + slug, "");
+               var v:String = this.hzsLk(String(pfx[i]) + slug, "");
                if(v.length > 0) { out = v; break; }
                i++;
             }

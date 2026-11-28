@@ -69,7 +69,8 @@ function toJs(src, name) {
 
 {
 	const snap = fnText(SRC, "hzTgSnap").body;
-	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /hideA && a < 0\.05/.test(snap) && /\.push\(\{"d":d,"v":d\.visible,"a":a\}\)/.test(snap), "hzTgSnap records alpha and visible once per clip; HideA of a 0 stores 1");
+	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /if\(hideA\)/.test(snap) && /vis = true/.test(snap) && /\.push\(\{"d":d,"v":vis,"a":a\}\)/.test(snap),
+		"hzTgSnap records alpha and visible once per clip; HideA of mid-AnimIn art stores shown alpha 1 and visible true");
 	expect(/hideA:Boolean = false/.test(fnText(SRC, "hzTgSnap").params), "hzTgSnap hideA defaults false so KeepHold / Hide keep the real visible flag");
 	expect(!/ENTER_FRAME|getTimer|addEventListener/.test(snap), "hzTgSnap adds no per-frame work");
 	const hideA = fnText(SRC, "hzT19HideA").body;
@@ -229,6 +230,26 @@ function makeHost() {
 	expect(unused.visible === false, "language apply with Hover off restores unused key boxes");
 	expect(!h.HorizonTarget_mc.visible && !h.hzTg19.visible, "language apply with Hover off hides Horizon's circle");
 	expect(h.hzT19Sig === "", "language apply / Off clears the pill signature so TRADE restamps when Hover is on again");
+}
+
+{
+	const { h, header, glyph } = makeHost();
+	header.visible = false;
+	header.alpha = 0;
+	glyph.visible = false;
+	glyph.alpha = 0;
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	const origHeader = h.hzTgOrig.filter((o) => o.d === header)[0];
+	const origGlyph = h.hzTgOrig.filter((o) => o.d === glyph)[0];
+	expect(origHeader && origHeader.v === true && origHeader.a === 1, "HideA during AnimIn stores visible true (not the still-hidden flag)");
+	expect(origGlyph && origGlyph.v === true && origGlyph.a === 1, "HideA during AnimIn stores TALK glyph visible true");
+	h.hzShowTarget = false;
+	h.HorizonTarget_mc.visible = false;
+	h.hzTg19.visible = false;
+	h.hzT19Off();
+	expect(header.visible === true && header.alpha === 1, "Hover-off restores the vanilla name, not only the ObjectRing circle/leader");
+	expect(glyph.visible === true && glyph.alpha === 1, "Hover-off restores the vanilla TALK/TRADE verb row");
 }
 
 console.log("hover vanilla restore: " + passed + " ok, " + (failed ? failed + " FAILED" : "all passed"));

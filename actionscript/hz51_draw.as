@@ -428,9 +428,10 @@
             if(help.length > 0)
             {
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
-               ht2.wordWrap = false;
-               ht2.multiline = false;
-               this.hzFitText(ht2, help, labW);
+               ht2.wordWrap = true;
+               ht2.multiline = true;
+               ht2.width = labW;
+               ht2.height = 20;
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -784,7 +785,10 @@
          if(title.length > 0) { this.hz51T(b,title,px + 12,dy + 20,inn,HZ51_TITLE_PX,"bd",uint(T.txt),0.8); }
          var tf:TextField = this.hz51T(b,help,px + 12,dy + 40,inn,HZ51_HELP_PX,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = inn; tf.text = help;
-         this.hzMsglogWrap(tf,inn,Math.max(48, dH - 56));
+         // Fill the details box. hzMsglogWrap shrinks to textHeight, which
+         // Scaleform often reports as one line for embedFonts fields, clipping
+         // the paragraph at the bottom.
+         tf.height = Math.max(48, dH - 56);
          if(r != null && this.hz51On(String(r.k)) && String(r.k).indexOf("Show") == 0 && r.k != "ShowFollowers" && r.k != "ShowLocations" && r.k != "ShowShip" && r.k != "ShowEnemies" && r.k != "ShowPlayerMarker" && r.k != "ShowSpeaker" && r.k != "ShowTarget")
          {
             var ruleK:String = String(r.k).substr(4) + "Rule";

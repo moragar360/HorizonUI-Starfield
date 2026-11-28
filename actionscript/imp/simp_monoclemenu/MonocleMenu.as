@@ -1293,6 +1293,7 @@ package
 
 
 
+
       // ===================== Horizon UI Scanner (monoclemenu) =====================
       // ORIGINAL CODE (Horizon UI) v0.41.0. apply_scanner_hooks.ps1 inserts this block into the game's own MonocleMenu
       // class (exported from the player's monoclemenu.swf on the PC); no game script text is stored in the kit.
@@ -1456,7 +1457,9 @@ package
          }
          return o;
       }
-      private function hzsL(key:String, fb:String) : String
+      // Named hzsLk so it cannot share a slot with the Horizon layer sprite hzsL.
+      // A function and a var of the same name is illegal ABC and CTDs MonocleMenu on open.
+      private function hzsLk(key:String, fb:String) : String
       {
          if(this.hzsL10n != null)
          {
@@ -1525,7 +1528,7 @@ package
             var i:int = 0;
             while(i < pfx.length)
             {
-               var v:String = this.hzsL(String(pfx[i]) + slug, "");
+               var v:String = this.hzsLk(String(pfx[i]) + slug, "");
                if(v.length > 0) { out = v; break; }
                i++;
             }

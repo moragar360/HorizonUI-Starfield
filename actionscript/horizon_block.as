@@ -5668,12 +5668,11 @@
             var k:String = String(r.k);
             var help:String = this.hz51HelpOf(k, r);
             r.inote = help;
-            if(r.dis)
-            {
-               if(r.note == undefined || String(r.note).length == 0) { r.note = help; }
-               r.n13 = true;
-            }
-            else { r.note = this.hz51Line(k, r); }
+            // Empty notes get the short row line. Disabled rows (GAME LANGUAGE)
+            // used to copy the long details string into note, which hzFitText
+            // then chopped with '...'. Details stay in inote / SETTING DETAILS.
+            if(r.note == undefined || String(r.note).length == 0) { r.note = this.hz51Line(k, r); }
+            if(r.dis) { r.n13 = true; }
             if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {
@@ -7271,9 +7270,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(help.length > 0)
             {
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
-               ht2.wordWrap = false;
-               ht2.multiline = false;
-               this.hzFitText(ht2, help, labW);
+               ht2.wordWrap = true;
+               ht2.multiline = true;
+               ht2.width = labW;
+               ht2.height = 20;
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -7627,7 +7627,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(title.length > 0) { this.hz51T(b,title,px + 12,dy + 20,inn,HZ51_TITLE_PX,"bd",uint(T.txt),0.8); }
          var tf:TextField = this.hz51T(b,help,px + 12,dy + 40,inn,HZ51_HELP_PX,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = inn; tf.text = help;
-         this.hzMsglogWrap(tf,inn,Math.max(48, dH - 56));
+         // Fill the details box. hzMsglogWrap shrinks to textHeight, which
+         // Scaleform often reports as one line for embedFonts fields, clipping
+         // the paragraph at the bottom.
+         tf.height = Math.max(48, dH - 56);
          if(r != null && this.hz51On(String(r.k)) && String(r.k).indexOf("Show") == 0 && r.k != "ShowFollowers" && r.k != "ShowLocations" && r.k != "ShowShip" && r.k != "ShowEnemies" && r.k != "ShowPlayerMarker" && r.k != "ShowSpeaker" && r.k != "ShowTarget")
          {
             var ruleK:String = String(r.k).substr(4) + "Rule";
@@ -12996,8 +12999,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(this.hzTgOrigD.indexOf(d) >= 0) { return; }
          this.hzTgOrigD.push(d);
          var a:Number = d.alpha;
-         if(hideA && a < 0.05) { a = 1; }
-         this.hzTgOrig.push({"d":d,"v":d.visible,"a":a});
+         var vis:Boolean = d.visible;
+         // Prompt art (Header / name / TALK glyphs): vanilla rollOn / AnimIn can
+         // still have visible=false and alpha 0. Restore must bring those back
+         // (ObjectRing VANILLA keeps the circle and leader even when the name
+         // row stays hidden). Unused key boxes use hideA false and keep the
+         // real visible flag.
+         if(hideA)
+         {
+            if(a < 0.05) { a = 1; }
+            vis = true;
+         }
+         this.hzTgOrig.push({"d":d,"v":vis,"a":a});
       }
 
       private function hzTgRestore() : void

@@ -914,12 +914,11 @@
             var k:String = String(r.k);
             var help:String = this.hz51HelpOf(k, r);
             r.inote = help;
-            if(r.dis)
-            {
-               if(r.note == undefined || String(r.note).length == 0) { r.note = help; }
-               r.n13 = true;
-            }
-            else { r.note = this.hz51Line(k, r); }
+            // Empty notes get the short row line. Disabled rows (GAME LANGUAGE)
+            // used to copy the long details string into note, which hzFitText
+            // then chopped with '...'. Details stay in inote / SETTING DETAILS.
+            if(r.note == undefined || String(r.note).length == 0) { r.note = this.hz51Line(k, r); }
+            if(r.dis) { r.n13 = true; }
             if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {

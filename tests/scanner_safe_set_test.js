@@ -61,7 +61,7 @@ global.MapMarkerUtils = {
 };
 const HZS41_SHIP_PLAYER_RT = 83;
 
-const FNS = ["hzsTr", "hzsMarkName", "hzs41CmpAll", "hzs41CmpBuild", "hzsCmpMarks", "hzsCmpMarkList", "hzs41MyShip", "hzs41MyVeh", "hzs41IsShip", "hzs41IsPlayerShipT", "hzsIsFol", "hzsOn", "hzsTitle", "hzsCs", "hzsGs", "hzsOnCmp", "hzsLt", "hzsHasCjk", "hzsL", "hzsLSlug"];
+const FNS = ["hzsTr", "hzsMarkName", "hzs41CmpAll", "hzs41CmpBuild", "hzsCmpMarks", "hzsCmpMarkList", "hzs41MyShip", "hzs41MyVeh", "hzs41IsShip", "hzs41IsPlayerShipT", "hzsIsFol", "hzsOn", "hzsTitle", "hzsCs", "hzsGs", "hzsOnCmp", "hzsLt", "hzsHasCjk", "hzsL", "hzsLk", "hzsLSlug"];
 function makeHost(src) {
 	const h = {
 		HZS41_SHIP_PLAYER_RT, hzsC: { ScanTextCase: -1, ScanShowShip: 1 }, hzsS: { HeaderStyle: 0 }, hzsCfgRev: 0, hzsCmpRev: 0, hzsFrame: 0,
@@ -73,11 +73,13 @@ function makeHost(src) {
 	for (const n of FNS) {
 		try { h[n] = toJs(src, n).bind(h); }
 		catch (e) {
-			if (n !== "hzsOnCmp" && n !== "hzsLt" && n !== "hzsHasCjk" && n !== "hzsL" && n !== "hzsLSlug") throw e;
+			if (n !== "hzsOnCmp" && n !== "hzsLt" && n !== "hzsHasCjk" && n !== "hzsL" && n !== "hzsLk" && n !== "hzsLSlug") throw e;
 		}
 	}
 	if (!h.hzsLt) h.hzsLt = function (s) { return s; };
 	if (!h.hzsHasCjk) h.hzsHasCjk = function () { return false; };
+	if (!h.hzsLk && h.hzsL) h.hzsLk = h.hzsL;
+	if (!h.hzsL && h.hzsLk) h.hzsL = h.hzsLk;
 	return h;
 }
 const BASE = "a23b7c4aa7ef195506ad4945e3825620d20d4220";   // the 0.43.3.2 TESTONLY head before this batch (0.43.3.1 scanner bodies): the recovered 329dbd4 (tree e5232d87), batch k
