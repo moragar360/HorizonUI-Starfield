@@ -5216,6 +5216,9 @@
       }
       // Purpose: overlay-on-English lookup from a visible English literal.
       // Tries dotted prefixes the English table already uses. Missing key = English.
+      // Settings catalog uses this (settings.ui first). HUD clock labels must
+      // not: settings.ui.local_game / pc_real are Settings strings, not planet
+      // or watch chrome. Those call sites use hud.hud_label.* via hzL.
       private function hzLt(en:String) : String
       {
          if(en == null || en.length == 0) { return en; }
@@ -5272,10 +5275,15 @@
          while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
          return rows;
       }
-      private function hzL10nTf(tf:TextField, en:String) : void
+      // Purpose: stamp one HUD TextField from the l10n table. Optional key is the
+      // explicit dotted path (hud.hud_label.*) so planet/watch clocks do not pick
+      // up settings.ui.local_game / settings.ui.pc_real. Call from language apply
+      // only. Inputs: field, English fallback, optional table key. Outputs: text
+      // and format. Author: Moragar. Last modified: 2026-11-27.
+      private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
       {
          if(tf == null || en == null) { return; }
-         tf.text = this.hzLt(en);
+         tf.text = key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en);
          var o:Object = this.hzTxtObj(tf);
          if(o != null) { this.hzApplyFmt(o); }
       }
@@ -5297,10 +5305,10 @@
                if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
             }
             this.hzL10nTf(this.hzJ19Title, "JETPACK");
-            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
-            this.hzL10nTf(this.hzPpRealL, "PC/REAL");
-            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
-            this.hzL10nTf(this.hz43RealL, "PC/REAL");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL", "hud.hud_label.pc_real");
             this.hzL10nTf(this.hz43DayT, "DAY");
             this.hzHsWordLoc = this.hzLt("HAZARD");
             try { this.hz26CharSync(); } catch(eCh:Error) { }
@@ -13262,9 +13270,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzPpDet = this.hzT(p,"",86,60,180,10,"rg","dim",1);
          var r:Number = HZ_PP_W - 16;
          this.hzPpLocT = this.hzT(p,"",r - 34 - 90,17,90,13,"sb","mut",0.6,"right");
-         this.hzPpLocL = this.hzT(p,this.hzLt("LOCAL/GAME"),r - 80,21,80,8,"sb","dim",0.8,"right");
+         this.hzPpLocL = this.hzT(p,this.hzL("hud.hud_label.local_game","LOCAL/GAME"),r - 80,21,80,8,"sb","dim",0.8,"right");
          this.hzPpRealT = this.hzT(p,"",r - 34 - 90,42,90,12,"rg","dim",0.4,"right");
-         this.hzPpRealL = this.hzT(p,this.hzLt("PC/REAL"),r - 62,45,64,8,"sb","dim",0.8,"right");
+         this.hzPpRealL = this.hzT(p,this.hzL("hud.hud_label.pc_real","PC/REAL"),r - 62,45,64,8,"sb","dim",0.8,"right");
          this.hzPpLocG = new Sprite(); p.addChild(this.hzPpLocG);
          this.hzPpRealG = new Sprite(); p.addChild(this.hzPpRealG);
          this.hzSetSz(this.HorizonEnv_mc,HZ_PP_W,84);
@@ -13495,7 +13503,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var showUT:Boolean = !locOk && this.hzPpUT >= 0 && (td == 1 || td == 3);
          var showLoc:Boolean = (locOk && (td == 1 || td == 3)) || showUT;
          this.hzPpShowUT = showUT;
-         this.hzPpLocL.text = this.hzLt("LOCAL/GAME");
+         this.hzPpLocL.text = this.hzL("hud.hud_label.local_game","LOCAL/GAME");
          var realStr:String = null;
          if(td >= 2)
          {
@@ -28030,9 +28038,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz43O2L = this.hzT(this.hz43Face,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
          this.hz43CO2L = this.hzT(this.hz43Face,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
          this.hz43LocT = this.hzT(this.hz43Face,"12:00",-90,-6,180,16,"sb","main",0,"center");
-         this.hz43LocL = this.hzT(this.hz43Face,this.hzLt("LOCAL/GAME"),-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43LocL = this.hzT(this.hz43Face,this.hzL("hud.hud_label.local_game","LOCAL/GAME"),-90,22,180,13,"sb","dim",0.6,"center");
          this.hz43RealT = this.hzT(this.hz43Face,"12:00",-80,40,160,13,"rg","mut",0,"center");
-         this.hz43RealL = this.hzT(this.hz43Face,this.hzLt("PC/REAL"),-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43RealL = this.hzT(this.hz43Face,this.hzL("hud.hud_label.pc_real","PC/REAL"),-70,60,140,13,"sb","dim",0.6,"center");
          this.hz43BodyT = this.hzT(this.hz43Face,"--",-100,84,200,14,"sb","main",1.2,"center");
          this.hz43TempT = this.hzT(this.hz43Face,"--",-80,104,160,13,"sb","acc",0.4,"center");
          this.hz43PmT = this.hzT(this.hz43Face,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
@@ -28115,8 +28123,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             tg.lineTo(-84,ay + 6);
             tg.endFill();
          }
-         this.hz43SetTx(this.hz43LocL,this.hzLt("LOCAL/GAME"));
-         this.hz43SetTx(this.hz43RealL,this.hzLt("PC/REAL"));
+         this.hz43SetTx(this.hz43LocL,this.hzL("hud.hud_label.local_game","LOCAL/GAME"));
+         this.hz43SetTx(this.hz43RealL,this.hzL("hud.hud_label.pc_real","PC/REAL"));
          this.hz43SetTx(this.hz43O2L,"O2");
          this.hz43SetTx(this.hz43CO2L,"CO2");
          this.hz43SetTx(this.hz43LocT,this.hz43Ok != 0 ? this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0) : "--");

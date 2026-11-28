@@ -62,15 +62,20 @@ expect(/hzLt\("RELOAD"\)/.test(rel), "RELOAD is looked up on equipment sync");
 const planet = fnText(as, "hzPpLayout").body;
 expect(/hzFitText\(this\.hzPpName/.test(planet) || /hzPpBodyName/.test(planet),
 	"planet layout still writes the game body name");
-expect(/hzLt\("LOCAL\/GAME"\)/.test(planet), "LOCAL/GAME is a static label on layout");
+expect(/hzL\("hud\.hud_label\.local_game","LOCAL\/GAME"\)/.test(planet), "LOCAL/GAME is a static HUD label on layout");
 expect(!/hzLt\(this\.hzPpBodyName/.test(planet), "planet name is not passed through hzLt");
 expect(/hzLt\(this\.hzPpStatus\)/.test(planet), "planet SAFE / hazard word is looked up at layout, not stored translated");
 expect(/hzLt\("AIR"\)/.test(planet), "AIR prefix is looked up at layout");
 expect(/hzLt\("IN SHIP"\)/.test(planet) && /hzLt\("STATION"\)/.test(planet) && /hzLt\("IN SPACE"\)/.test(planet),
 	"off-surface planet status words are looked up");
-expect(/hz43SetTx\(this\.hz43LocL,this\.hzLt\("LOCAL\/GAME"\)\)/.test(as)
-	&& /hz43SetTx\(this\.hz43RealL,this\.hzLt\("PC\/REAL"\)\)/.test(as),
-	"watch clock labels go through hzLt when the face is written");
+expect(/hz43SetTx\(this\.hz43LocL,this\.hzL\("hud\.hud_label\.local_game","LOCAL\/GAME"\)\)/.test(as)
+	&& /hz43SetTx\(this\.hz43RealL,this\.hzL\("hud\.hud_label\.pc_real","PC\/REAL"\)\)/.test(as),
+	"watch clock labels use hud.hud_label when the face is written");
+expect(/hzL10nTf\(this\.hzPpLocL, "LOCAL\/GAME", "hud\.hud_label\.local_game"\)/.test(apply)
+	&& /hzL10nTf\(this\.hzPpRealL, "PC\/REAL", "hud\.hud_label\.pc_real"\)/.test(apply)
+	&& /hzL10nTf\(this\.hz43LocL, "LOCAL\/GAME", "hud\.hud_label\.local_game"\)/.test(apply)
+	&& /hzL10nTf\(this\.hz43RealL, "PC\/REAL", "hud\.hud_label\.pc_real"\)/.test(apply),
+	"language apply stamps planet/watch clocks from hud.hud_label, not settings.ui");
 expect(/hzPpLayout\(\)/.test(apply), "language apply re-lays the planet card so SAFE / AIR / clocks refresh");
 expect(/hzT19Sig = ""/.test(apply), "language apply invalidates the target-pill signature so TRADE restamps");
 expect(/if\(!this\.hzShowTarget\)/.test(apply) && /hzT19Off\(\)/.test(apply),
@@ -81,6 +86,58 @@ expect(/hzT19VanLbl/.test(t19) && /hzLt\(s\)/.test(t19),
 	"no-$ prompt verbs try the vanilla label first, then hzLt (TRADE)");
 expect(!/this\.hzLt\(/.test(fnText(as, "hzTickVitals").body) && !/this\.hzL\(/.test(fnText(as, "hzTickVitals").body),
 	"vitals tick still does no lookup");
+
+expect(/"settings\.ui\."/.test(fnText(insert, "hzLt").body)
+	&& fnText(insert, "hzLt").body.indexOf('"settings.ui."') < fnText(insert, "hzLt").body.indexOf('"hud.hud_label."'),
+	"Settings hzLt still prefers settings.ui over hud.hud_label");
+expect(!/hzLt\("LOCAL\/GAME"\)/.test(planet) && !/hzLt\("PC\/REAL"\)/.test(planet),
+	"planet layout does not use hzLt for clock labels");
+expect((as.match(/hzLt\("LOCAL\/GAME"\)/g) || []).length === 0
+	&& (as.match(/hzLt\("PC\/REAL"\)/g) || []).length === 0,
+	"HUD clock labels no longer call hzLt for LOCAL/GAME or PC/REAL");
+
+function flatten(obj, prefix, out) {
+	if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+		if (prefix) out[prefix] = obj;
+		return;
+	}
+	for (const k of Object.keys(obj)) {
+		if (k === "_meta" || k === "_comment") continue;
+		flatten(obj[k], prefix ? prefix + "." + k : k, out);
+	}
+}
+function slug(s) {
+	let o = "", prev = false;
+	for (let i = 0; i < s.length && o.length < 48; i++) {
+		const code = s.charCodeAt(i);
+		const ok = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+		if (ok) { o += s.charAt(i).toLowerCase(); prev = false; }
+		else if (o.length && !prev) { o += "_"; prev = true; }
+	}
+	if (o.endsWith("_")) o = o.slice(0, -1);
+	return o;
+}
+function hzLt(table, en) {
+	const sl = slug(en);
+	const pfx = ["settings.ui.", "settings.chrome.", "settings.language.", "settings.tabs.",
+		"hud.hud_label.", "hud.option.", "hud.help.", "hud."];
+	for (const p of pfx) {
+		if (table[p + sl]) return table[p + sl];
+	}
+	return en;
+}
+const locDir = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization");
+const de = {};
+flatten(JSON.parse(fs.readFileSync(path.join(locDir, "de.json"), "utf8")), "", de);
+expect(de["settings.ui.local_game"] === "ORT/SPIEL" && de["settings.ui.pc_real"] === "PC/ECHT",
+	"Settings German LOCAL/GAME and PC/REAL strings are unchanged");
+expect(de["hud.hud_label.local_game"] === "LOKAL/SPIEL" && de["hud.hud_label.pc_real"] === "PC/ECHTZEIT",
+	"HUD German clock labels are LOKAL/SPIEL and PC/ECHTZEIT");
+expect(hzLt(de, "LOCAL/GAME") === "ORT/SPIEL" && hzLt(de, "PC/REAL") === "PC/ECHT",
+	"hzLt still resolves those English labels to the Settings strings");
+expect(de["hud.hud_label.local_game"] !== de["settings.ui.local_game"]
+	&& de["hud.hud_label.pc_real"] !== de["settings.ui.pc_real"],
+	"HUD clock keys differ from Settings so the explicit hud.hud_label lookup is required");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

@@ -462,6 +462,9 @@
       }
       // Purpose: overlay-on-English lookup from a visible English literal.
       // Tries dotted prefixes the English table already uses. Missing key = English.
+      // Settings catalog uses this (settings.ui first). HUD clock labels must
+      // not: settings.ui.local_game / pc_real are Settings strings, not planet
+      // or watch chrome. Those call sites use hud.hud_label.* via hzL.
       private function hzLt(en:String) : String
       {
          if(en == null || en.length == 0) { return en; }
@@ -518,10 +521,15 @@
          while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
          return rows;
       }
-      private function hzL10nTf(tf:TextField, en:String) : void
+      // Purpose: stamp one HUD TextField from the l10n table. Optional key is the
+      // explicit dotted path (hud.hud_label.*) so planet/watch clocks do not pick
+      // up settings.ui.local_game / settings.ui.pc_real. Call from language apply
+      // only. Inputs: field, English fallback, optional table key. Outputs: text
+      // and format. Author: Moragar. Last modified: 2026-11-27.
+      private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
       {
          if(tf == null || en == null) { return; }
-         tf.text = this.hzLt(en);
+         tf.text = key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en);
          var o:Object = this.hzTxtObj(tf);
          if(o != null) { this.hzApplyFmt(o); }
       }
@@ -543,10 +551,10 @@
                if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
             }
             this.hzL10nTf(this.hzJ19Title, "JETPACK");
-            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME");
-            this.hzL10nTf(this.hzPpRealL, "PC/REAL");
-            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME");
-            this.hzL10nTf(this.hz43RealL, "PC/REAL");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL", "hud.hud_label.pc_real");
             this.hzL10nTf(this.hz43DayT, "DAY");
             this.hzHsWordLoc = this.hzLt("HAZARD");
             try { this.hz26CharSync(); } catch(eCh:Error) { }
