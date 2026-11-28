@@ -35,6 +35,8 @@ function toJs(src, name) {
 		.replace(/var (\w+):[\w*]+/g, "var $1")
 		.replace(/([\w.\]\)]+) as (?:Array|MovieClip|Object|DisplayObject|DisplayObjectContainer|TextField|Sprite)\b/g, "$1")
 		.replace(/([\w.]+) is Array/g, "Array.isArray($1)")
+		.replace(/([\w.]+) is DisplayObjectContainer/g, "($1 && $1.numChildren !== undefined && $1.getChildAt)")
+		.replace(/([\w.]+) is TextField/g, "($1 && $1.text !== undefined && $1.numChildren === undefined)")
 		.replace(/catch\((\w+):\w+\)/g, "catch($1)")
 		.replace(/(^|[^.\w])(HZ\w*)\b/g, "$1this.$2");
 	return new Function(...params, defs + "\n" + body);
@@ -42,7 +44,7 @@ function toJs(src, name) {
 
 {
 	const gb = fnText(SRC, "hz38GiveBackVanilla").body;
-	expect(/this\.hzT19Off\(\)/.test(gb) && !/\.alpha = 1/.test(gb) && !/RolloverActivation/.test(gb), "GiveBackVanilla: hide Horizon's card and restore snapshots; it does not force holder/activation to alpha 1");
+	expect(/this\.hzT19Off\(\)/.test(gb) && /this\.hzT19GiveRing\(\)/.test(gb) && !/\.alpha = 1/.test(gb) && !/RolloverActivation/.test(gb), "GiveBackVanilla: hide Horizon's card, restore snapshots, and show the live vanilla ring; it does not force holder/activation to alpha 1");
 	expect(!/hzT19HidePromptTree|hzT19HideA|hz38HideVanilla|for each/.test(gb), "GiveBackVanilla does not walk the hide list");
 	expect(!/ENTER_FRAME|getTimer|addEventListener/.test(gb), "GiveBackVanilla adds no per-frame work");
 	const tick = fnText(SRC, "hzT19Tick").body;
@@ -51,6 +53,17 @@ function toJs(src, name) {
 	expect(/if\(this\.hzShowTarget && !bv\) \{ this\.hz38GiveBackVanilla\(\); \}/.test(SRC), "F11 live toggle: falling edge restores vanilla this frame");
 	expect(/if\(this\.hzShowTarget && !wantTg\) \{ this\.hz38GiveBackVanilla\(\); \}/.test(SRC), "settings apply: falling edge restores vanilla this frame");
 	expect(/if\(!this\.hzShowTarget\)/.test(tick) && tick.indexOf("if(!this.hzShowTarget)") < tick.indexOf("hzT19BtnSync"), "when the feature is off the tick returns before any vanilla prompt clip read or hide");
+	const firstOff = tick.slice(tick.indexOf("if(!this.hzShowTarget)"), tick.indexOf("return;"));
+	expect(/hzTgOrig/.test(firstOff) && /hzT19Off/.test(firstOff) && /hzT19GiveRing/.test(firstOff),
+		"Hover-off tick restores orig and the live ObjectRing clips (not only the hide list or Horizon card)");
+	const apply = fnText(SRC, "hzL10nApplyHud").body;
+	expect(/hzT19Sig = ""/.test(apply) && /if\(!this\.hzShowTarget\)/.test(apply) && /hzT19Off\(\)/.test(apply) && /hzT19GiveRing\(\)/.test(apply),
+		"language apply / rebuild with Hover off restores vanilla and the live ring, and does not add a third GiveBackVanilla");
+	expect(!/hz38GiveBackVanilla/.test(apply), "language apply uses hzT19Off, not a third GiveBackVanilla");
+	const tgTick = fnText(SRC, "hzTgTick").body;
+	const offBlk = tgTick.slice(tgTick.indexOf("if(!on)"), tgTick.indexOf("if(!on)") + 280);
+	expect(/hzTgOrig/.test(offBlk) && /hzTgRestore/.test(offBlk),
+		"Container-off / !on restores orig snapshots so the stock prompt comes back");
 	const van = fnText(SRC, "hz38Vanilla").body;
 	expect(/hd\.alpha < 0\.05/.test(van) && /hd\.alpha = 1/.test(van), "while Horizon still owns the prompt, a captured 0 alpha is forced to 1");
 	expect(!/hz38GiveBackVanilla/.test(van), "the per-frame vanilla rule does not double as the off-edge restore");
@@ -58,7 +71,8 @@ function toJs(src, name) {
 
 {
 	const snap = fnText(SRC, "hzTgSnap").body;
-	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /hideA && a < 0\.05/.test(snap) && /\.push\(\{"d":d,"v":d\.visible,"a":a\}\)/.test(snap), "hzTgSnap records alpha and visible once per clip; HideA of a 0 stores 1");
+	expect(/hzTgOrigD\.indexOf\(d\)/.test(snap) && /if\(hideA\)/.test(snap) && /vis = true/.test(snap) && /\.push\(\{"d":d,"v":vis,"a":a\}\)/.test(snap),
+		"hzTgSnap records alpha and visible once per clip; HideA of mid-AnimIn art stores shown alpha 1 and visible true");
 	expect(/hideA:Boolean = false/.test(fnText(SRC, "hzTgSnap").params), "hzTgSnap hideA defaults false so KeepHold / Hide keep the real visible flag");
 	expect(!/ENTER_FRAME|getTimer|addEventListener/.test(snap), "hzTgSnap adds no per-frame work");
 	const hideA = fnText(SRC, "hzT19HideA").body;
@@ -104,7 +118,7 @@ function makeHost() {
 		hzShowTarget: true,
 		hzT19BtnClip: function(_aw, t) { return t === 0 ? used : (t === 1 ? unused : null); },
 	};
-	for (const n of ["hzTgSnap", "hzTgRestore", "hzT19HideA", "hzT19KeepHold", "hzT19ResetPay", "hzT19Off", "hz38GiveBackVanilla"]) h[n] = toJs(SRC, n).bind(h);
+	for (const n of ["hzTgSnap", "hzTgRestore", "hzT19HideA", "hzT19KeepHold", "hzT19ResetPay", "hzT19Off", "hzT19ShowClip", "hzT19GiveRing", "hz38GiveBackVanilla"]) h[n] = toJs(SRC, n).bind(h);
 	return { h, holder, header, used, unused, glyph };
 }
 
@@ -187,6 +201,77 @@ function makeHost() {
 	holder.alpha = 1;
 	h.hz38GiveBackVanilla();
 	expect(holder.alpha === 0.4, "KeepHold / generic snap still restores the real captured alpha, not a forced 1");
+}
+
+{
+	const { h, header, glyph } = makeHost();
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	h.hzTgHidden = [];
+	header.alpha = 0;
+	glyph.alpha = 0;
+	h.hzShowTarget = false;
+	h.HorizonTarget_mc.visible = false;
+	h.hzTg19.visible = false;
+	expect(h.hzTgOrig.length > 0 && h.hzTgHidden.length === 0, "orig-only: hide-walk list empty, snapshots remain");
+	h.hzT19Off();
+	expect(header.alpha === 1 && glyph.alpha === 1 && header.visible === true && glyph.visible === true,
+		"orig-only Off brings TALK/TRADE art back (the path the first tick gate now takes)");
+	expect(!h.HorizonTarget_mc.visible && !h.hzTg19.visible, "Horizon card stays off after orig-only restore");
+}
+
+{
+	const { h, header, unused, glyph } = makeHost();
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	h.hzT19KeepHold(null);
+	h.hzShowTarget = false;
+	h.hzT19Sig = "stale-trade";
+	h.hzT19Off();
+	expect(header.alpha === 1 && glyph.alpha === 1, "language apply with Hover off restores name bar and TALK/TRADE glyph");
+	expect(unused.visible === false, "language apply with Hover off restores unused key boxes");
+	expect(!h.HorizonTarget_mc.visible && !h.hzTg19.visible, "language apply with Hover off hides Horizon's circle");
+	expect(h.hzT19Sig === "", "language apply / Off clears the pill signature so TRADE restamps when Hover is on again");
+}
+
+{
+	const { h, header, glyph } = makeHost();
+	header.visible = false;
+	header.alpha = 0;
+	glyph.visible = false;
+	glyph.alpha = 0;
+	h.hzT19HideA(header);
+	h.hzT19HideA(glyph);
+	const origHeader = h.hzTgOrig.filter((o) => o.d === header)[0];
+	const origGlyph = h.hzTgOrig.filter((o) => o.d === glyph)[0];
+	expect(origHeader && origHeader.v === true && origHeader.a === 1, "HideA during AnimIn stores visible true (not the still-hidden flag)");
+	expect(origGlyph && origGlyph.v === true && origGlyph.a === 1, "HideA during AnimIn stores TALK glyph visible true");
+	h.hzShowTarget = false;
+	h.HorizonTarget_mc.visible = false;
+	h.hzTg19.visible = false;
+	h.hzT19Off();
+	expect(header.visible === true && header.alpha === 1, "Hover-off restores the vanilla name, not only the ObjectRing circle/leader");
+	expect(glyph.visible === true && glyph.alpha === 1, "Hover-off restores the vanilla TALK/TRADE verb row");
+}
+
+{
+	const { h } = makeHost();
+	const reticle = clip("Reticle_mc", true, 1);
+	const stale = clip("staleLine", true, 1);
+	const live = clip("liveLine", true, 1);
+	const rw = { Reticle_mc: reticle, numChildren: 1, getChildAt: function () { return live; } };
+	h.RolloverWidget_mc = rw;
+	h.hzT19HideA(reticle);
+	h.hzT19HideA(stale);
+	live.alpha = 0;
+	live.visible = false;
+	h.hz38GiveBackVanilla();
+	expect(reticle.alpha === 1 && reticle.visible === true, "live toggle-off shows Reticle_mc (the vanilla circle)");
+	expect(live.alpha === 1 && live.visible === true, "live toggle-off shows the current leader-line Shape, not a stale orig clip");
+	expect(stale.alpha === 1, "orig restore still writes the snapshotted stale Shape");
+	const give = fnText(SRC, "hzT19GiveRing").body;
+	expect(!/ENTER_FRAME|getTimer|addEventListener/.test(give), "GiveRing adds no per-frame work");
+	expect(!/RolloverActivation/.test(give), "GiveRing does not touch the activation widget");
 }
 
 console.log("hover vanilla restore: " + passed + " ok, " + (failed ? failed + " FAILED" : "all passed"));

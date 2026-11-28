@@ -252,7 +252,7 @@ expect(/return Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\);/.test(cBod
 		&& /HZQ_CHIP_MIN/.test(ext) && /Math\.max\(13,Math\.round\(size \* ts \* 10\) \/ 10\)/.test(cBody(qm, "private function hzqFs(")),
 		"N-a: long key names use a short form (PGDN) then shrink the extra chip font to the scaled slot; hzqFs stays 13 px for other text");
 }
-expect(/this\.hzqSet\(k,kt,13,/.test(qm) && /this\.hzqSet\(this\.hzqHdrT,this\.hzqUC\("Quick Menu"\),13,/.test(qm)
+expect(/this\.hzqSet\(k,kt,13,/.test(qm) && /this\.hzqSet\(this\.hzqHdrT,this\.hzqUC\(this\.hzqLt\("Quick Menu"\)\),13,/.test(qm)
 	&& /this\.hzqSet\(this\.hzqHdrK,kt,13,/.test(qm) && /this\.hzqSet\(lt,this\.hzqUC\(String\(rows\[j\]\[0\]\)\),13,/.test(qm)
 	&& !/this\.hzqSet\([^;]+,(?:11|12|10\.5),/.test(qm), "N-b: every hzqSet size is written as 13 or larger (none rely on the floor alone)");
 

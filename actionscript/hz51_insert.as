@@ -26,6 +26,15 @@
       private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       private var hz51OpenFolder:String = "";     // one-shot folder request for the DLL (Message Log SHOW)
       private var hzSetWinMask:Sprite = null;     // rounded clip for the settings window body
+      // Localization: filled once by hzSetL10n from the DLL. Lookups at build / language change only.
+      private var hzL10n:Object = null;
+      private var hzL10nGame:String = "";
+      private var hzL10nGameName:String = "";
+      private var hzL10nFiles:Array = null;
+      private var hzL10nUsed:String = "en";
+      private var hzL10nCjk:Boolean = false;
+      private var hzLanguage:String = "auto";
+      private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -42,6 +51,7 @@
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
       private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_Z_RESERVE:Number = 320; // z-row: GLOBAL/CUSTOM chip + slider + value; labels must end before this
       private static const HZ51_SW_W:Number = 42;       // mock toggle track
       private static const HZ51_SW_H:Number = 22;
       private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
@@ -207,6 +217,374 @@
          else if(this.hzVehPad == 1 && (code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel")) { this.hz51Pad = true; }
          else if(this.hz51TypeChar(code).length > 0) { this.hz51Pad = false; }
       }
+      // Purpose: unescape one payload field from the DLL (#l10n1 snapshot).
+      private function hzL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      // Purpose: true when every character is in the HUD Exo 2 face (Latin,
+      // Latin Extended, Vietnamese, combining marks, punctuation, currency).
+      // CJK / Hangul / Arabic / Thai / Cyrillic / surrogates are false. Used
+      // by the Language dropdown so it never draws tofu and never switches
+      // that list to $MAIN_Font. Not a per-stem flag: a future script Exo 2
+      // lacks is rejected the same way. Translated HUD text still uses
+      // hzHasCjk + $MAIN_Font per string when that string has CJK. The
+      // Language dropdown never uses that path (Final rule: English name
+      // in Exo 2 when Exo 2 cannot render the native name).
+      // Inputs: a UI string. Outputs: whether Exo 2 can render it.
+      private function hzExo2Can(s:String) : Boolean
+      {
+         if(s == null) { return true; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0xD800 && c <= 0xDFFF) { return false; }
+            var ok:Boolean = c <= 0x024F || (c >= 0x0300 && c <= 0x036F) || (c >= 0x1E00 && c <= 0x1EFF) || (c >= 0x2000 && c <= 0x206F) || (c >= 0x20A0 && c <= 0x20CF);
+            if(!ok) { return false; }
+            i++;
+         }
+         return true;
+      }
+      // Purpose: Language dropdown label that Exo 2 can draw. Native name if
+      // Exo 2 has the glyphs; otherwise the last parenthetical (English) or fb.
+      // Never returns CJK. Call at catalog / language change, not per HUD frame.
+      private function hz51Exo2Text(s:String, fb:String = null) : String
+      {
+         if(s == null || s.length == 0) { return fb != null ? fb : ""; }
+         if(this.hzExo2Can(s)) { return s; }
+         var a:int = s.lastIndexOf("(");
+         var b:int = s.lastIndexOf(")");
+         if(a >= 0 && b > a + 1)
+         {
+            var inner:String = s.substring(a + 1, b);
+            while(inner.length > 0 && inner.charAt(0) == " ") { inner = inner.substr(1); }
+            while(inner.length > 0 && inner.charAt(inner.length - 1) == " ") { inner = inner.substr(0, inner.length - 1); }
+            if(inner.length > 0 && this.hzExo2Can(inner)) { return inner; }
+         }
+         if(fb != null && fb.length > 0 && this.hzExo2Can(fb)) { return fb; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var ch:String = s.charAt(i);
+            if(this.hzExo2Can(ch)) { o += ch; }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0, o.length - 1); }
+         if(o.length > 0) { return o; }
+         return fb != null && fb.length > 0 ? fb : s;
+      }
+      private function hz51Exo2Arr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hz51Exo2Text(String(a[i])); i++; }
+      }
+      // Purpose: MapCode for dropdown stems so es-419 / esmx / latam collapse
+      // to es-mx (one Español (Latinoamérica) row, not a community duplicate).
+      private function hz51LangCode(raw:String) : String
+      {
+         var c:String = raw != null ? String(raw).toLowerCase() : "";
+         while(c.length > 0 && (c.charAt(0) == " " || c.charAt(0) == "\t")) { c = c.substr(1); }
+         while(c.length > 0 && (c.charAt(c.length - 1) == " " || c.charAt(c.length - 1) == "\t")) { c = c.substr(0, c.length - 1); }
+         if(c.length == 0 || c == "auto") { return "auto"; }
+         if(c.indexOf("/") >= 0 || c.indexOf("\\") >= 0 || c.indexOf(":") >= 0 || c.indexOf("..") >= 0) { return "auto"; }
+         if(c == "en" || c == "english" || c == "en-us" || c == "en_us" || c == "enus") { return "en"; }
+         if(c == "de" || c == "german" || c == "de-de" || c == "de_de") { return "de"; }
+         if(c == "fr" || c == "french" || c == "fr-fr" || c == "fr_fr") { return "fr"; }
+         if(c == "it" || c == "italian" || c == "it-it" || c == "it_it") { return "it"; }
+         if(c == "esmx" || c == "es-mx" || c == "es_mx" || c == "esla" || c == "es-419" || c == "latam" || c == "es-latam" || c == "es_latam") { return "es-mx"; }
+         if(c == "es" || c == "spanish" || c == "es-es" || c == "es_es" || c == "eses") { return "es"; }
+         if(c == "jp" || c == "ja" || c == "japanese") { return "ja"; }
+         if(c == "pl" || c == "polish" || c == "pl-pl" || c == "pl_pl") { return "pl"; }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br" || c == "brazilian" || c == "pt-brz") { return "pt-br"; }
+         if(c == "zhhans" || c == "zh-cn" || c == "zhcn" || c == "zh_cn" || c == "zh" || c == "zh-hans" || c == "schinese") { return "zh-cn"; }
+         return c;
+      }
+      // Purpose: Settings 2.0 label for a Localization file code. Exo 2 only:
+      // native name when the face has the glyphs, English name otherwise.
+      private function hz51LangName(code:String) : String
+      {
+         var c:String = this.hz51LangCode(code);
+         var fb:String = "";
+         if(c == "auto") { fb = "Auto (game)"; }
+         else if(c == "en") { fb = "English"; }
+         else if(c == "de") { fb = "Deutsch (German)"; }
+         else if(c == "fr") { fb = "Français (French)"; }
+         else if(c == "es-mx") { fb = "Español (Latinoamérica)"; }
+         else if(c == "es") { fb = "Español (Spanish)"; }
+         else if(c == "it") { fb = "Italiano (Italian)"; }
+         else if(c == "ja") { fb = "Japanese"; }
+         else if(c == "pl") { fb = "Polski (Polish)"; }
+         else if(c == "pt-br") { fb = "Português (Brasil)"; }
+         else if(c == "zh-cn") { fb = "Simplified Chinese"; }
+         else { return this.hz51Exo2Text(c.toUpperCase(), c.toUpperCase()); }
+         return this.hz51Exo2Text(this.hzL("settings.language." + c, fb), fb);
+      }
+      // Purpose: Auto plus one option per unique mapped stem the DLL listed.
+      // Alias files (es-419, esmx) share es-mx so Latinoamérica is not listed twice.
+      private function hz51LangOpts() : Object
+      {
+         var vals:Array = ["auto"];
+         var names:Array = [this.hz51LangName("auto")];
+         var seen:Object = {"auto":true};
+         var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
+         var i:int = 0;
+         while(i < files.length)
+         {
+            var c:String = this.hz51LangCode(String(files[i]));
+            if(c.length > 0 && seen[c] != true)
+            {
+               seen[c] = true;
+               vals.push(c);
+               names.push(this.hz51LangName(c));
+            }
+            i++;
+         }
+         return {"vals":vals,"names":names};
+      }
+      // Purpose: cache the localization snapshot from HorizonUI.dll. One Invoke
+      // per movie load or Language reload. No file I/O. Lookups run when a menu
+      // is built or the language changes, never from a HUD tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var files:Array = ["en"];
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "g") { this.hzL10nGame = v; }
+                  else if(k == "gn") { this.hzL10nGameName = v; }
+                  else if(k == "used") { this.hzL10nUsed = v; }
+                  else if(k == "files") { files = v.length > 0 ? v.split(",") : ["en"]; }
+                  else if(k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzL10n = tab;
+            this.hzL10nFiles = files;
+            this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
+            this.hzFontApply();
+            this.hzL10nApplyHud();
+            if(this.hzSetIsOpen)
+            {
+               try { this.hz51IndexBuild(); } catch(eIdxL:Error) { }
+               this.hzSetDraw();
+            }
+         }
+         catch(err:Error) { }
+      }
+      // Purpose: look up a cached dotted key. Call from build / language change
+      // only. Inputs: table key and English fallback. Outputs: overlay or fallback.
+      private function hzL(key:String, fb:String) : String
+      {
+         if(this.hzL10n != null)
+         {
+            var v:* = this.hzL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      // Purpose: true for shipped CJK stems. Set once in hzSetL10n so chrome
+      // uses the game CJK FontLib (fonts_zhcn) instead of Exo 2. Not a poll.
+      private function hzL10nStemCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var c:String = s.toLowerCase();
+         return c == "zh-cn" || c == "zhhans" || c == "zhcn" || c == "zh" || c == "ja" || c == "jp";
+      }
+      // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
+      // stays on Latin and the game CJK face is chosen per field, never per frame.
+      private function hzHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      // Purpose: slug used by en.json hud.hud_label / hud.help / settings.ui keys.
+      private function hzLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var c:String = s.charAt(i);
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += c.toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      // Purpose: overlay-on-English lookup from a visible English literal.
+      // Tries dotted prefixes the English table already uses. Missing key = English.
+      // Settings catalog uses this (settings.ui first). HUD clock labels must
+      // not: settings.ui.local_game / pc_real are Settings strings, not planet
+      // or watch chrome. Those call sites use hud.hud_label.* via hzL.
+      private function hzLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var hit:String = this.hzL(en, "");
+         if(hit.length > 0 && hit != en && this.hzL10n != null && this.hzL10n[en] != undefined) { return hit; }
+         var slug:String = this.hzLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","settings.language.","settings.tabs.","hud.hud_label.","hud.option.","hud.help.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var k:String = String(pfx[i]) + slug;
+            var v:String = this.hzL(k, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         if(slug.length > 48) { slug = slug.substr(0, 48); }
+         var h:String = this.hzL("hud.help." + slug, "");
+         if(h.length > 0) { return h; }
+         return en;
+      }
+      private function hz51LocArr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
+      }
+      // Purpose: stamp translated labels onto a Settings row at catalog finish
+      // (F11 build / language change), not per HUD frame. note / inote are already
+      // localized by hz51Line / hz51HelpOf (by setting key). Re-slugging them
+      // would expand a short row line back into the full details paragraph.
+      private function hz51LocOne(r:Object) : void
+      {
+         if(r == null) { return; }
+         if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
+         if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
+         if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
+         if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
+         if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
+         if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(String(r.k) == "_l10nGame" && r.btn != undefined) { r.btn = this.hz51Exo2Text(String(r.btn)); }
+         if(r.t == "p" || r.t == "c") { return; }
+         if(String(r.k) == "Language")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
+         if(String(r.k) == "Font")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
+         this.hz51LocArr(r.opts as Array);
+         this.hz51LocArr(r.names as Array);
+      }
+      private function hz51LocRows(rows:Array) : Array
+      {
+         var i:int = 0;
+         while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
+         return rows;
+      }
+      // Purpose: stamp one HUD TextField from the l10n table. Optional key is the
+      // explicit dotted path (hud.hud_label.*) so planet/watch clocks do not pick
+      // up settings.ui.local_game / settings.ui.pc_real. Call from language apply
+      // only. Inputs: field, English fallback, optional table key. Outputs: text
+      // and format. Author: Moragar. Last modified: 2026-11-27.
+      private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
+      {
+         if(tf == null || en == null) { return; }
+         tf.text = this.hzFontText(key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en));
+         var o:Object = this.hzTxtObj(tf);
+         if(o != null) { this.hzApplyFmt(o); }
+      }
+      // Purpose: refresh HUD chrome that was stamped at card build. Called from
+      // hzSetL10n only. Ticks keep using the TextField text already set here.
+      // Never stamp player / planet / quest / credit / level fields: those hold
+      // live game values. MASS / POWER / RELOAD are state words; hz26CharSync
+      // and hzE19Sync pick the right one with hzLt. Target pill verbs (TRADE)
+      // live in hzT19Content: clearing hzT19Sig rebuilds them on the next tick
+      // when Hover is on. When Hover is off, restore vanilla so a language
+      // apply cannot leave Horizon's circle and leader line up.
+      private function hzL10nApplyHud() : void
+      {
+         try
+         {
+            if(this.hzVnLbl != null)
+            {
+               if(this.hzVnLbl.length > 0) { this.hzL10nTf(TextField(this.hzVnLbl[0]), "HEALTH"); }
+               if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
+            }
+            this.hzL10nTf(this.hzJ19Title, "JETPACK");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43DayT, "DAY");
+            this.hzHsWordLoc = this.hzLt("HAZARD");
+            try { this.hz26CharSync(); } catch(eCh:Error) { }
+            try { this.hzE19Sync(); } catch(eEq:Error) { }
+            try { this.hzPpLayout(); } catch(ePp:Error) { }
+            this.hzT19Sig = "";
+            this.hz41VLay = "";
+            this.hz41VSig = "";
+            if(!this.hzShowTarget) { this.hzT19Off(); this.hzT19GiveRing(); }
+         }
+         catch(eApp:Error) { }
+      }
 
       private function hz51Side(tab:int) : Array
       {
@@ -214,7 +592,7 @@
          if(tab == 1) { return [{"g":"LOOK","items":[{"id":"col","l":"COLORS","s":"Accent · Card background"},{"id":"pan","l":"PANELS","s":"Opacity · Background % · Shadow"},{"id":"typ","l":"TYPOGRAPHY","s":"Font · Size · Tone"}]},{"g":"PLACE","items":[{"id":"siz","l":"SIZE & PLACEMENT","s":"HUD scale · Margin · Pixel snap"}]},{"g":"MOTION","items":[{"id":"mot","l":"MOTION & FADING","s":"Smooth bars · Fade · Combat dim"}]},{"g":"CLOCKS","items":[{"id":"clk","l":"CLOCKS & UNITS","s":"Planet time · 12/24 · Temperature"}]}]; }
          if(tab == 2) { return [{"g":"SCANNER","items":[{"id":"ov","l":"OVERVIEW","s":"Module · Layout · Reach"},{"id":"hud","l":"HUD","s":"What stays while you scan"},{"id":"tl","l":"TOOLS","s":"Mode pill · Hints · Outlines"}]},{"g":"FINDINGS","items":[{"id":"sig","l":"SIGNALS","s":"Signals · Compass · World tags"},{"id":"sv","l":"SURVEY","s":"Planet · Bioscan · Traits"}]},{"g":"LOOK","items":[{"id":"pop","l":"POPUPS","s":"Quest and trait popups"},{"id":"ap","l":"APPEARANCE","s":"Colors · Font · Distance"}]}]; }
          if(tab == 3) { return [{"g":"CONVERSATION","items":[{"id":"sub","l":"SUBTITLES","s":"Lines · Size · Card"},{"id":"spk","l":"SPEAKER","s":"Name · Color · Card"},{"id":"dly","l":"DIALOGUE LAYOUT","s":"List · Size · Offset"},{"id":"dlap","l":"DIALOGUE APPEARANCE","s":"Font · Colors · Panel"},{"id":"prs","l":"CHOICES & PERSUASION","s":"Already-said · Tags · Meter"},{"id":"inp","l":"INPUT & HINTS","s":"Keys · Wheel · Bar"}]},{"g":"ALERTS","items":[{"id":"mst","l":"MISSION TOASTS & REACTIONS","s":"Quest banner and companion lines"}]},{"g":"MODULE","items":[{"id":"cmp","l":"COMPATIBILITY","s":"Auto-pause · Conflicts · Use Horizon"}]}]; }
-         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
+         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"loc","l":"LANGUAGE / LOCALIZATION","s":"Detected language · Override"},{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
       }
       private function hz51Pages(tab:int) : Array
       {
@@ -273,9 +651,9 @@
             }
             g++;
          }
-         if(lab.length == 0) { return t; }
-         if(gname.length > 0 && gname != lab) { return t + " > " + gname + " > " + lab; }
-         return t + " > " + lab;
+         if(lab.length == 0) { return this.hzLt(t); }
+         if(gname.length > 0 && gname != lab) { return this.hzLt(t) + " > " + this.hzLt(gname) + " > " + this.hzLt(lab); }
+         return this.hzLt(t) + " > " + this.hzLt(lab);
       }
       private function hz51Copy(r:Object) : Object
       {
@@ -304,26 +682,47 @@
          }
          return out;
       }
+      // Purpose: table key for Setting Details. Module banners share settings.details.modban.
+      // Inputs: catalog k. Outputs: dotted-id used by hzL. Looked up at F11 build only.
+      private function hz51HelpKey(k:String) : String
+      {
+         if(k != null && k.indexOf("_modban_") == 0) { return "modban"; }
+         return k != null ? k : "";
+      }
       private function hz51HelpOf(k:String, r:Object) : String
       {
+         var id:String = this.hz51HelpKey(k);
+         var byId:String = id.length > 0 ? this.hzL("settings.details." + id, "") : "";
+         if(byId.length > 0) { return byId; }
          var h:String = this.hz51Help(k);
-         if(h != null && h.length > 0) { return h; }
-         if(r != null && r.inote != undefined) { return String(r.inote); }
-         if(r != null && r.info != undefined) { return String(r.info); }
-         if(r != null && r.note != undefined) { return String(r.note); }
-         var lab:String = r != null && r.l != undefined ? String(r.l) : k;
-         return "Changes " + lab.toLowerCase() + " on your HUD.";
+         if(h == null || h.length == 0)
+         {
+            if(r != null && r.inote != undefined) { h = String(r.inote); }
+            else if(r != null && r.info != undefined) { h = String(r.info); }
+            else if(r != null && r.note != undefined) { h = String(r.note); }
+            else
+            {
+               var lab:String = r != null && r.l != undefined ? String(r.l) : k;
+               h = "Changes " + lab.toLowerCase() + " on your HUD.";
+            }
+         }
+         return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
+      // settings.line.<k> wins so a copy edit of details does not restamp the row via slug collision.
       private function hz51Line(k:String, r:Object) : String
       {
+         var lineId:String = this.hzL("settings.line." + k, "");
+         if(lineId.length > 0) { return lineId; }
          switch(k)
          {
-            case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
-            case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
-            case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
-            case "PerfDump": return "Saves one performance report the next time you apply settings.";
-            case "_diagoff": return "These stay off while you play. Turn them on only if something needs checking.";
+            case "Language": return this.hzLt("Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.");
+            case "_l10nGame": return this.hzLt("Detected at start. Does not follow the override.");
+            case "Debug": return this.hzLt("Shows extra on-screen info about the scanner and compass to help track down a problem.");
+            case "PerfDiag": return this.hzLt("Measures how long the HUD takes to update and saves it so a problem can be found.");
+            case "PerfMode": return this.hzLt("Switches which HUD test runs. Ordinary play uses Baseline.");
+            case "PerfDump": return this.hzLt("Saves one performance report the next time you apply settings.");
+            case "_diagoff": return this.hzLt("These stay off while you play. Turn them on only if something needs checking.");
             default: break;
          }
          var h:String = this.hz51HelpOf(k, r);
@@ -426,6 +825,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Families the active language cannot cover are hidden. Orbitron stays for English, German, French, and Spanish (a few punctuation marks are substituted). Polish uses Exo 2. A missing family falls back to Exo 2, then the game font. Your saved choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
@@ -442,6 +842,8 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.";
+            case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
             case "HistorySize": return "How many messages to keep per character.";
@@ -451,6 +853,7 @@
             case "ScanReach": return "Changes how far the scanner can outline and scan things. Vanilla leaves the game as it is. 2x, 3x, and 5x multiply that distance, never past 500 meters. A long reach can cost frame rate in busy areas. Applies the next time you open the scanner.";
             case "ScanHighlightArea": return "How far from the screen center the scanner picks up and outlines things. This does not change how far away you can scan (that is Scan reach). Small is about half the game's circle. Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays. Large reaches the top and bottom. Wide reaches the left and right. Full screen covers the corners too. Applies the next time you open the scanner.";
             case "ScanOutlineThickness": return "How thick scanner outlines are. Vanilla keeps the game's own look. Thick is one and a half times. Thicker is twice. Applies the next time you open the scanner.";
+            case "ScanCompactAll": return "GLOBAL = COMPACT MODE (CARDS). On always uses compact scanner panels. Off always uses the full panels.";
             case "HideMainHudWhileScanning": return "Hides ordinary Horizon HUD cards while the hand scanner is open. Item cards, the container list, the activate prompt, and combat feedback always stay.";
             case "HideWatchWhileScanning": return "Hides the watch while the hand scanner is open. Shared clocks on the planet card are unchanged.";
             case "HideQuestPopupsWhileScanning": return "Hides quest popups and the mission toast while you scan. This belongs with messages and works even when the scanner add-on is not installed.";
@@ -532,12 +935,11 @@
             var k:String = String(r.k);
             var help:String = this.hz51HelpOf(k, r);
             r.inote = help;
-            if(r.dis)
-            {
-               if(r.note == undefined || String(r.note).length == 0) { r.note = help; }
-               r.n13 = true;
-            }
-            else { r.note = this.hz51Line(k, r); }
+            // Empty notes get the short row line. Disabled rows (GAME LANGUAGE)
+            // used to copy the long details string into note, which hzFitText
+            // then chopped with '...'. Details stay in inote / SETTING DETAILS.
+            if(r.note == undefined || String(r.note).length == 0) { r.note = this.hz51Line(k, r); }
+            if(r.dis) { r.n13 = true; }
             if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {
@@ -558,7 +960,7 @@
             out.push(r);
             i++;
          }
-         return this.hz51Mute(out);
+         return this.hz51LocRows(this.hz51Mute(out));
       }
       private function hz51On(k:String) : Boolean
       {
@@ -1073,6 +1475,7 @@
          if(id == "typ")
          {
             return this.hz30FontRows([{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"h":"TYPE"},
+               {"k":"Font","l":"FONT FAMILY","t":"l","vals":HZ_FONT_FAM_IDS,"names":HZ_FONT_FAM_NAMES},
                {"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},
                {"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES},
                {"k":"HeaderStyle","l":"HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},
@@ -1290,6 +1693,14 @@
          }
          if(id == "mod") { return this.hz51Modules(); }
          if(id == "ml") { return this.hz51Msglog(); }
+         if(id == "loc")
+         {
+            var detected:String = this.hz51LangName(this.hzL10nGame);
+            if(detected == this.hzL("settings.language.auto", "Auto (game)") || detected.length == 0) { detected = "—"; }
+            var opts:Object = this.hz51LangOpts();
+            return [{"k":"_l10nGame","l":"GAME LANGUAGE","t":"x","btn":detected,"h":"DETECTION","dis":true,"dv":true},
+               {"k":"Language","l":"HORIZON LANGUAGE","t":"l","vals":opts.vals,"names":opts.names,"h":"OVERRIDE"}];
+         }
          if(id == "ctl")
          {
             return [{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","h":"CONTROLS"},
@@ -1669,9 +2080,9 @@
          else if(paused) { this.hz51T(b,"!",ccx,ccy - 7,16,11,"bd",warn,0,"center"); }
          else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
          var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","comms_dialogue":"COMMS DIALOGUE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
-         var title:String = names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE");
-         var stx:String = on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED"));
-         this.hz51T(b,"MODULE",x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
+         var title:String = this.hzLt(names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE"));
+         var stx:String = this.hzLt(on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED")));
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,title,x0 + 38,y0 + 18,Math.max(80,w * 0.55),11,"bd",uint(T.txt),1.4);
          this.hz51T(b,stx,x0 + w - 16,y0 + 16,150,11,"sb",paused ? warn : (on ? acc : uint(T.lab)),1.2,"right");
          if(body.length > 0)

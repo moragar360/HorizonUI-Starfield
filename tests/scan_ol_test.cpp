@@ -45,17 +45,24 @@ std::size_t Count(const std::string& a_s, const std::string& a_n)
 	for (auto p = a_s.find(a_n); p != std::string::npos; p = a_s.find(a_n, p + 1)) ++n;
 	return n;
 }
+// Skip forward declarations (the first '{' after the signature can be a later
+// function when the file is CRLF, because a pin of "fn()\n" never matches "fn()\r\n").
 std::string FnBody(const std::string& a_s, const std::string& a_sig)
 {
-	const auto i = a_s.find(a_sig);
-	if (i == std::string::npos) return {};
-	const auto b = a_s.find('{', i);
-	int d = 0;
-	for (auto p = b; p < a_s.size(); ++p) {
-		if (a_s[p] == '{') ++d;
-		else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+	std::size_t i = 0;
+	for (;;) {
+		i = a_s.find(a_sig, i);
+		if (i == std::string::npos) return {};
+		const auto b = a_s.find_first_of(";{", i + a_sig.size());
+		if (b == std::string::npos) return {};
+		if (a_s[b] == ';') { i = b + 1; continue; }
+		int d = 0;
+		for (auto p = b; p < a_s.size(); ++p) {
+			if (a_s[p] == '{') ++d;
+			else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+		}
+		return {};
 	}
-	return {};
 }
 bool Near(float a, float b) { return std::fabs(a - b) < 1e-5f; }
 
@@ -160,9 +167,20 @@ int main()
 	const auto cpp = ReadAll("src/main.cpp");
 	const auto as = ReadAll("actionscript/horizon_block.as");
 	const auto ini = ReadAll("Interface/HorizonUI/HorizonUI.default.ini");
-	const auto apply = FnBody(cpp, "void ScanOlApply()\n");
+	const auto apply = FnBody(cpp, "void ScanOlApply()");
 	const auto poll = FnBody(cpp, "void BannerPoll(ULONGLONG a_now)");
-	Expect(Count(cpp, "ScanOlApply();") == 2 && Has(poll, "ScanHlApply();") && poll.find("ScanOlApply();") == poll.find("ScanHlApply();") + std::string("ScanHlApply();").size() + std::string("         // 0.43.3.1: scanner highlight area (one atomic load and a compare unless it changed)\n\t\t").size(), "ScanOlApply is called once, from BannerPoll right after ScanHlApply (UI thread, 100 ms gate); plus its forward declaration");
+	{
+		const auto hl = poll.find("ScanHlApply();");
+		const auto ol = poll.find("ScanOlApply();");
+		const auto between = (hl != std::string::npos && ol > hl)
+			? poll.substr(hl, ol - hl)
+			: std::string();
+		Expect(Count(cpp, "ScanOlApply();") == 2 && hl != std::string::npos && ol != std::string::npos
+				&& between.find("ScanHlApply();") == 0
+				&& between.find("scanner highlight area") != std::string::npos
+				&& between.find("ScanReachApply") == std::string::npos,
+			"ScanOlApply is called once, from BannerPoll right after ScanHlApply (UI thread, 100 ms gate); plus its forward declaration");
+	}
 	Expect(Has(apply, "if (want == g_scanOlApplied) return;") && apply.find("if (want == g_scanOlApplied) return;") < apply.find("HzAddrSlot"), "steady state returns before any game call (one atomic load and a compare)");
 	Expect(Has(apply, "HzAddrSlot(id)") && Has(apply, "AddrSlotMiss(slot)") && Has(apply, "HzScanOlSEH(&io)") && apply.find("AddrSlotMiss(slot)") < apply.find("HzScanOlSEH(&io)"), "the INISettingCollection id is checked before the singleton is touched; the calls run under SEH");
 	const auto call = FnBody(cpp, "static void HzScanOlCall(HzScanOlRaw* a_io)");

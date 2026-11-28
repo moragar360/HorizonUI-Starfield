@@ -153,7 +153,8 @@ expect(!/ENTER_FRAME|enterFrame|new Timer|setInterval|setTimeout/.test(qm.slice(
 		const h = Object.assign({}, consts, {
 			HZQ_LRG: false,
 			hzqS: { ExtSlotScale: sc, TextScale: 1 },
-			hzqFace: function () { return "$Horizon_Font"; }
+			hzqFace: function () { return "$Horizon_Font"; },
+			hzqFontText: function (s) { return s; }
 		});
 		for (const n of ["hzqExtSc", "hzqExtBoxN", "hzqExtChipPad", "hzqExtChipFs", "hzqExtIcPad",
 			"hzqExtFit", "hzqExtChipApply", "hzqExtChipTune", "hzqExtKeyShort"]) {

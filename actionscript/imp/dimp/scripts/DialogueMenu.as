@@ -78,13 +78,18 @@ package
       private static const HZD_LRG:Boolean = false;
       private static const HZD_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
       private static const HZD_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       private static const HZD_AMB:uint = 0xF2B45F;
       private static const HZD_OK:uint = 0x5EE3A1;
       private static const HZD_BAD:uint = 0xFF5B5B;
       private static const HZD_DIFF:Array = [0x6FD39A,0xF2B45F,0xF27A5F];
-      private static const HZD_STR:Object = {"AccentHex":1,"DialogueX":1,"DialogueY":1,"DlgBgHex":1,"DlgTextHex":1};
+      private static const HZD_STR:Object = {"AccentHex":1,"DialogueX":1,"DialogueY":1,"DlgBgHex":1,"DlgTextHex":1,"Font":1};
       private static const HZD_BG:Array = [0x0B1218,0x16181C,0x0B1630,0x0A2226,0x1E1328,0x2A1014,0x3A4652,0xD5DBE0,0xF2F4F6,0xCCDFEE,0xF0E0C2,0xD2ECDF];   // = the HUD card colors
-      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
+      private var hzdCfg:Object = {"Dialogue":1,"DlgAutoPause":1,"DlgLayout":0,"DlgVisible":0,"DlgCard":1,"DlgOffsetX":0,"DlgOffsetY":0,"DlgScale":1,"DlgBgColor":0,"DlgBgHex":"","DlgTextColor":-1,"DlgTextHex":"","DlgMoreHint":1,"DlgTextSize":1,"DlgFont":-1,"DlgBgOpacity":0.85,"DlgNumberKeys":1,"DlgWheel":1,"DlgHoverScroll":0,"DlgSaidStyle":2,"DlgPersuadeStyle":0,"DlgPersuadeColor":2,"DlgPersuasionMeter":1,"DlgMarkers":0,"DlgInputDelay":150,"DlgRolloverSound":0,"DlgAnim":1,"DlgButtonBar":0,"DlgQuickPickHint":1,"DlgSelectHint":1,"SpeakerCard":1,"HzRev":0,"FontFace":1,"Font":"Exo2","AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"DialogueX":"-1","DialogueY":"-1"};
       private var hzdIni:int = 0;            // 0 loading, 1 loaded, 2 missing (defaults)
       private var hzdProbe:Object = {};      // edi / edi2 / font: 1 found, 0 not found
       private var hzdOn:Boolean = false;     // Horizon list in charge
@@ -108,6 +113,148 @@ package
       private var hzdReloadT:int = -100000;
       private var hzdTalkRead:Boolean = false;   // 0.43.6 r4: one settings re-read per conversation (F11 cannot open in dialogue)
       private var hzdBare:Boolean = false;   // DlgCard=0 while drawing
+      private var hzdL10n:Object = null;
+      private var hzdL10nUsed:String = "en";
+      private var hzdL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per movie load / language reload. No file I/O. Lookups run at card /
+      // panel / speaker build, never on the fade tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzdSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzdL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "used") { this.hzdL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzdL10n = tab;
+            this.hzdL10nC = {};
+            if(this.hzdOn && this.hzdOpen)
+            {
+               try { this.hzdDraw(); } catch(eDr:Error) { }
+            }
+            else
+            {
+               try { this.hzdDrawSpeaker(); } catch(eSp:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzdL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      private function hzdL(key:String, fb:String) : String
+      {
+         if(this.hzdL10n != null)
+         {
+            var v:* = this.hzdL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzdHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzdLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzdLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         if(this.hzdL10nC != null)
+         {
+            var cached:* = this.hzdL10nC[en];
+            if(cached != null) { return String(cached); }
+         }
+         var slug:String = this.hzdLSlug(en);
+         var out:String = en;
+         if(slug.length > 0)
+         {
+            var pfx:Array = ["dlg.hud_label.","comms.hud_label.","settings.ui.","hud.hud_label.","hud."];
+            var i:int = 0;
+            while(i < pfx.length)
+            {
+               var v:String = this.hzdL(String(pfx[i]) + slug, "");
+               if(v.length > 0) { out = v; break; }
+               i++;
+            }
+         }
+         if(this.hzdL10nC == null) { this.hzdL10nC = {}; }
+         this.hzdL10nC[en] = out;
+         return out;
+      }
 
       private function hzdInit() : void
       {
@@ -526,6 +673,73 @@ package
       }
       // role: "" names / labels (SemiBold), "_Regular" body, "_Bold" keycaps. DlgFont -1 = [Style] FontFace.
       // 3 = the game's semibold face (one weight for every role), game font if that name does not resolve.
+      private function hzdFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzdFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzdFontFamNorm(fam);
+         var lang:String = this.hzdL10nUsed != null && this.hzdL10nUsed.length > 0 ? this.hzdL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzdFontFamLive() : String
+      {
+         var fam:String = this.hzdFontFamNorm(String(this.hzdCfg.Font));
+         if(this.hzdFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzdFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzdFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzdFontHorizonBase() : String
+      {
+         var fam:String = this.hzdFontFamLive();
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzdFont(role:String, s:String) : String
       {
          var f:int = int(this.hzdCfg.DlgFont) >= 0 ? int(this.hzdCfg.DlgFont) : int(this.hzdCfg.FontFace);
@@ -534,8 +748,12 @@ package
          if(f == 3) { return this.hzdFontProbe(HZD_SEMI) ? HZD_SEMI : this.hzdGame(); }
          // marker still loading or absent: game font. Bold waits until the base face renders.
          if(this.hzdProbe.font !== 1 || f <= 0 || f > 2) { return this.hzdGame(); }
-         var base:String = f == 2 ? "$Horizon_Font_Alt" : "$Horizon_Font";
-         if(!this.hzdFontProbe(base)) { return this.hzdGame(); }
+         var base:String = f == 2 ? "$Horizon_Font_Alt" : this.hzdFontHorizonBase();
+         if(!this.hzdFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzdFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return this.hzdGame(); }
+         }
          if(role.length > 0 && this.hzdFontProbe(base + role)) { return base + role; }
          return base;
       }
@@ -549,7 +767,7 @@ package
          var f:TextFormat = new TextFormat(this.hzdFont(role,s),Math.round(size),col);
          f.letterSpacing = sp; f.align = align;
          if(wrap) { f.leading = Math.round(size * 0.35 - 4); }
-         t.defaultTextFormat = f; t.text = s; t.setTextFormat(f);
+         t.defaultTextFormat = f; t.text = this.hzdFontText(s); t.setTextFormat(f);
          var lx:Number = x;
          if(!wrap && align == "right") { lx = x - t.width; }
          else if(!wrap && align == "center") { lx = x - t.width / 2; }
@@ -562,7 +780,7 @@ package
       private function hzdTitle(who:String) : String
       {
          var w:String = who == null ? "" : String(who).replace(/^\s+|\s+$/g,"");
-         return w.length > 0 ? w.toUpperCase() : "RESPOND";
+         return w.length > 0 ? w.toUpperCase() : this.hzdLt("RESPOND");
       }
       // cut a one-line text field with "..." until it fits maxW (no change when it fits or maxW is not usable)
       private function hzdClip(t:TextField, maxW:Number) : void
@@ -745,8 +963,8 @@ package
          // header
          var hy:Number = pad + 4;
          // counter: right-aligned inside the header, mirroring the title's inset on the left (drawn first: the title stops before it)
-         var cntTf:TextField = this.hzdText(p,String(this.hzdSel + 1) + " OF " + String(this.hzdView.length),"",14 * ts,mut,Math.round(14 * ts * 0.12),W - pad - 14,hy,0,"right",false);
-         var ttlTf:TextField = this.hzdText(p,this.hzdPers ? "PERSUADE" : this.hzdTitle(this.hzdWho),"",(cmp ? 13 : 14) * ts,acc,Math.round(14 * ts * 0.22),pad + 14,hy,0,"left",false);
+         var cntTf:TextField = this.hzdText(p,String(this.hzdSel + 1) + " " + this.hzdLt("OF") + " " + String(this.hzdView.length),"",14 * ts,mut,Math.round(14 * ts * 0.12),W - pad - 14,hy,0,"right",false);
+         var ttlTf:TextField = this.hzdText(p,this.hzdPers ? this.hzdLt("PERSUADE") : this.hzdTitle(this.hzdWho),"",(cmp ? 13 : 14) * ts,acc,Math.round(14 * ts * 0.22),pad + 14,hy,0,"left",false);
          this.hzdClip(ttlTf,cntTf.x - 16 * ts - ttlTf.x);
          var y:Number = hy + 14 * ts + 12;
          if(!bare) { lg.beginFill(0xFFFFFF,0.09); lg.drawRect(pad,y,W - pad * 2,1); lg.endFill(); }
@@ -755,7 +973,7 @@ package
          var more:Boolean = int(this.hzdCfg.DlgMoreHint) == 1 && this.hzdLimit() > 0;
          if(more && this.hzdTop > 0)
          {
-            var at:TextField = this.hzdText(p,String(this.hzdTop) + " ABOVE","",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 2,0,"center",false);
+            var at:TextField = this.hzdText(p,String(this.hzdTop) + " " + this.hzdLt("ABOVE"),"",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 2,0,"center",false);
             this.hzdTri(lg,at.x - 10,y + 2 + at.textHeight / 2,false,acc);
             y += at.textHeight + 8;
          }
@@ -791,9 +1009,9 @@ package
             }
             else if(Boolean(d.bIsSpeechChallenge) && int(this.hzdCfg.DlgPersuadeStyle) == 0)
             {
-               chipW = this.hzdChip(r,"PERSUADE",uint(HZD_ACC[Math.max(0,Math.min(12,int(this.hzdCfg.DlgPersuadeColor)))]),rx,padY + 3,ts);
+               chipW = this.hzdChip(r,this.hzdLt("PERSUADE"),uint(HZD_ACC[Math.max(0,Math.min(12,int(this.hzdCfg.DlgPersuadeColor)))]),rx,padY + 3,ts);
             }
-            if(wasSaid && said == 2) { chipW += this.hzdChip(r,"SAID",0x8FA3AE,rx - chipW - (chipW > 0 ? 6 : 0),padY + 3,ts) + (chipW > 0 ? 6 : 0); }
+            if(wasSaid && said == 2) { chipW += this.hzdChip(r,this.hzdLt("SAID"),0x8FA3AE,rx - chipW - (chipW > 0 ? 6 : 0),padY + 3,ts) + (chipW > 0 ? 6 : 0); }
             var label:String = String(d.sChoiceText != null ? d.sChoiceText : "");
             if(keys && v < 9 && !cls) { kw = this.hzdKeycap(r,String(v + 1),tx,padY + 1,ts,wasSaid ? 0x8FA3AE : acc,wasSaid ? 0.8 : 1) + gap; }
             if(keys && v < 9 && cls) { label = String(v + 1) + "   " + label; }
@@ -823,7 +1041,7 @@ package
          var left:int = this.hzdView.length - (this.hzdTop + n);
          if(more && left > 0)
          {
-            var mt:TextField = this.hzdText(p,String(left) + " MORE","",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 8,0,"center",false);
+            var mt:TextField = this.hzdText(p,String(left) + " " + this.hzdLt("MORE"),"",14 * ts,mut,Math.round(14 * ts * 0.18),W / 2 + 11,y + 8,0,"center",false);
             this.hzdTri(lg,mt.x - 10,y + 8 + mt.textHeight / 2,true,acc);
             y += mt.textHeight + 10;
          }
@@ -833,7 +1051,7 @@ package
             if(!bare) { lg.beginFill(0xFFFFFF,0.09); lg.drawRect(pad,y,W - pad * 2,1); lg.endFill(); }
             y += 12;
             var fw:Number = this.hzdKeycap(p,"1-9",pad + 14,y,ts * 0.92,mut,1);
-            this.hzdText(p,"QUICK PICK","",14 * ts,mut,Math.round(14 * ts * 0.12),pad + 14 + fw + 10,y + 3,0,"left",false);
+            this.hzdText(p,this.hzdLt("QUICK PICK"),"",14 * ts,mut,Math.round(14 * ts * 0.12),pad + 14 + fw + 10,y + 3,0,"left",false);
             y += 26 * ts;
          }
          var H:Number = Math.round(y + 14 * ds);
@@ -863,7 +1081,7 @@ package
          g.beginFill(acc,0.9); g.drawCircle(46 * ts,36 * ts,7 * ts); g.endFill();
          g.beginFill(acc,0.9); g.drawRoundRect(34 * ts,46 * ts,24 * ts,12 * ts,12 * ts,12 * ts); g.endFill();
          this.hzdText(s,this.hzdWho.toUpperCase(),"",20 * ts,0xE8F0F5,Math.round(20 * ts * 0.16),90 * ts,16 * ts,w - 100 * ts,"left",false);
-         this.hzdText(s,"SPEAKING","",14 * ts,0x8FA3AE,Math.round(14 * ts * 0.14),90 * ts,50 * ts,0,"left",false);
+         this.hzdText(s,this.hzdLt("SPEAKING"),"",14 * ts,0x8FA3AE,Math.round(14 * ts * 0.14),90 * ts,50 * ts,0,"left",false);
          s.y = this.hzdPanel.y - this.hzdAnimDy - Math.round(104 * ts) - (this.hzdBarUp ? this.hzdBarH() + this.hzdBarGap() : 0);
          s.x = this.hzdPanel.x;
       }
@@ -1182,12 +1400,12 @@ package
          }
          if(mode == 0 && choices && !pad && int(this.hzdCfg.DlgSelectHint) == 1 && this.hzdAcceptKey.length > 0)
          {
-            right.push(this.hzdPill(b,"select",this.hzdAcceptKey,"SELECT",acc,txt,false,null,-1,z));
+            right.push(this.hzdPill(b,"select",this.hzdAcceptKey,this.hzdLt("SELECT"),acc,txt,false,null,-1,z));
          }
          var quick:Sprite = null;
          if(mode == 0 && choices && !pad && int(this.hzdCfg.DlgNumberKeys) == 1 && int(this.hzdCfg.DlgQuickPickHint) == 1)
          {
-            quick = this.hzdPill(b,"quick","1-9","QUICK PICK",mut,mut,false,null,-1,z);
+            quick = this.hzdPill(b,"quick","1-9",this.hzdLt("QUICK PICK"),mut,mut,false,null,-1,z);
          }
          this.hzdBare = false;
          if(right.length == 0 && quick == null) { b.visible = false; return; }
@@ -1615,11 +1833,11 @@ package
          var light:Boolean = false;
          try { light = this.hzdLight(bg); } catch(elb:Error) { light = false; }
          var mut:uint = light ? 0x4A5A64 : 0x8FA3AE;
-         var titleStr:String = "PERSUASION";
+         var titleStr:String = this.hzdLt("PERSUASION");
          var titleCol:uint = mut;
          var mark:int = 0;
-         if(o.won) { titleStr = "PERSUADED"; titleCol = col; mark = 1; }
-         else if(o.failed) { titleStr = "FAILED"; titleCol = col; mark = 2; }
+         if(o.won) { titleStr = this.hzdLt("PERSUADED"); titleCol = col; mark = 1; }
+         else if(o.failed) { titleStr = this.hzdLt("FAILED"); titleCol = col; mark = 2; }
          var titleFs:Number = fs;
          var titleBold:Boolean = false;
          if(mark != 0) { titleFs = 16.5; titleBold = true; }
@@ -1629,7 +1847,7 @@ package
          if(!isNaN(o.turns) && o.turns >= 0 && o.turns < 1000)
          {
             var ti:int = int(o.turns);
-            turnsTxt = "TURNS " + (ti < 10 ? "0" + String(ti) : String(ti));
+            turnsTxt = this.hzdLt("TURNS") + " " + (ti < 10 ? "0" + String(ti) : String(ti));
          }
          var pad:Number = Math.round(14 * u);
          var gap:Number = Math.round(8 * u);

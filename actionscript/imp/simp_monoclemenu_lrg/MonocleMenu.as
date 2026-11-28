@@ -1291,6 +1291,12 @@ package
       }
 
 
+
+
+
+
+
+
       // ===================== Horizon UI Scanner (monoclemenu) =====================
       // ORIGINAL CODE (Horizon UI) v0.41.0. apply_scanner_hooks.ps1 inserts this block into the game's own MonocleMenu
       // class (exported from the player's monoclemenu.swf on the PC); no game script text is stored in the kit.
@@ -1340,6 +1346,11 @@ package
       // the game's button bar, in its own order (hints are mirrored from these, never hard-coded)
       private static const HZS_BTNS:Array = ["AButton_mc","XButton_mc","SurfaceMapButton_mc","PhotoModeButton_mc","ZoomButton_mc","BackButton_mc"];
       private static const HZS_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face: run-time name only, never shown
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       // [Scanner] keys: name, type (b 0/1, i int, f float, z size -1 or 0.60-1.60, p position -1 / L|R|C n / T|B|C n,
       // o optional -1 or min-max, s text), default, min, max. Same table and order as HorizonUI.default.ini.
       private static const HZS_KEYS:Array = [["ScanLayoutVersion","i",1,1,99],["ScanShowPlanet","b",1,0,1],["ScanShowBioscan","b",1,0,1],["ScanShowSignals","b",1,0,1],["ScanShowTraits","b",1,0,1],["ScanShowCompass","b",1,0,1],["ScanShowMode","b",1,0,1],["ScanShowHints","b",1,0,1],["ScanShowWorldTags","b",1,0,1],["ScanWorldMarkers","b",1,0,1],["ScanShowBodyType","b",0,0,1],["ScanShowShip","b",1,0,1],["ScanPlanetX","p","-1",0,0],["ScanPlanetY","p","-1",0,0],["ScanBioscanX","p","-1",0,0],["ScanBioscanY","p","-1",0,0],["ScanSignalsX","p","-1",0,0],["ScanSignalsY","p","-1",0,0],["ScanTraitsX","p","-1",0,0],["ScanTraitsY","p","-1",0,0],["ScanSocialX","p","-1",0,0],["ScanSocialY","p","-1",0,0],["ScanCompassX","p","-1",0,0],["ScanCompassY","p","-1",0,0],["ScanModeX","p","-1",0,0],["ScanModeY","p","-1",0,0],["ScanHintsX","p","-1",0,0],["ScanHintsY","p","-1",0,0],["ScanVitalsX","p","-1",0,0],["ScanVitalsY","p","-1",0,0],["ScanPlanetScale","z",-1,0.6,1.6],["ScanBioscanScale","z",-1,0.6,1.6],["ScanSignalsScale","z",-1,0.6,1.6],["ScanTraitsScale","z",-1,0.6,1.6],["ScanSocialScale","z",-1,0.6,1.6],["ScanCompassScale","z",-1,0.6,1.6],["ScanModeScale","z",-1,0.6,1.6],["ScanHintsScale","z",-1,0.6,1.6],["ScanWorldTagScale","z",-1,0.6,1.6],["ScanPlanetCompact","i",-1,-1,1],["ScanBioscanCompact","i",-1,-1,1],["ScanSignalsCompact","i",-1,-1,1],["ScanTraitsCompact","i",-1,-1,1],["ScanCompassCompact","i",-1,-1,1],["ScanCompactAll","i",-1,-1,1],["ScanOpacity","o",-1,0.2,1.6],["ScanAccent","i",-1,-1,13],["ScanAccentHex","s","",0,0],["ScanTextCase","i",-1,-1,1],["ScanFont","i",-1,-1,3],["ScanMargin","o",-1,20,200],["ScanUnits","i",0,0,1],["ScanMaxSignals","i",5,1,8],["ScanHazardWarn","i",50,5,95],["ScanHazardCrit","i",85,10,100],["ScanCompleteFlash","b",1,0,1],["ScanLeftToFind","b",1,0,1],["ScanHideBioscanDone","b",0,0,1],["ScanMinRarity","i",0,0,4],["ScanNearestUnscanned","b",1,0,1],["HideMainHudWhileScanning","b",1,0,1],["ScanShowVitalsHealth","b",1,0,1],["ScanShowVitalsO2","b",1,0,1],["ScanShowVitalsBoost","b",1,0,1],["ScanVitalsCompact","b",0,0,1],["ScanVitalsLayout","i",0,0,1],["HideQuestPopupsWhileScanning","b",1,0,1],["DimTraitPopupDuringBioscan","b",0,0,1],["TraitPopupDim","f",0.4,0.1,0.9]];   // v0.41.0: = scanner_keys40 (the HUD has the same table)
@@ -1392,6 +1403,152 @@ package
       private var hzsCfgRev:int = 0;          // arch-fixes Fix 2: bumped when the settings text changed (was the serialized config)
       private var hzsCmpRev:int = 0;          // 0.43.3.2: bumped on every compass data event (hzsOnCmp)
       private var hzsTrC:Object = {};         // 0.43.3.2: "$KEY" -> translated text (one TextField per key per scanner open)
+      private var hzsL10n:Object = null;
+      private var hzsL10nUsed:String = "en";
+      private var hzsL10nCjk:Boolean = false;
+      private var hzsL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per movie load / language reload. No file I/O. Lookups run at card /
+      // panel / speaker build, never on the fade tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzsSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzsL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "used") { this.hzsL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzsL10n = tab;
+            this.hzsL10nCjk = this.hzsL10nUsed == "zh-cn" || this.hzsL10nUsed == "zhhans" || this.hzsL10nUsed == "ja" || this.hzsL10nUsed == "jp";
+            this.hzsL10nC = {};
+            this.hzsMNC = {};
+            this.hzsMNUnk = null;
+            this.hzsMNVeh = null;
+            this.hzsDirty = true;
+            if(this.hzsReady)
+            {
+               try { this.hzsDrawAll(false); } catch(eDr:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzsL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      // Named hzsLk so it cannot share a slot with the Horizon layer sprite hzsL.
+      // A function and a var of the same name is illegal ABC and CTDs MonocleMenu on open.
+      private function hzsLk(key:String, fb:String) : String
+      {
+         if(this.hzsL10n != null)
+         {
+            var v:* = this.hzsL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzsHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzsLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzsLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         if(this.hzsL10nC != null)
+         {
+            var cached:* = this.hzsL10nC[en];
+            if(cached != null) { return String(cached); }
+         }
+         var slug:String = this.hzsLSlug(en);
+         var out:String = en;
+         if(slug.length > 0)
+         {
+            var pfx:Array = ["scan.hud_label.","scan.help.","hud.hud_label.","settings.ui.","hud."];
+            var i:int = 0;
+            while(i < pfx.length)
+            {
+               var v:String = this.hzsLk(String(pfx[i]) + slug, "");
+               if(v.length > 0) { out = v; break; }
+               i++;
+            }
+         }
+         if(this.hzsL10nC == null) { this.hzsL10nC = {}; }
+         this.hzsL10nC[en] = out;
+         return out;
+      }
       private var hzsMNC:Object = {};         // 0.43.3.2: marker category -> hzsMarkName result (valid for hzsMNRev / hzsMNTi)
       private var hzsMNUnk:String = null;     // 0.43.3.2: the UNKNOWN SIGNAL / VEHICLE names, same validity
       private var hzsMNVeh:String = null;
@@ -1407,7 +1564,7 @@ package
       {
          this.hzsT0 = getTimer();
          this.hzsC = this.hzsDefaults();
-         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         this.hzsS = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"Font":"Exo2","HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsL = new Sprite();
          this.hzsL.mouseEnabled = false;
          this.hzsL.mouseChildren = false;
@@ -1568,7 +1725,7 @@ package
       private function hzsParse(txt:String) : void
       {
          var c:Object = this.hzsDefaults();
-         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
+         var st:Object = {"HudScale":1,"CardOpacity":1,"AccentColor":0,"AccentHex":-1,"Margin":40,"Compact":0,"TextScale":1,"FontFace":1,"Font":"Exo2","HeaderStyle":0,"ClockFormat":0,"TempUnit":0};
          this.hzsPerfDiag = false;
          this.hzsPerfMode = 0;
          this.hzsPerfScan = true;
@@ -1599,6 +1756,7 @@ package
                   else if(k == "compact") { st.Compact = (nv >= 0.5 || v.toLowerCase() == "true") ? 1 : 0; }
                   else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                   else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
+                  else if(k == "font") { st.Font = this.hzsFontFamNorm(v); }
                   else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "clockformat" && !isNaN(nv)) { st.ClockFormat = Math.max(0,Math.min(1,int(nv))); }
                   else if(k == "tempunit" && !isNaN(nv)) { st.TempUnit = Math.max(0,Math.min(1,int(nv))); }
@@ -1810,8 +1968,12 @@ package
       }
       private function hzsCs(s:String) : String
       {
-         if(!this.hzsTitle()) { return s.toUpperCase(); }
-         var w:Array = s.toLowerCase().split(" ");
+         // Unit letters stay native. Longer Horizon chrome is looked up once
+         // (hzsLt memo) then cased. Game names use hzsGs / hzsTr, not this.
+         var loc:String = (s == null || s.length < 2) ? String(s) : this.hzsLt(s);
+         if(this.hzsHasCjk(loc)) { return loc; }
+         if(!this.hzsTitle()) { return loc.toUpperCase(); }
+         var w:Array = loc.toLowerCase().split(" ");
          var i:int = 0;
          while(i < w.length) { var x:String = String(w[i]); if(x.length > 0 && !/^(of|and|in|at|to)$/.test(x)) { w[i] = x.charAt(0).toUpperCase() + x.substr(1); } i++; }
          return w.join(" ");
@@ -1854,8 +2016,76 @@ package
          this.hzsFontLib = 0;
          this.hzsFontLdr = null;
       }
+      private function hzsFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzsFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzsFontFamNorm(fam);
+         var lang:String = this.hzsL10nUsed != null && this.hzsL10nUsed.length > 0 ? this.hzsL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzsFontFamLive() : String
+      {
+         var fam:String = this.hzsFontFamNorm(String(this.hzsS != null ? this.hzsS.Font : "Exo2"));
+         if(this.hzsFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzsFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzsFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzsFontHorizonBase() : String
+      {
+         var fam:String = this.hzsFontFamLive();
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzsFace(w:String) : String
       {
+         if(this.hzsL10nCjk && this.hzsProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
          var f:int = int(this.hzsC.ScanFont);
          if(f < 0 || f > 3) { f = int(this.hzsS.FontFace); }
          var game:String = this.hzsGame();
@@ -1870,10 +2100,15 @@ package
             if(want == "$Horizon_Font_Alt" || this.hzsProbe(want)) { return want; }
             return "$Horizon_Font_Alt";
          }
-         if(!this.hzsProbe("$Horizon_Font")) { return game; }
-         want = w == "rg" ? "$Horizon_Font_Regular" : (w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(want == "$Horizon_Font" || this.hzsProbe(want)) { return want; }
-         return "$Horizon_Font";
+         var base:String = this.hzsFontHorizonBase();
+         if(!this.hzsProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzsProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return game; }
+         }
+         want = w == "rg" ? base + "_Regular" : (w == "bd" ? base + "_Bold" : base);
+         if(want == base || this.hzsProbe(want)) { return want; }
+         return base;
       }
       private function hzsGame() : String
       {
@@ -1986,6 +2221,7 @@ package
       }
       private function hzsTSet(t:TextField, str:String, f:TextFormat, maxW:Number) : void
       {
+         str = this.hzsFontText(str);
          t.text = str;
          t.setTextFormat(f);
          if(maxW > 0 && t.textWidth > maxW && str.length > 1) { this.hzsTrunc(t,str,f,maxW); }
@@ -2574,7 +2810,7 @@ package
             {
                var d:Number = Number(o.fDistanceToPlayer);
                if(isNaN(d) || d < 0) { return null; }   // no distance for the ship: the row stays hidden
-               return {"ic":"ship","n":this.hzsCs("YOUR SHIP"),"sub":"Landing zone","d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
+               return {"ic":"ship","n":this.hzsCs("YOUR SHIP"),"sub":this.hzsCs("Landing zone"),"d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
             }
          }
          catch(e:Error) { }
@@ -2727,7 +2963,7 @@ package
          if(v == null) { return null; }
          var d:Number = Number(v.fDistanceToPlayer);
          if(isNaN(d) || d < 0) { return null; }
-         return {"ic":"vehicle","n":this.hzsCs("YOUR VEHICLE"),"sub":"Vehicle","d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
+         return {"ic":"vehicle","n":this.hzsCs("YOUR VEHICLE"),"sub":this.hzsCs("Vehicle"),"d":this.hzsDist(d),"hl":false,"col":HZS_O2B,"dc":this.hzsAccent()};
       }
       // the compass follower marker (a companion; never a companion's ship), green; list row only (no world marker)
       private function hzs41FolRow() : Object
@@ -2741,7 +2977,7 @@ package
                if(isNaN(d) || d < 0) { continue; }
                var nm:String = s.strText != null ? String(s.strText) : (s.sName != null ? String(s.sName) : "");
                var named:Boolean = nm.length > 0 && nm.charAt(0) != "$";
-               return {"ic":"person","n":named ? this.hzsGs(nm) : this.hzsCs("COMPANION"),"sub":named ? "Companion" : "Follower","d":this.hzsDist(d),"hl":false,"col":HZS_GRN,"dc":this.hzsAccent()};
+               return {"ic":"person","n":named ? this.hzsGs(nm) : this.hzsCs("COMPANION"),"sub":named ? this.hzsCs("Companion") : this.hzsCs("Follower"),"d":this.hzsDist(d),"hl":false,"col":HZS_GRN,"dc":this.hzsAccent()};
             }
          }
          catch(e:Error) { }
@@ -2792,7 +3028,7 @@ package
             var disc:Boolean = o.bIsDiscovered === true;
             var own:String = this.hzs41Own(o);   // v0.41.0 r2: "mine" / "other" (a companion's ship) / "" (neutral)
             var mcol:uint = own == "mine" ? HZS_O2B : (own == "other" ? HZS_VIO : (disc || hl ? acc : HZS_POI));
-            var msub:String = hl ? this.hzsCs("NEAREST UNDISCOVERED") : (own == "other" ? "Companion ship" : (disc ? "Discovered" : "Undiscovered"));
+            var msub:String = hl ? this.hzsCs("NEAREST UNDISCOVERED") : (own == "other" ? this.hzsCs("Companion ship") : (disc ? this.hzsCs("Discovered") : this.hzsCs("Undiscovered")));
             var myName:Boolean = own == "mine" && this.hzsOn("ScanShowShip");   // r2 (NIT-7): the YOUR SHIP name only with that row on
             rows.push({"ic":this.hzsMarkIcon(o),"n":myName ? this.hzsCs(this.hzs41Kind(o) == "veh" ? "YOUR VEHICLE" : "YOUR SHIP") : this.hzsMarkName(o),"sub":msub,"d":this.hzsDist(Number(o.uRangeM)),"hl":hl,"col":hl ? acc : mcol,"dc":acc});
          }

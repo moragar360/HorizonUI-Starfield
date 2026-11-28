@@ -14,6 +14,9 @@ This repository holds the source of **`HorizonUI.dll`**, the SFSE plugin that po
 - **Customizable:** more than 100 settings, Arrange Cards and Arrange Scanner to move anything (the scope's hold-breath chip included), a vertical or horizontal Vitals card, colors, fonts, sizes, and presets you can save and switch.
 - **Modular:** a core HUD plus optional **Horizon Font**, the optional **Quick Menu** (the favorites cross as Horizon cards), **Comms** (subtitles, dialogue and companion reactions), the **Message Log** (a searchable history of your HUD messages), the optional **Scanner**, Horizon's own hand scanner screen, and the optional **Scope** module, a Horizon hold-breath chip for weapon scopes. Core is always installed; the modules are optional parts of the same FOMOD installer and need Core.
 
+## Language
+Horizon labels, Settings, and the Quick Menu follow the game language, or F11 > SYSTEM > LANGUAGE. **Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.** Horizon uses the game's Chinese face when that FontLib is loaded. It does not embed a CJK font.
+
 ## New in 0.43.5 (TESTONLY, unreleased)
 
 A private 0.43.5.0 TESTONLY build on `feature/0.43.5-quickmenu24` adds Quick Menu Extended Mode (up to 24 slots). CROSS + BARS is the default layout; BARS is an F11 alternate. The settings schema still stays 0.43.3.0, so 0.43.3 and 0.43.4 settings carry over with Extended Mode off. This is not a public release. The full list is in [CHANGELOG.md](CHANGELOG.md).

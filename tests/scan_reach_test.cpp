@@ -44,17 +44,24 @@ std::size_t Count(const std::string& a_s, const std::string& a_n)
 	for (auto p = a_s.find(a_n); p != std::string::npos; p = a_s.find(a_n, p + 1)) ++n;
 	return n;
 }
+// Skip forward declarations (the first '{' after the signature can be a later
+// function when the file is CRLF, because a pin of "fn()\n" never matches "fn()\r\n").
 std::string FnBody(const std::string& a_s, const std::string& a_sig)
 {
-	const auto i = a_s.find(a_sig);
-	if (i == std::string::npos) return {};
-	const auto b = a_s.find('{', i);
-	int d = 0;
-	for (auto p = b; p < a_s.size(); ++p) {
-		if (a_s[p] == '{') ++d;
-		else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+	std::size_t i = 0;
+	for (;;) {
+		i = a_s.find(a_sig, i);
+		if (i == std::string::npos) return {};
+		const auto b = a_s.find_first_of(";{", i + a_sig.size());
+		if (b == std::string::npos) return {};
+		if (a_s[b] == ';') { i = b + 1; continue; }
+		int d = 0;
+		for (auto p = b; p < a_s.size(); ++p) {
+			if (a_s[p] == '{') ++d;
+			else if (a_s[p] == '}' && --d == 0) return a_s.substr(b, p - b + 1);
+		}
+		return {};
 	}
-	return {};
 }
 
 }
@@ -200,10 +207,10 @@ int main()
 	const auto as = ReadAll("actionscript/horizon_block.as");
 	const auto ini = ReadAll("Interface/HorizonUI/HorizonUI.default.ini");
 	const auto hdr = ReadAll("src/hz_scan_reach.h");
-	const auto apply = FnBody(cpp, "void ScanReachApply()\n");
+	const auto apply = FnBody(cpp, "void ScanReachApply()");
 	const auto call = FnBody(cpp, "static void HzScanReachCall(HzScanReachRaw* a_io)");
 	const auto ids = FnBody(cpp, "static int HzScanReachIds()");
-	const auto rec = FnBody(cpp, "void ScanReachRecheck()\n");
+	const auto rec = FnBody(cpp, "void ScanReachRecheck()");
 	Expect(Count(cpp, "ScanReachApply();") == 2 && Has(FnBody(cpp, "void BannerPoll(ULONGLONG a_now)"), "ScanReachApply();"), "ScanReachApply is called once, from BannerPoll (UI thread, 100 ms gate); plus its forward declaration");
 	Expect(Has(apply, "if (hzscanreach::Settled(g_scanReach, want)) return;") && apply.find("hzscanreach::Settled(") < apply.find("HzScanReachIds()"), "steady state returns before any game call (one atomic load and a compare)");
 	Expect(Has(apply, "hzscanreach::Pick(g_scanReach, want, cur, found)") && Has(rec, "hzscanreach::Recheck(g_scanReach, cur, found)"), "main.cpp runs the shared state machine (no private copy of the yield order)");

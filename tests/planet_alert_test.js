@@ -37,15 +37,15 @@ function pin(snippet, msg) {
 
 pin('private static const HZ_VERSION:String = "0.43.5.0";', "schema version is 0.43.5.0 (0.43.5 adds [Scanner] ScanReach) (= HZF::kVersion)");
 pin('private static const HZ_BUILD:String = "0.43.5.0";', "HUD build id is 0.43.5.0");
-pin('this.hzPpLocL.text = "LOCAL/GAME";', "planet local row label is always LOCAL/GAME");
+pin('this.hzPpLocL.text = this.hzL("hud.hud_label.local_game","LOCAL/GAME");', "planet local row label is always LOCAL/GAME");
 pin("tf.text = this.hzFmtLocGame(uh,um,true);", "GAME Local/Game value honors ClockFormat");
 pin("tf.text = this.hzFmtLocGame(H,M,false);", "LOCAL Local/Game value honors ClockFormat");
 expect(src.indexOf("GAME UT is always 24-hour") < 0, "planet card no longer hardcodes GAME as 24-hour");
 expect(src.indexOf("private function hzFmtLocGame") >= 0, "shared LOCAL/GAME clock helper exists");
-pin('this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
+pin('this.hzPpRealL = this.hzT(p,this.hzL("hud.hud_label.pc_real","PC/REAL"),r - 62,45,64,8,"sb","dim",0.8,"right");', "planet PC row label is PC/REAL");
 pin("private var hzPpShowUT:Boolean = false;", "clock glyph uses an explicit UT flag");
 pin("if(isLoc && this.hzPpShowUT)", "preview clock glyph does not read the label text");
-pin('this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");', "LOCAL/GAME label field is wide enough");
+pin('this.hzPpLocL = this.hzT(p,this.hzL("hud.hud_label.local_game","LOCAL/GAME"),r - 80,21,80,8,"sb","dim",0.8,"right");', "LOCAL/GAME label field is wide enough");
 expect(src.indexOf('this.hzPpLocL.text = showUT ? "GAME" : "LOCAL"') < 0, "planet label no longer switches LOCAL vs GAME");
 expect(src.indexOf('this.hzPpLocL.text == "GAME"') < 0, "clock glyph no longer compares the label text");
 pin('{"k":"TempUnit","l":"TEMPERATURE UNITS"', "temperature units toggle is on the Type tab");
@@ -734,8 +734,8 @@ dlgPin("private function hzdPmMeterMarks(", "the persuasion meter has notches an
 dlgPin("var fx:Number = tw + flagGap;", "the goal flag starts just after the bar");
 dlgPin("g.drawRect(nx,0,gapW,mh);", "persuasion notches are gaps");
 dlgPin("fracT.y = Math.round(yM + Math.max(0,(rowMH - fracT.height) / 2));", "the score sits on the meter row");
-dlgPin('titleStr = "PERSUADED"', "a win changes the header to PERSUADED");
-dlgPin('titleStr = "FAILED"', "a loss changes the header to FAILED");
+dlgPin('titleStr = this.hzdLt("PERSUADED")', "a win changes the header to PERSUADED");
+dlgPin('titleStr = this.hzdLt("FAILED")', "a loss changes the header to FAILED");
 dlgPin("if(mark != 0) { titleFs = 16.5; titleBold = true; }", "PERSUADED and FAILED are 16.5 px");
 {
 	const call = dlgBlock.indexOf('this.hzdText(s,titleStr,"",titleFs');
@@ -828,7 +828,7 @@ pin('var sb:String = String(b.sub).length > 0 ? String(b.sub) : sys;', "a game s
 pin('var nm:String = String(b.txt).length > 0 ? String(b.txt) : "Affliction";', "an alert without a name uses Affliction");
 pin('out.push({"key":"p:" + icon,"name":pos ? "Buff" : "Affliction","sub":sys,"kind":pos ? "buff" : "injury","env":false,"pos":pos,"icon":icon,"cat":icon.replace(new RegExp("_(Negative|Positive)$"),"")});', "a plain effect chip is Affliction plus the body system (a _Positive buff is Buff; Afflictions P0)");
 pin('{"name":"Affliction","kind":"injury","env":false}', "the F11 preview uses Affliction as the fallback title");
-pin('var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);', "the Vitals labels are SemiBold 13 / acc / 2");
+pin('var lab:TextField = this.hzT(p,this.hzLt(i == 0 ? "HEALTH" : "OXYGEN"),50,y + 9,150,13,"sb","acc",2);', "the Vitals labels are SemiBold 13 / acc / 2");
 	pin('this.hzHdr19(lab);', "the Vitals labels still go through hzHdr19");
 	pin('this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");', "the Vitals value text hzVnHp / hzVnO2 is SemiBold 20 / main / 1");
 	pin('this.hz26Co2T = this.hzT(p,"",HZ_VN_W - 14 - 260,66 + 8,100,13,"sb","col",0.6,"right",HZ_RED);', "the Vitals CO2 secondary hz26Co2T is SemiBold 13 / col / 0.6");

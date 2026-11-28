@@ -1647,6 +1647,7 @@
 		g_favRoot.store(root, std::memory_order_release);
 		g_qmBound.store(false, std::memory_order_release);
 		g_qmMenuOpen.store(root != nullptr, std::memory_order_release);
+		try { PushL10nFavorites(); } catch (...) {}
 		if (root && g_qmExtOn.load(std::memory_order_acquire)) {
 			if (QmBindExtCmd(a_menu))
 				g_qmBound.store(true, std::memory_order_release);

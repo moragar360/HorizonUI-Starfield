@@ -118,6 +118,7 @@ function makeHost(opt) {
 		hzHsVanD: null, hzHsCardOn: true, hzWatchStyle: 0, hzLaidOut: true, shows: [], sz: null,
 		hzT(p, txt, x, y, w, fs, face, tone) { const t = { text: txt, width: w, x, y, tone, _v: true }; Object.defineProperty(t, "visible", { get() { return this._v; }, set(v) { this._v = v; } }); p.addChild(t); return t; },
 		hzUC(s) { return s.toUpperCase(); },
+		hzLt(s) { return s; }, hzHasCjk() { return false; },
 		hzFitText(tf, full) { log.push("text:" + full); tf.text = full; }, hzTW(tf) { return tf.text.length * 8; }, hzTxtTop(tf, y) { tf.y = y; },
 		hzIconCol(c) { return c; },
 		hzPanel(g, w, h, r, tint, edge) { log.push("panel:" + w + "x" + h + ":" + (edge >>> 0).toString(16)); },

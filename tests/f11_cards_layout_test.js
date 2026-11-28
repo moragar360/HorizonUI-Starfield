@@ -99,9 +99,9 @@ if (baseAs) {
 	const defLine = (src, re) => (src.match(re) || [""])[0];
 	// 0.43.3.2 batch e: the only HZ_SET_DEF change since the base is the two vehicle exit pill offsets (0 / 0 = the game's spot)
 	const QMDEF = '"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,';
-	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "").replace(',"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0', "");
+	const defNow = defLine(as, /private static const HZ_SET_DEF:Object = .*/).replace('"Language":"auto",', "").replace('"Font":"Exo2",', "").replace('"VehicleExitX":0,"VehicleExitY":0,' + QMDEF, "").replace(',"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0', "");
 	const defBase = defLine(baseAs, /private static const HZ_SET_DEF:Object = .*/).replace(GONE_DEF, "");
-	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged except the Quick Menu keys (schema stays 0.43.3.0)");
+	expect(defNow === defBase && defLine(as, /private static const HZ31_DEF:Object = .*/) === defLine(baseAs, /private static const HZ31_DEF:Object = .*/), "defaults tables (HZ_SET_DEF, HZ31_DEF) unchanged except Quick Menu keys, Language, and Font");
 	expect(fnText(as, "hz34IniLines").body === fnText(baseAs, "hz34IniLines").body && fnText(as, "hz34Ini").body === fnText(baseAs, "hz34Ini").body && fnText(as, "hz34SetCur").body === fnText(baseAs, "hz34SetCur").body, "the [Cards] reader, writer and current values unchanged (saved settings and presets behave as before)");
 } else {
 	gitBase.report(baseRes, BASE, "old-vs-new row and default checks", expect);

@@ -563,15 +563,20 @@ package
       // ini is re-applied whenever the file text changes (not only on a new HzRev) so ARRANGE positions always arrive.
       private static const HZC_LRG:Boolean = true;
       private static const HZC_ACC:Array = [0x3FD0E0,0x4FD1B8,0xF2B45F,0xB59CF2,0xA8E86F,0xE8F2F5,0xF2839F,0xF28A4F,0x6FB0F2,0xE8C547,0x9FF2D0,0x3E6478,0x1E4A8C];
-      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1};
+      private static const HZC_STR:Object = {"SpeakerHex":1,"SubTextHex":1,"AccentHex":1,"SubtitleX":1,"SubtitleY":1,"SpeakerX":1,"SpeakerY":1,"MissionToastX":1,"MissionToastY":1,"HudMessagesX":1,"HudMessagesY":1,"Font":1};
       private static const HZC_SEMI:String = "$NB_Grotesk_Semibold";   // the game's own semibold face (run-time name only)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       private static const HZC_EDGE:Number = 0.10;          // card edge: white @ .10, 1 px stroke
       private static const HZC_TXT:uint = 0xE8F0F5;         // default subtitle text (off-white)
       private static const HZC_GRN:uint = 0x5EE3A1;
       private static const HZC_RED:uint = 0xFF5B5B;
       private static const HZC_TST_HEAD:Array = ["MISSION UPDATED","NEW MISSION","OBJECTIVE COMPLETE","MISSION COMPLETE","MISSION FAILED"];
       private static const HZC_TST_PRIO:Array = [1,3,2,4,5];   // merging two updates of one quest keeps the stronger state
-      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","CardOpacity":1,"CardBgOpacity":92,"Compact":0,"HzRev":0};
+      private var hzcCfg:Object = {"ReactionCard":1,"GameCardTitle":0,"Subtitles":1,"SubAutoPause":1,"SubSize":1,"SubWidth":50,"SubBgOpacity":0.7,"SubPosition":0,"SubOffsetY":0,"SubAlign":0,"ShowSpeaker":1,"SpeakerColor":-1,"SpeakerHex":"","SpeakerCard":1,"KeepInDialogue":1,"FixedInDialogue":1,"SubMaxLines":3,"SubFont":-1,"Dialogue":1,"DlgAutoPause":1,"HideQuestPopupsWhileScanning":1,"DimTraitPopupDuringBioscan":0,"TraitPopupDim":0.4,"XpToast":0,"FontFace":1,"Font":"Exo2","AccentColor":0,"AccentHex":"","TextScale":1,"ScreenHeight":0,"Margin":40,"SubtitleX":"-1","SubtitleY":"-1","SpeakerX":"-1","SpeakerY":"-1","SubTextColor":-1,"SubTextHex":"","SubCard":1,"SubOffsetX":0,"MissionToast":1,"MissionToastTime":5,"MissionToastMax":3,"MissionToastSound":1,"MissionToastScale":-1,"HudScale":1,"MissionToastX":"-1","MissionToastY":"-1","HudMessagesX":"-1","HudMessagesY":"-1","CardOpacity":1,"CardBgOpacity":92,"Compact":0,"HzRev":0};
       private var hzcIniState:int = 0;       // 0 loading, 1 read, 2 missing / unreadable (defaults)
       private var hzcSubBg:Shape = null;     // card art: a fresh Shape per draw (no stale path can survive)
       private var hzcSpkBg:Shape = null;
@@ -612,6 +617,144 @@ package
       private var hzcShown:Boolean = false;
       private var hzcGameFont:String = null;
       private var hzcFontOk:Object = {};
+      private var hzcL10n:Object = null;
+      private var hzcL10nUsed:String = "en";
+      private var hzcL10nC:Object = null;   // English chrome -> translated; filled at SetL10n / first lookup
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per movie load / language reload. No file I/O. Lookups run at card /
+      // panel / speaker build, never on the fade tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzcSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzcL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "used") { this.hzcL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzcL10n = tab;
+            this.hzcL10nC = {};
+            if(this.hzcSpk != null && this.hzcSpk.visible)
+            {
+               try { this.hzcDrawSpeaker(this.hzcWho); } catch(eSpk:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzcL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      private function hzcL(key:String, fb:String) : String
+      {
+         if(this.hzcL10n != null)
+         {
+            var v:* = this.hzcL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzcHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzcLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzcLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         if(this.hzcL10nC != null)
+         {
+            var cached:* = this.hzcL10nC[en];
+            if(cached != null) { return String(cached); }
+         }
+         var slug:String = this.hzcLSlug(en);
+         var out:String = en;
+         if(slug.length > 0)
+         {
+            var pfx:Array = ["comms.hud_label.","comms.help.","dlg.hud_label.","settings.ui.","hud.hud_label.","hud."];
+            var i:int = 0;
+            while(i < pfx.length)
+            {
+               var v:String = this.hzcL(String(pfx[i]) + slug, "");
+               if(v.length > 0) { out = v; break; }
+               i++;
+            }
+         }
+         if(this.hzcL10nC == null) { this.hzcL10nC = {}; }
+         this.hzcL10nC[en] = out;
+         return out;
+      }
 
       private function hzcInit() : void
       {
@@ -1026,14 +1169,86 @@ package
          return ok;
       }
       // role: "nm" names (SemiBold / Medium), "rg" body. SubFont -1 = [Style] FontFace. Chosen face -> base face -> game font.
+      private function hzcFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzcFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzcFontFamNorm(fam);
+         var lang:String = this.hzcL10nUsed != null && this.hzcL10nUsed.length > 0 ? this.hzcL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzcFontFamLive() : String
+      {
+         var fam:String = this.hzcFontFamNorm(String(this.hzcCfg.Font));
+         if(this.hzcFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzcFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzcFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzcFontHorizonBase() : String
+      {
+         var fam:String = this.hzcFontFamLive();
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzcFont(role:String) : String
       {
          var f:int = int(this.hzcCfg.SubFont) >= 0 ? int(this.hzcCfg.SubFont) : int(this.hzcCfg.FontFace);
          if(f == 3) { return this.hzcFontProbe(HZC_SEMI) ? HZC_SEMI : this.hzcGameFont; }   // one weight for every role
          // marker still loading or absent: game font, so a missing $Horizon_ face is not looked up
          if(this.hzcProbe.font !== 1) { return this.hzcGameFont; }
-         var base:String = f == 2 ? "$Horizon_Font_Alt" : (f == 1 ? "$Horizon_Font" : null);
-         if(base == null || !this.hzcFontProbe(base)) { return this.hzcGameFont; }
+         var base:String = f == 2 ? "$Horizon_Font_Alt" : (f == 1 ? this.hzcFontHorizonBase() : null);
+         if(base == null) { return this.hzcGameFont; }
+         if(!this.hzcFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzcFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return this.hzcGameFont; }
+         }
          var want:String = role == "rg" ? base + "_Regular" : base;
          if(want != base && this.hzcFontProbe(want)) { return want; }
          return base;
@@ -1063,13 +1278,16 @@ package
       private function hzcScale() : Number { return Number(this.hzcCfg.SubSize) * Number(this.hzcCfg.TextScale) * (HZC_LRG ? 1.25 : 1); }
       private function hzcSet(t:TextField, s:String, role:String, size:Number, col:uint, spacing:Number, align:String) : void
       {
-         var face:String = this.hzcFits(t,s) ? this.hzcFont(role) : this.hzcGameFont;
+         // CJK uses the game Chinese face when fonts_zhcn is loaded (game
+         // language Chinese). Never embed a CJK font. Probe is cached.
+         var face:String = this.hzcFits(t,s) ? this.hzcFont(role)
+            : (this.hzcFontProbe("DFZongYi-GB Otf W5 Regular") ? "DFZongYi-GB Otf W5 Regular" : this.hzcGameFont);
          var f:TextFormat = new TextFormat(face,Math.round(size),col);
          f.letterSpacing = spacing;
          f.align = align;
          if(role == "rg") { f.leading = Math.round(size * 0.38 - 4); }
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzcFontText(s);
          t.setTextFormat(f);
       }
       private function hzcHideCards() : void
@@ -1179,7 +1397,7 @@ package
          g.beginFill(acc,0.9); g.drawRoundRect(34 * ts,46 * ts,24 * ts,12 * ts,12 * ts,12 * ts); g.endFill();
          this.hzcSet(this.hzcSpkName,who.toUpperCase(),"nm",20 * ts,0xE8F0F5,Math.round(20 * ts * 0.16),"left");
          this.hzcSpkName.x = Math.round(90 * ts); this.hzcSpkName.y = Math.round(16 * ts);
-         this.hzcSet(this.hzcSpkSub,"SPEAKING","nm",13 * ts,acc,Math.round(13 * ts * 0.14),"left");
+         this.hzcSet(this.hzcSpkSub,this.hzcLt("SPEAKING"),"nm",13 * ts,acc,Math.round(13 * ts * 0.14),"left");
          this.hzcSpkSub.x = Math.round(100 * ts); this.hzcSpkSub.y = Math.round(50 * ts);
          var cw:Number = this.hzcSpkSub.textWidth + 20 * ts;
          g.lineStyle(1,acc,0.45,true); g.beginFill(acc,0.16); g.drawRoundRect(90 * ts,48 * ts,cw,this.hzcSpkSub.textHeight + 6 * ts,20 * ts,20 * ts); g.endFill(); g.lineStyle();
@@ -1430,7 +1648,7 @@ package
          var tx:Number = Math.round(80 * z);
          var maxW:Number = W - tx - 18 * z;
          var hd:TextField = this.hzcField(true);
-         this.hzcSet(hd,String(HZC_TST_HEAD[st]),"nm",13 * z,col,Math.round(13 * z * 0.18),"left");
+         this.hzcSet(hd,this.hzcLt(String(HZC_TST_HEAD[st])),"nm",13 * z,col,Math.round(13 * z * 0.18),"left");
          hd.x = tx; hd.y = Math.round(10 * z);
          s.addChild(hd);
          var tt:TextField = this.hzcField(true);
@@ -2151,7 +2369,7 @@ package
             else if(d.sText != null && String(d.sText).length > 0) { nm = String(d.sText); }
             if(nm.length == 0 || nm == this.hzcLogLastLoc) { return; }
             this.hzcLogLastLoc = nm;
-            this.hzcLogPush("location","LOCATION",nm);
+            this.hzcLogPush("location",this.hzcLt("LOCATION"),nm);
          }
          catch(e:Error) { }
       }
@@ -2178,7 +2396,7 @@ package
                   if(u.bLevelUp === true && lv <= 0) { lv = 1; }
                }
             }
-            if(lv > 1) { this.hzcLogPush("xp","LEVEL UP","Level up! You are now level " + lv + "."); }
+            if(lv > 1) { this.hzcLogPush("xp",this.hzcLt("LEVEL UP"),this.hzcLt("Level up! You are now level {n}.").split("{n}").join(String(lv))); }
             else if(n > 0) { this.hzcLogPush("xp","XP","+" + String(int(n)) + " XP"); }
          }
          catch(e:Error) { }
@@ -3074,7 +3292,7 @@ package
       {
          var i:int = this.hzcCfg != null ? int(this.hzcCfg.GameCardTitle) : 0;
          if(i < 0 || i >= HZC_GAME_TITLES.length) { i = 0; }
-         return String(HZC_GAME_TITLES[i]);
+         return this.hzcLt(String(HZC_GAME_TITLES[i]));
       }
       // -1 means the F11 accent. Tone is the icon and the chip. The left bar stays the accent.
       private function hzcCardTone(kind:String, sub:String) : int
@@ -3091,30 +3309,30 @@ package
       }
       private function hzcCardPhrase(sub:String) : String
       {
-         if(sub == "gained") { return "Gained"; }
-         if(sub == "worse") { return "Became worse"; }
-         if(sub == "improved") { return "Prognosis improved"; }
-         if(sub == "severity") { return "Severity improved"; }
-         if(sub == "attempted") { return "Attempted to cure"; }
-         if(sub == "cured") { return "Cured"; }
-         if(sub == "follow") { return "Is now following you."; }
-         if(sub == "unfollow") { return "Is no longer following you."; }
-         if(sub == "follow-available") { return "Is available to be your follower."; }
-         if(sub == "follow-unavailable") { return "Is no longer available to be your follower."; }
-         if(sub == "companion") { return "Is now your Active Companion."; }
-         if(sub == "uncompanion") { return "Is no longer your Active Companion."; }
-         if(sub == "companion-available") { return "Is available to be your Companion."; }
-         if(sub == "companion-unavailable") { return "Is no longer available to be your companion."; }
-         if(sub == "crew") { return "Is now an Active Crew Member."; }
-         if(sub == "uncrew") { return "Is no longer an Active Crew Member."; }
-         if(sub == "crew-available") { return "Is available for your Crew."; }
-         if(sub == "crew-unavailable") { return "Is no longer available for your Crew."; }
-         if(sub == "friend") { return "Considers you a friend."; }
-         if(sub == "ally") { return "Considers you an ally."; }
-         if(sub == "partner") { return "Considers you a committed partner."; }
-         if(sub == "angry") { return "Is angry with you."; }
-         if(sub == "calm") { return "Is no longer angry with you."; }
-         if(sub == "furious") { return "Is furious with you and will no longer be your companion."; }
+         if(sub == "gained") { return this.hzcLt("Gained"); }
+         if(sub == "worse") { return this.hzcLt("Became worse"); }
+         if(sub == "improved") { return this.hzcLt("Prognosis improved"); }
+         if(sub == "severity") { return this.hzcLt("Severity improved"); }
+         if(sub == "attempted") { return this.hzcLt("Attempted to cure"); }
+         if(sub == "cured") { return this.hzcLt("Cured"); }
+         if(sub == "follow") { return this.hzcLt("Is now following you."); }
+         if(sub == "unfollow") { return this.hzcLt("Is no longer following you."); }
+         if(sub == "follow-available") { return this.hzcLt("Is available to be your follower."); }
+         if(sub == "follow-unavailable") { return this.hzcLt("Is no longer available to be your follower."); }
+         if(sub == "companion") { return this.hzcLt("Is now your Active Companion."); }
+         if(sub == "uncompanion") { return this.hzcLt("Is no longer your Active Companion."); }
+         if(sub == "companion-available") { return this.hzcLt("Is available to be your Companion."); }
+         if(sub == "companion-unavailable") { return this.hzcLt("Is no longer available to be your companion."); }
+         if(sub == "crew") { return this.hzcLt("Is now an Active Crew Member."); }
+         if(sub == "uncrew") { return this.hzcLt("Is no longer an Active Crew Member."); }
+         if(sub == "crew-available") { return this.hzcLt("Is available for your Crew."); }
+         if(sub == "crew-unavailable") { return this.hzcLt("Is no longer available for your Crew."); }
+         if(sub == "friend") { return this.hzcLt("Considers you a friend."); }
+         if(sub == "ally") { return this.hzcLt("Considers you an ally."); }
+         if(sub == "partner") { return this.hzcLt("Considers you a committed partner."); }
+         if(sub == "angry") { return this.hzcLt("Is angry with you."); }
+         if(sub == "calm") { return this.hzcLt("Is no longer angry with you."); }
+         if(sub == "furious") { return this.hzcLt("Is furious with you and will no longer be your companion."); }
          return "";
       }
       private function hzcCardTitle(kind:String, sub:String, name:String) : String
@@ -3122,29 +3340,29 @@ package
          var n:String = name == null ? "" : String(name);
          if(kind == "credits")
          {
-            if(sub == "kid") { return "KID STUFF"; }
-            if(sub == "bounty") { return "BOUNTY PAID"; }
-            return "CREDITS";
+            if(sub == "kid") { return this.hzcLt("KID STUFF"); }
+            if(sub == "bounty") { return this.hzcLt("BOUNTY PAID"); }
+            return this.hzcLt("CREDITS");
          }
          if(kind == "crime")
          {
-            if(sub == "takeback" || sub == "lock") { return "CAUGHT"; }
-            if(sub == "caught") { return "PICKPOCKET"; }
-            if(sub == "alarm") { return "ALARM"; }
-            if(sub == "trespass") { return "TRESPASS"; }
-            if(sub == "witness") { return "WITNESS"; }
-            if(sub == "bounty-add") { return "BOUNTY"; }
-            return "CRIME";
+            if(sub == "takeback" || sub == "lock") { return this.hzcLt("CAUGHT"); }
+            if(sub == "caught") { return this.hzcLt("PICKPOCKET"); }
+            if(sub == "alarm") { return this.hzcLt("ALARM"); }
+            if(sub == "trespass") { return this.hzcLt("TRESPASS"); }
+            if(sub == "witness") { return this.hzcLt("WITNESS"); }
+            if(sub == "bounty-add") { return this.hzcLt("BOUNTY"); }
+            return this.hzcLt("CRIME");
          }
          if(kind == "game" && n == "GAME") { return this.hzcGameTitle(); }   // [Comms] GameCardTitle
          if(n.length > 0) { return n.toUpperCase(); }
-         if(kind == "medical") { return "AFFLICTION"; }
-         if(kind == "crew") { return "CREW"; }
-         if(sub == "busy") { return "BUSY"; }
-         if(sub == "calmed") { return "CALMED"; }
-         if(sub == "caught") { return "PICKPOCKET"; }
-         if(kind == "game") { return n.length > 0 ? n.toUpperCase() : "GAME"; }
-         return "NOTICE";
+         if(kind == "medical") { return this.hzcLt("AFFLICTION"); }
+         if(kind == "crew") { return this.hzcLt("CREW"); }
+         if(sub == "busy") { return this.hzcLt("BUSY"); }
+         if(sub == "calmed") { return this.hzcLt("CALMED"); }
+         if(sub == "caught") { return this.hzcLt("PICKPOCKET"); }
+         if(kind == "game") { return n.length > 0 ? n.toUpperCase() : this.hzcLt("GAME"); }
+         return this.hzcLt("NOTICE");
       }
       // =================== 0.43.5 message card v3 ===================
       // One chrome for every Horizon message card (the DLL cards and the companion reaction card): 460 wide, 16 radius, the
@@ -3501,7 +3719,7 @@ package
          {
             // 0.43.5: the card form is the v3 card (header = the reaction, title = the name); the text-only form below (SubCard other than 1) is unchanged
             if(e.n == null) { e.n = ""; }
-            var rlb:String = String(HZC_RX_LBL[k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "");   // r6: xN
+            var rlb:String = this.hzcLt(String(HZC_RX_LBL[k])) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : "");   // r6: xN
             var rnc:uint = int(this.hzcCfg.SpeakerColor) >= 0 ? this.hzcSpeakerCol() : HZC_V3_TTL;
             this.hzcV3Card(e,rlb,String(e.n).toUpperCase(),"",uint(HZC_RX_COL[k]),rnc,"rx",int(HZC_RX_DIR[k]));
             return;
@@ -3520,7 +3738,7 @@ package
          this.hzcSet(nm,String(e.n).toUpperCase(),"nm",fs,this.hzcSpeakerCol(),Math.round(fs * 0.1 * 10) / 10,"left");
          var lb:TextField = this.hzcField(true);
          if(lb == null) { return; }
-         this.hzcSet(lb,String(HZC_RX_LBL[e.k]) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : ""),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");   // r6: xN
+         this.hzcSet(lb,this.hzcLt(String(HZC_RX_LBL[e.k])) + (int(e.cnt) > 1 ? "  x" + int(e.cnt) : ""),"nm",fs,col,Math.round(fs * 0.12 * 10) / 10,"left");   // r6: xN
          var nx:Number = Math.round((14 + 30 + 12) * z);
          var nw:Number = Math.ceil(nm.textWidth);
          if(isNaN(nw) || nw < 0) { nw = 0; }

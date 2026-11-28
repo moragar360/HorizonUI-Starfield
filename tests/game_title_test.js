@@ -55,7 +55,7 @@ const TITLES = JSON.parse(/HZC_GAME_TITLES:Array = (\[[^\]]*\]);/.exec(hzc)[1]);
 expect(JSON.stringify(TITLES) === '["INFO","DATA","MISC","GAME"]', "choices: INFO / DATA / MISC / GAME");
 expect(/private var hzcCfg:Object = \{"ReactionCard":1,"GameCardTitle":0,/.test(hzc), "hzcCfg default GameCardTitle = 0 (INFO)");
 function host(cfg) {
-	const h = { hzcCfg: cfg, HZC_GAME_TITLES: TITLES, calls: 0 };
+	const h = { hzcCfg: cfg, HZC_GAME_TITLES: TITLES, calls: 0, hzcL10n: null, hzcL10nC: {}, hzcLt: (s) => s };
 	const gt = toJs(hzc, "hzcGameTitle");
 	h.hzcGameTitle = function () { h.calls++; return gt.call(h); };
 	h.hzcCardTitle = toJs(hzc, "hzcCardTitle").bind(h);

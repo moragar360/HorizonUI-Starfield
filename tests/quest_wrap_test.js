@@ -82,6 +82,7 @@ function makeHost(opt) {
 		hzQTopT: 10, hzQTopO: 37, hzQObjB: 54, hzQSubY0: 60, hzQSubN: 0, hzCQTopO: 26,
 		hzQsOk: false, hzQsR: null, hzQsName: null, hzQsObj: null, hzQsDist: null, hzQsSubN: -1, hzQsSubD: null, hzQsSubT: null, hzQsSubO: null,
 		hzQsHdr: -1, hzQsTs: NaN, hzQsFace: -1, hzQsFont: null, hzQsFMod: null, hzQsLs: -2, hzQsQL: null, hzQsQLD: null, hzQsQLN: -1, hzQsH: NaN, hzQsMc: null,
+		hzFontLive: "Exo2", hzQsLive: "Exo2", hzFontText(s) { return s; },
 		hzQsW: NaN, hzQsMh: NaN, hzQsWr: null, HorizonQuest_mc: {}, HorizonCompactQuest_mc: {},
 		draws: 0, sz: {}, fmts: 0,
 		hzTxtObj(tf) { return tf ? tf._o : null; },

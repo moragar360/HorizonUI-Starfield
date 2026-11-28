@@ -1,0 +1,98 @@
+{
+	"generated_by": "tools/build_font_coverage.js",
+	"families": [
+		"Exo2",
+		"Saira",
+		"Orbitron",
+		"Titillium"
+	],
+	"bits": {
+		"Exo2": 1,
+		"Saira": 2,
+		"Orbitron": 4,
+		"Titillium": 8
+	},
+	"cover": {
+		"en": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		},
+		"de": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		},
+		"fr": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		},
+		"es": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		},
+		"es-mx": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		},
+		"pl": {
+			"bits": 11,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Titillium"
+			],
+			"hide": [
+				"Orbitron"
+			]
+		},
+		"zh-cn": {
+			"bits": 15,
+			"offer": [
+				"Exo2",
+				"Saira",
+				"Orbitron",
+				"Titillium"
+			],
+			"hide": []
+		}
+	},
+	"orb_sub": {
+		"171": 34,
+		"183": 8226,
+		"187": 34,
+		"8222": 34
+	},
+	"chrome": [
+		183,
+		176
+	]
+}

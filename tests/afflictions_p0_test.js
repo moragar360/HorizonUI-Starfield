@@ -258,7 +258,18 @@ if (base) {
 // commits that HEAD contains (found by the field each added, so a rebase or cherry-pick still finds it), else BASE. Each afflictions commit is also checked against its own
 // parent: the affliction work never changes these lines. The old-bug checks above still run on BASE.
 const SCOPE_FNS = ["hzOnEnvEffects", "hzAfSetEnv", "hzHsSync", "hzHsCat", "hz27Tick"];
-const hs = (src) => src.split("\n").filter((l) => /hzHs|green hold/i.test(l)).join("\n");
+// hzHsDraw is allowed to call hzLt on the state-change redraw. Compare every other
+// Hazard Status line against the hazard-card reference; the language-change cache
+// (hzHsWordLoc) is also P1-only.
+const hs = (src) => {
+	const draw = fnText(src, "hzHsDraw");
+	let s = src;
+	if (draw && draw.body) {
+		const i = s.indexOf(draw.body);
+		if (i >= 0) s = s.slice(0, i) + s.slice(i + draw.body.length);
+	}
+	return s.split("\n").filter((l) => /hzHs|green hold/i.test(l) && !/hzHsWordLoc/.test(l)).join("\n");
+};
 const gitOut = (args) => { try { return cp.execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
 const asAt = (rev) => { const t = gitOut(["show", rev + ":actionscript/horizon_block.as"]); return t == null ? null : t.replace(/\r\n/g, "\n"); };
 const scopeSame = (x, y) => SCOPE_FNS.every((n) => { const a = fnText(x, n), b = fnText(y, n); return (!a && !b) || (a && b && a.body === b.body); }) && hs(x) === hs(y);
@@ -274,7 +285,17 @@ if (base) {
 			if (!a && !b) continue;
 			expect(a && b && a.body === b.body, "scope: " + n + " is unchanged from " + refName);
 		}
-		expect(hs(as) === hs(ref), "scope: every Hazard Status line (hzHs*, green hold) is unchanged from " + refName);
+		expect(hs(as) === hs(ref), "scope: every Hazard Status line (hzHs*, green hold) except hzHsDraw / language-change cache is unchanged from " + refName);
+		const drawNow = fnText(as, "hzHsDraw");
+		expect(drawNow && /this\.hzLt\(/.test(drawNow.body) && /this\.hzLt\("HAZARD"\)/.test(drawNow.body)
+			&& /this\.hzLt\("RADIATION HAZARD"\)/.test(drawNow.body),
+			"scope: hzHsDraw looks up labels on the state-change redraw");
+		expect((as.match(/this\.hzHsDraw\(\)/g) || []).length === 1
+			&& /this\.hzHsDraw\(\);/.test(fnText(as, "hzHsSync").body),
+			"scope: hzHsDraw is called only from hzHsSync (state change), not from ticks");
+		const vit = fnText(as, "hzTickVitals");
+		expect(vit && !/hzLt\(/.test(vit.body) && !/this\.hzL\(/.test(vit.body) && !/hzHsDraw\(/.test(vit.body),
+			"scope: vitals tick does not look up translations");
 	}
 	const affl = (gitOut(["log", "--format=%H", "-i", "--grep=afflictions", BASE + "..HEAD", "--", "actionscript/horizon_block.as"]) || "").split("\n").filter(Boolean);
 	expect(affl.length > 0, "scope: the afflictions commits since " + BASE + " are found (" + affl.length + ")");

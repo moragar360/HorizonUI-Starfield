@@ -1,0 +1,71 @@
+{
+  "_meta": {
+    "mod": "Horizon UI",
+    "author": "Moragar",
+    "language": "en",
+    "languageName": "English",
+    "gameLanguageCodes": ["en"],
+    "schema": 1,
+    "notes": "American English source. Translators copy this file to de.json (and the other language files), keep every key, and replace only the string values. Do not translate keys. Placeholders look like {0} {1} {name} {count}. Keep them. Do not wrap Horizon-owned strings in $ tokens. Game item names and $EMPTY SLOT stay with the game."
+  },
+  "settings": {
+    "tabs": {
+      "cards": "CARDS",
+      "appearance": "APPEARANCE",
+      "scanner": "SCANNER",
+      "comms": "COMMS",
+      "system": "SYSTEM"
+    },
+    "chrome": {
+      "settingDetails": "SETTING DETAILS",
+      "livePreview": "LIVE PREVIEW",
+      "arrange": "ARRANGE",
+      "search": "Search",
+      "ok": "OK",
+      "cancel": "CANCEL",
+      "compactMode": "COMPACT MODE",
+      "restartRequired": "Takes effect after you restart the game."
+    },
+    "language": {
+      "label": "LANGUAGE",
+      "help": "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language. Changing this and pressing OK reloads the language once. Game item names and the game's own $ tokens stay in the game language. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.",
+      "auto": "Auto (game)",
+      "en": "English",
+      "de": "Deutsch (German)",
+      "fr": "Français (French)",
+      "es": "Español (Spanish)",
+      "es-mx": "Español (Latinoamérica)",
+      "it": "Italiano (Italian)",
+      "ja": "Japanese",
+      "pl": "Polski (Polish)",
+      "pt-br": "Português (Brasil)",
+      "zh-cn": "Simplified Chinese"
+    },
+    "QuickMenuHorizon": {
+      "label": "HORIZON STYLE",
+      "help": "The game's quick menu (favorites cross) as Horizon cards in your colors and font. Off is the game's look."
+    }
+  },
+  "hud": {
+    "health": "HEALTH",
+    "oxygen": "OXYGEN",
+    "boost": "BOOST",
+    "jetpack": "JETPACK",
+    "noAfflictions": "NO AFFLICTIONS",
+    "offPlanet": "OFF PLANET",
+    "noActiveObjective": "No active objective",
+    "reload": "RELOAD"
+  },
+  "qm": {
+    "header": "Quick Menu",
+    "extendedFavorites": "EXTENDED FAVORITES",
+    "emptySlotNative": "$EMPTY SLOT"
+  },
+  "card": {
+    "liked": "LIKED",
+    "loved": "LOVED",
+    "disliked": "DISLIKED",
+    "hated": "HATED",
+    "busy": "BUSY"
+  }
+}

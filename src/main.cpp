@@ -84,6 +84,7 @@
 #include "hz_scan_hl.h"     // 0.43.3.1: [Scanner] ScanHighlightArea (pure helpers, tests/scan_hl_test.cpp)
 #include "hz_scan_ol.h"     // 0.43.3.2: [Scanner] ScanOutlineThickness (pure helpers, tests/scan_ol_test.cpp)
 #include "hz_scan_reach.h"  // 0.43.5: [Scanner] ScanReach (pure helpers, tests/scan_reach_test.cpp)
+#include "hz_l10n.h"        // P0: Localization JSON, load once / Language reload, cache forever
 #include "hz_quickslots.h"  // 0.43.5: Extended Quick Menu settings / store / use dispatch
 #include "preset_dedupe.h"
 
@@ -190,6 +191,18 @@ namespace HZ
 	void HzAddrLoad() noexcept;
 	void PreloadDllFileVersion();
 	void FilesJobPreload();
+	static int HzAddrSlot(std::uint64_t a_id);
+	void L10nLoadOnce();
+	void L10nApply(const std::string& a_override, bool a_forceReload);
+	void L10nAdoptLiveIfReady();
+	void L10nReloadIfLanguage(const std::string& a_v);
+	void PushL10n();
+	void PushL10nFavorites();
+	void PushL10nNamed(const char* a_menu, const char* a_fn);
+	void PushL10nModules();
+	void PushL10nForMenu(RE::IMenu* a_menu);
+	void PushL10nOnAdvance(RE::Scaleform::GFx::ASMovieRootBase* a_this);
+	void ClearL10nPendClosed(const RE::BSFixedString& a_name);
 	std::string MsglogFolderPath();   // Message Log folder for F11 Folder SHOW (defined with the log helpers)
 	void RecordUiTidOnce(std::uint32_t a_tid, const char* a_src);
 
@@ -915,6 +928,7 @@ namespace HZ
 			if (HzPerfOn())
 				REX::INFO("watchlog: {} ([Debug] WatchLog={}, needs PerfDiag=1)", g_wlOn.load(std::memory_order_relaxed) ? "on" : "off", g_wlOn.load(std::memory_order_relaxed));
 			if (get("settingskey", v) && !v.empty()) key = v;
+			if (get("language", v) && !v.empty()) L10nReloadIfLanguage(v);
 			if (get("scanhighlightarea", v)) scanHl = hzscanhl::Parse(v);
 			if (get("scanoutlinethickness", v)) scanOl = hzscanol::Parse(v);
 			if (get("scanreach", v)) scanReach = hzscanreach::Parse(v);
@@ -1189,6 +1203,11 @@ namespace HZ
 						g_scanOpen.store(a_event.opening, std::memory_order_release);
 					}
 				}
+				// Close drops a module l10n stamp that never Advanced, so idle
+				// AdvanceFrame stays one relaxed load. Event path, not a poll.
+				if (!a_event.opening) {
+					try { ClearL10nPendClosed(a_event.menuName); } catch (...) {}
+				}
 				const auto& t = HzMenus();
 				for (std::size_t i = 0; i < kMenuN; ++i) {
 					if (!(a_event.menuName == t.name[i])) continue;
@@ -1255,6 +1274,7 @@ namespace HZ
 		if (!HudSafe()) { REX::INFO("ignored: full-screen or loading menu open"); return; }
 		if (ui->IsMenuOpen("MonocleMenu")) { REX::INFO("ignored: hand scanner open (F11 opens from the main HUD only)"); return; }   // v0.42.0
 		PushDllFileVersion();   // v0.42.0.4: the header reads this on the open that follows
+		try { PushL10n(); } catch (...) {}
 		bool ok = HudInvoke("hzToggleSettings", nullptr, nullptr, 0, true);
 		REX::INFO("hzToggleSettings invoke {}", ok ? "OK" : "FAILED (HUD lacks function or HUDMenu missing)");
 	}
@@ -2730,13 +2750,491 @@ namespace HZ
 		g_addrState.store(next, std::memory_order_release);
 	}
 
+	std::mutex                    g_l10nMu;
+	hzl10n::Table                 g_l10n;
+	std::string                   g_l10nOverrideHeld{"auto"};
+	std::string                   g_l10nGameHeld;
+	std::atomic<bool>             g_l10nReady{false};
+	std::atomic<bool>             g_l10nGameLatched{false};
+	std::atomic<bool>             g_l10nLiveCheck{false};
+	std::atomic<std::uint32_t>    g_l10nGen{0};
+	std::atomic<std::uint32_t>    g_l10nPushed{0};
+	std::atomic<bool>             g_l10nLogged{false};
+	// One-shot stamp for module movies. MenuMovieCreated only arms the
+	// root; the Invoke runs on that movie's own AdvanceFrame. Bits are
+	// 0 when idle so the hook is one relaxed load.
+	constexpr std::uint8_t        kL10nPendComms = 1;
+	constexpr std::uint8_t        kL10nPendDlg = 2;
+	constexpr std::uint8_t        kL10nPendScan = 4;
+	std::atomic<std::uint8_t>     g_l10nPendBits{0};
+	std::atomic<std::uint8_t>     g_l10nPendRetry{0};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendComms{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendDlg{nullptr};
+	std::atomic<RE::Scaleform::GFx::ASMovieRootBase*> g_l10nPendScan{nullptr};
+
+	// Purpose: Data/SFSE/Plugins next to HorizonUI.dll. No user-home path.
+	std::filesystem::path L10nDir()
+	{
+		HMODULE mod = nullptr;
+		if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		        reinterpret_cast<LPCWSTR>(&L10nDir), &mod) || !mod)
+			return {};
+		wchar_t path[MAX_PATH]{};
+		const DWORD n = ::GetModuleFileNameW(mod, path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return {};
+		return std::filesystem::path(path).parent_path() / L"HorizonUI" / L"Localization";
+	}
+
+	// Purpose: one in-memory read of the live sLanguage:General setting.
+	// Same INISettingCollection + versionlib + SEH pattern as the scanner
+	// highlight peek. Empty if the collection is not ready. Never retried
+	// (no polling). File-stack DetectGameLanguage is the fallback.
+	struct HzL10nLangIo
+	{
+		char buf[32];
+		int  ok;
+	};
+
+	static void HzL10nLangCall(HzL10nLangIo* a_io)
+	{
+		if (!a_io) return;
+		a_io->ok = 0;
+		a_io->buf[0] = '\0';
+		auto* col = RE::INISettingCollection::GetSingleton();
+		if (!col) return;
+		auto* s = col->GetSetting("sLanguage:General");
+		if (!s || s->GetType() != RE::Setting::Type::kString) return;
+		const auto view = s->GetString();
+		if (view.empty()) return;
+		const auto n = view.size() < 31 ? view.size() : 31;
+		std::memcpy(a_io->buf, view.data(), n);
+		a_io->buf[n] = '\0';
+		a_io->ok = 1;
+	}
+
+#if defined(_MSC_VER)
+	static int HzL10nLangSEH(HzL10nLangIo* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		using Fn = void (*)(HzL10nLangIo*);
+		Fn fn = &HzL10nLangCall;
+		__try {
+			fn(a_io);
+			return 1;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			return 0;
+		}
+	}
+#else
+	static int HzL10nLangSEH(HzL10nLangIo* a_io) noexcept
+	{
+		if (!a_io) return 0;
+		try { HzL10nLangCall(a_io); return 1; } catch (...) { return 0; }
+	}
+#endif
+
+	static std::string L10nReadLiveSLanguage()
+	{
+		const auto id = RE::ID::INISettingCollection::Singleton.id();
+		if (id == 0) return {};
+		const int slot = HzAddrSlot(id);
+		if (hzaddr::AddrSlotRetry(slot) || hzaddr::AddrSlotMiss(slot)) return {};
+		HzL10nLangIo io{};
+		if (!HzL10nLangSEH(&io) || io.ok != 1 || io.buf[0] == '\0') return {};
+		return std::string(io.buf);
+	}
+
+	// Purpose: Starfield sLanguage once at init. Cached. Never polled.
+	// File stack only at plugin load: Starfield.ini, Starfield_<Steam lang>.ini
+	// from appmanifest_1716740.acf, Prefs, Custom last-wins. Steam ACF is the
+	// language when no INI sets sLanguage (German Steam writes Starfield_de.ini;
+	// Prefs/Custom stay empty). Live INISettingCollection sLanguage:General is
+	// NOT used here: at SFSE load it is the compile default "en", which hid
+	// Starfield_de.ini and showed ENGLISH while quest text was German.
+	// A later one-shot live read (after kPostDataLoad, on the job thread)
+	// may adopt a non-English engine value. Registry is unused. File I/O
+	// stays on the job thread. Author: Moragar. Last modified: 2026-11-27.
+	std::string L10nDetectGame()
+	{
+		if (g_l10nGameLatched.load(std::memory_order_acquire)) {
+			std::lock_guard lk(g_l10nMu);
+			return g_l10nGameHeld;
+		}
+		wchar_t exe[MAX_PATH]{};
+		GetModuleFileNameW(nullptr, exe, MAX_PATH);
+		const auto exeDir = std::filesystem::path(exe).parent_path();
+		std::string acf, gameIni, prefs, custom;
+		hzl10n::ReadUtf8File(exeDir / L"Starfield.ini", gameIni);
+		hzl10n::ReadUtf8File(exeDir.parent_path().parent_path() / L"appmanifest_1716740.acf", acf);
+		std::unordered_map<std::string, std::string> langIni;
+		const auto steam = hzl10n::MapCode(hzl10n::ParseSteamAcfLanguage(acf));
+		if (!steam.empty() && steam != "auto") {
+			const auto fn = hzl10n::LanguageIniName(steam);
+			std::string body;
+			if (hzl10n::ReadUtf8File(exeDir / fn, body)) langIni[fn] = std::move(body);
+		}
+		PWSTR docs = nullptr;
+		if (SUCCEEDED(::SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DONT_VERIFY, nullptr, &docs)) && docs) {
+			std::filesystem::path base(docs);
+			::CoTaskMemFree(docs);
+			base /= L"My Games";
+			base /= L"Starfield";
+			hzl10n::ReadUtf8File(base / L"StarfieldPrefs.ini", prefs);
+			hzl10n::ReadUtf8File(base / L"StarfieldCustom.ini", custom);
+		}
+		auto mapped = hzl10n::DetectGameLanguage(acf, gameIni, langIni, prefs, custom);
+		if (mapped.empty() || mapped == "auto") mapped = "en";
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10nGameHeld = mapped;
+		}
+		g_l10nGameLatched.store(true, std::memory_order_release);
+		REX::INFO("l10n: game language {} (ini stack)", mapped);
+		return mapped;
+	}
+
+	// Purpose: one-shot after kPostDataLoad. Live sLanguage:General is trusted
+	// only when it is a non-English mapped code (the engine applied a language
+	// INI). Live "en" is the compile default and must not replace a German
+	// Steam/INI-stack result. JSON reload stays on the job thread.
+	// Inputs: flag from OnMessage. Outputs: maybe a table reload.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void L10nAdoptLiveIfReady()
+	{
+		if (!g_l10nLiveCheck.exchange(false, std::memory_order_acq_rel)) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		const auto live = L10nReadLiveSLanguage();
+		const auto mapped = hzl10n::MapCode(live);
+		if (mapped.empty() || mapped == "auto" || mapped == "en") return;
+		std::string held, ov;
+		{
+			std::lock_guard lk(g_l10nMu);
+			held = g_l10nGameHeld;
+			ov = g_l10nOverrideHeld;
+		}
+		if (mapped == held) return;
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10nGameHeld = mapped;
+		}
+		REX::INFO("l10n: game language {} (sLanguage:General after data load; was {})", mapped, held);
+		try { L10nApply(ov == "auto" ? std::string() : ov, true); } catch (...) {}
+	}
+
+	std::string L10nReadOverride()
+	{
+		std::string text, v = "auto";
+		if (HZF::MergedText(FilesP(), text)) {
+			HZF::Doc d = HZF::Parse(text);
+			for (auto& sec : d.secs)
+				if (auto it = sec.kv.find("language"); it != sec.kv.end())
+					v = it->second.second;
+		}
+		auto m = hzl10n::MapCode(v);
+		return m.empty() ? std::string("auto") : m;
+	}
+
+	// Purpose: load or reload the Localization JSON on the job / load thread.
+	// File I/O only here. Never from PollScaleform. a_forceReload is for a
+	// Language= change after F11 OK. Inputs: optional override token.
+	// Outputs: cached table + generation bump. Author: Moragar.
+	// Last modified: 2026-11-27.
+	void L10nApply(const std::string& a_override, bool a_forceReload)
+	{
+		if (g_l10nReady.load(std::memory_order_acquire) && !a_forceReload) {
+			std::lock_guard lk(g_l10nMu);
+			if (a_override == g_l10nOverrideHeld) return;
+		}
+		const auto game = L10nDetectGame();
+		const auto dir = L10nDir();
+		auto table = hzl10n::Load(dir, a_override, game);
+		{
+			std::lock_guard lk(g_l10nMu);
+			g_l10n = std::move(table);
+			g_l10nOverrideHeld = a_override.empty() ? "auto" : a_override;
+		}
+		g_l10nReady.store(true, std::memory_order_release);
+		g_l10nGen.fetch_add(1, std::memory_order_acq_rel);
+		if (!g_l10nLogged.exchange(true, std::memory_order_acq_rel)) {
+			std::lock_guard lk(g_l10nMu);
+			REX::INFO("l10n: {}, {} keys", g_l10n.notice, g_l10n.count);
+		} else {
+			std::lock_guard lk(g_l10nMu);
+			REX::INFO("l10n reload: {}, {} keys", g_l10n.notice, g_l10n.count);
+		}
+	}
+
+	void L10nLoadOnce()
+	{
+		if (g_l10nReady.load(std::memory_order_acquire)) return;
+		L10nApply(L10nReadOverride(), false);
+	}
+
+	void L10nReloadIfLanguage(const std::string& a_v)
+	{
+		const auto ov = hzl10n::MapCode(a_v);
+		const auto want = ov.empty() ? std::string("auto") : ov;
+		if (g_l10nReady.load(std::memory_order_acquire)) {
+			std::lock_guard lk(g_l10nMu);
+			if (want == g_l10nOverrideHeld) return;
+		}
+		L10nApply(want, true);
+	}
+
+	// Purpose: one Scaleform Invoke of hzSetL10n per table generation (movie
+	// load or Language reload). Not on the 5s movie-build timer. No disk.
+	// Module movies (Favorites, HUDMessages, Dialogue, Scanner) get the same
+	// payload from PushL10nModules on reload, and from PushL10nForMenu on open.
+	// Inputs: HUD AdvanceFrame / F11 key. Outputs: one payload string.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10n()
+	{
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		const auto gen = g_l10nGen.load(std::memory_order_acquire);
+		if (gen == 0 || gen == g_l10nPushed.load(std::memory_order_acquire)) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = MenuLive(ui, "HUDMenu", "hzSetL10n");
+		if (!menu) return;
+		if (!menu->menuObj.HasMember("hzSetL10n")) {
+			g_l10nPushed.store(gen, std::memory_order_release);
+			return;
+		}
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) {
+			g_l10nPushed.store(gen, std::memory_order_release);
+			return;
+		}
+		GValue arg(payload.c_str());
+		if (!menu->menuObj.Invoke("hzSetL10n", nullptr, &arg, 1)) return;
+		g_l10nPushed.store(gen, std::memory_order_release);
+		try { PushL10nModules(); } catch (...) {}
+	}
+
+	// Purpose: push the cached l10n payload to one live Scaleform menu. Called
+	// from PushL10nFavorites (Favorites AdvanceFrame already runs). Comms /
+	// Dialogue / Scanner use ArmL10nPend instead of this path. Not on a timer.
+	// Inputs: menu name and public SetL10n function. Outputs: one Invoke.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nNamed(const char* a_menu, const char* a_fn)
+	{
+		if (!a_menu || !a_fn) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui) return;
+		auto menu = MenuLive(ui, a_menu, a_fn);
+		if (!menu || !menu->menuObj.HasMember(a_fn)) return;
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) return;
+		GValue arg(payload.c_str());
+		menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
+	}
+
+	// Purpose: push the same l10n payload to FavoritesMenu.hzqSetL10n when that
+	// movie is live. Called from PushL10n (language reload) and from
+	// QmOnFavoritesMovie (menu open). Not on a timer. No disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nFavorites()
+	{
+		PushL10nNamed("FavoritesMenu", "hzqSetL10n");
+	}
+
+	// Purpose: arm a one-shot l10n Invoke for a module movie. The stamp
+	// runs on that movie's own AdvanceFrame (PushL10nOnAdvance), never
+	// from MenuMovieCreated. Inputs: bit, slot, live root. Outputs: pending.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void ArmL10nPend(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		RE::Scaleform::GFx::ASMovieRootBase* a_root)
+	{
+		if (!a_root || !a_bit) return;
+		a_slot.store(a_root, std::memory_order_release);
+		g_l10nPendRetry.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
+		g_l10nPendBits.fetch_or(a_bit, std::memory_order_acq_rel);
+	}
+
+	// Purpose: drop a pending module l10n stamp. Used on menu close and
+	// after a successful Invoke. Inputs: bit and slot. Outputs: idle bit
+	// for that movie. Author: Moragar. Last modified: 2026-11-28.
+	void ClearL10nPend(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot)
+	{
+		if (!a_bit) return;
+		a_slot.store(nullptr, std::memory_order_release);
+		g_l10nPendBits.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
+		g_l10nPendRetry.fetch_and(static_cast<std::uint8_t>(~a_bit), std::memory_order_acq_rel);
+	}
+
+	// Purpose: if a comms / dialogue / scanner movie closed before its
+	// first AdvanceFrame, drop the pending stamp so every other movie's
+	// AdvanceFrame is one relaxed load again. Inputs: closed menu name.
+	// Outputs: cleared bit/slot or no-op. Event-driven, not a poll.
+	// Author: Moragar. Last modified: 2026-11-28.
+	void ClearL10nPendClosed(const RE::BSFixedString& a_name)
+	{
+		if (a_name == "HUDMessagesMenu")
+			ClearL10nPend(kL10nPendComms, g_l10nPendComms);
+		else if (a_name == "DialogueMenu")
+			ClearL10nPend(kL10nPendDlg, g_l10nPendDlg);
+		else if (a_name == "MonocleMenu")
+			ClearL10nPend(kL10nPendScan, g_l10nPendScan);
+	}
+
+	// Purpose: HasMember miss / failed Invoke may retry once on the next
+	// AdvanceFrame of this movie. A second miss consumes so the bit cannot
+	// stick as a poll. Inputs: bit, slot, this root. Outputs: re-armed or idle.
+	// Author: Moragar. Last modified: 2026-11-28.
+	void L10nPendRetryOnce(std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		RE::Scaleform::GFx::ASMovieRootBase* a_this)
+	{
+		const auto retried = g_l10nPendRetry.load(std::memory_order_relaxed);
+		if (retried & a_bit) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		g_l10nPendRetry.fetch_or(a_bit, std::memory_order_acq_rel);
+		a_slot.store(a_this, std::memory_order_release);
+	}
+
+	// Purpose: if that menu is open, arm its next AdvanceFrame to stamp
+	// the cached table. Used on language reload while the movie is live.
+	// Inputs: menu name, bit, slot. Outputs: pending or no-op. No Invoke.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void ArmL10nPendOpen(const char* a_menu, std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot)
+	{
+		if (!a_menu) return;
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(a_menu)) return;
+		auto menu = ui->GetMenu(a_menu);
+		if (!menu || !menu->uiMovie || !menu->uiMovie->asMovieRoot) return;
+		ArmL10nPend(a_bit, a_slot, menu->uiMovie->asMovieRoot.get());
+	}
+
+	// Purpose: one Invoke of a module SetL10n on that movie's AdvanceFrame.
+	// Claims the slot first so a nested advance cannot re-enter. Consumes
+	// the bit only after a successful Invoke. A HasMember miss (function
+	// not on menuObj yet) re-arms for one more AdvanceFrame of this movie,
+	// then gives up. Closed / ABA movies consume so idle stays one load.
+	// Inputs: advancing root, slot, menu name, function.
+	// Outputs: at most one Invoke per call, at most one retry. No disk, no timer.
+	// Author: Moragar. Last modified: 2026-11-28.
+	void PushL10nPendOne(RE::Scaleform::GFx::ASMovieRootBase* a_this,
+		std::uint8_t a_bit,
+		std::atomic<RE::Scaleform::GFx::ASMovieRootBase*>& a_slot,
+		const char* a_menu, const char* a_fn)
+	{
+		auto want = a_slot.load(std::memory_order_acquire);
+		if (!a_this || a_this != want) return;
+		a_slot.store(nullptr, std::memory_order_release);
+		if (!g_l10nReady.load(std::memory_order_acquire) || !a_menu || !a_fn) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(a_menu)) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		auto menu = ui->GetMenu(a_menu);
+		if (!menu || !menu->uiMovie || menu->uiMovie->asMovieRoot.get() != a_this) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		if (!menu->menuObj.IsObject() || !menu->menuObj.HasMember(a_fn)) {
+			L10nPendRetryOnce(a_bit, a_slot, a_this);
+			return;
+		}
+		std::string payload;
+		{
+			std::lock_guard lk(g_l10nMu);
+			payload = g_l10n.payload;
+		}
+		if (payload.empty()) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		GValue arg(payload.c_str());
+		bool ok = false;
+		try {
+			ok = menu->menuObj.Invoke(a_fn, nullptr, &arg, 1);
+		} catch (...) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		if (ok) {
+			ClearL10nPend(a_bit, a_slot);
+			return;
+		}
+		L10nPendRetryOnce(a_bit, a_slot, a_this);
+	}
+
+	// Purpose: consume a pending module l10n stamp after that movie's
+	// AdvanceFrame original has returned. One relaxed load when idle.
+	// Inputs: the advancing root. Outputs: at most one Invoke per movie.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nOnAdvance(RE::Scaleform::GFx::ASMovieRootBase* a_this)
+	{
+		if (!a_this) return;
+		if (g_l10nPendBits.load(std::memory_order_relaxed) == 0) return;
+		try { PushL10nPendOne(a_this, kL10nPendComms, g_l10nPendComms, "HUDMessagesMenu", "hzcSetL10n"); } catch (...) {}
+		try { PushL10nPendOne(a_this, kL10nPendDlg, g_l10nPendDlg, "DialogueMenu", "hzdSetL10n"); } catch (...) {}
+		try { PushL10nPendOne(a_this, kL10nPendScan, g_l10nPendScan, "MonocleMenu", "hzsSetL10n"); } catch (...) {}
+	}
+
+	// Purpose: push the cached table to every Horizon module movie that is
+	// live. Favorites uses MenuLive (its AdvanceFrame already runs). Comms,
+	// Dialogue, and Scanner arm a one-shot stamp on their own next
+	// AdvanceFrame. Called from PushL10n after the HUD payload lands.
+	// Movies that open later get the same arm from PushL10nForMenu.
+	// Not on a timer. No disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nModules()
+	{
+		try { PushL10nNamed("FavoritesMenu", "hzqSetL10n"); } catch (...) {}
+		try { ArmL10nPendOpen("HUDMessagesMenu", kL10nPendComms, g_l10nPendComms); } catch (...) {}
+		try { ArmL10nPendOpen("DialogueMenu", kL10nPendDlg, g_l10nPendDlg); } catch (...) {}
+		try { ArmL10nPendOpen("MonocleMenu", kL10nPendScan, g_l10nPendScan); } catch (...) {}
+	}
+
+	// Purpose: remember a module movie at MenuMovieCreated so its first
+	// real AdvanceFrame can stamp hzs/hzc/hzd SetL10n. Must not Invoke
+	// here: MenuMovieCreated is not inside AdvanceFrame, and a create-time
+	// Invoke of hzsSetL10n CTDs Scaleform (write to 0x7 in the game).
+	// Inputs: the created IMenu. Outputs: pending root. No Invoke, no disk.
+	// Author: Moragar. Last modified: 2026-11-27.
+	void PushL10nForMenu(RE::IMenu* a_menu)
+	{
+		if (!a_menu) return;
+		if (!g_l10nReady.load(std::memory_order_acquire)) return;
+		if (!a_menu->uiMovie || !a_menu->uiMovie->asMovieRoot) return;
+		auto* root = a_menu->uiMovie->asMovieRoot.get();
+		if (a_menu->menuName == "HUDMessagesMenu")
+			ArmL10nPend(kL10nPendComms, g_l10nPendComms, root);
+		else if (a_menu->menuName == "DialogueMenu")
+			ArmL10nPend(kL10nPendDlg, g_l10nPendDlg, root);
+		else if (a_menu->menuName == "MonocleMenu")
+			ArmL10nPend(kL10nPendScan, g_l10nPendScan, root);
+	}
+
 	// Purpose: job / load thread preload of versionlib and the DLL file
 	// version. The UI thread never calls this. Inputs: none. Outputs:
-	// ready flags. Author: Moragar. Last modified: 2026-10-28.
+	// ready flags. Author: Moragar. Last modified: 2026-11-27.
 	void FilesJobPreload()
 	{
 		HzAddrLoad();
 		PreloadDllFileVersion();
+		L10nLoadOnce();
+		try { L10nAdoptLiveIfReady(); } catch (...) {}
 	}
 
 	static int HzAddrSlot(std::uint64_t a_id)
@@ -5820,6 +6318,7 @@ namespace HZ
 			MsglogPromoteId();
 		}
 		try { MsglogPollUi(); } catch (...) {}
+		try { PushL10n(); } catch (...) {}
 		BuildLogHud(now);
 		HWND wnd = GameWindow();
 		EnsureSubclass(wnd);
@@ -6053,6 +6552,7 @@ namespace HZ
 		const auto tAdv0 = timeHud ? HzQpc() : 0;
 		if (orig)
 			orig(a_this, a_next);
+		try { PushL10nOnAdvance(a_this); } catch (...) {}
 		if (tAdv0) {
 			HzPerfNoteRoot(tAdv0, a_next);
 			if (g_perfAgg.dumping.load(std::memory_order_acquire) == 0) {
@@ -6215,6 +6715,7 @@ namespace HZ
 		if (!root) return;
 		if (isHud) {
 			g_hudRoot.store(root, std::memory_order_release);
+			g_l10nPushed.store(0, std::memory_order_release);
 			if (g_perfDumpReq.load(std::memory_order_acquire)) {
 				hzperf::UnarmWindow(g_perfCtl);
 				hzperf::BeginDump(g_perfAgg);
@@ -6226,6 +6727,7 @@ namespace HZ
 		else if (isScope)
 			g_scopeRoot.store(root, std::memory_order_release);
 		try { QmOnFavoritesMovie(a_menu); } catch (...) {}
+		try { PushL10nForMenu(a_menu); } catch (...) {}
 		if (!isHud && !isMsg) {
 			if (!g_menuTidHinted.exchange(true))
 				REX::INFO("thread: menu-create tid={} (hint only)", ::GetCurrentThreadId());
@@ -6247,6 +6749,7 @@ namespace HZ
 			RegisterMenuOpenCloseSink();   // perf round 2: event-kept open-menu set for the HUD menu check
 			LoadIni();
 			try { QmDetectOnce(); } catch (...) {}
+			g_l10nLiveCheck.store(true, std::memory_order_release);
 			if (auto task = SFSE::GetTaskInterface()) {
 				task->AddPermanentTask([]() { try { Poll(); } catch (...) {} });
 				REX::INFO("hotkey poller registered");

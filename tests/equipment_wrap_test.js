@@ -77,6 +77,7 @@ function makeHost() {
 		hzTxtTop(tf, y) { tf.y = y; }, hzTxtTint() {}, hzIconCol(c) { return c; }, hzTyFilters() { return []; }, hzDarkText() { return false; },
 		hz26EqRow() { return null; }, hzE19Draw() {},
 		hzSetSz(c, w, hh) { this.sz = { w, h: hh }; },
+		hzFontText(s) { return s; },
 	};
 	h.hzE19Name = mk(14); h.hzE19Name.x = 134; h.hzE19Name.width = 252;
 	h.hzE19Cnt = mk(24); h.hzE19Res = mk(13); h.hzE19Type = mk(10); h.hzE19RelT = mk(9);

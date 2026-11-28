@@ -69,7 +69,7 @@ function makeHost(src) {
 	const h = {
 		HZ_ACCENT: 0x6FD3FF, hzT19Btn: slots, fsLog: [],
 		hzDarkText() { return false; }, hzIconCol(c) { return c; }, hzMix(a) { return a; }, hzPanelFill() { return 0; },
-		hzT19Key() { return "E"; }, hzT19VanLbl() { return ""; }, hzT19Xl(s) { return s; },
+		hzT19Key() { return "E"; }, hzT19VanLbl() { return ""; }, hzT19Xl(s) { return s; }, hzLt(s) { return s; },
 		hzT19U() { return 1; }, hzSnapU(v) { return Math.round(v); }, hzChipSzOn(fs) { return fs; }, hzT19KeyOv() { return null; },
 		hzTxtObj(t) { return { tf: t }; }, hzApplyFmt() { },
 		hzT19FaceFs(t, fs) { t.fs = fs; this.fsLog.push(fs); },

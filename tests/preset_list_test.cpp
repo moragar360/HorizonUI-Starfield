@@ -270,23 +270,23 @@ int main()
 		std::ifstream in("actionscript/comms/hzc_block.as");
 		Expect(static_cast<bool>(in), "hzc_block.as opens");
 		std::string as((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		Expect(as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos, "Kid Stuff title is KID STUFF");
+		Expect(as.find("if(sub == \"kid\") { return this.hzcLt(\"KID STUFF\"); }") != std::string::npos, "Kid Stuff title is KID STUFF");
 		Expect(as.find("SENT HOME") == std::string::npos, "SENT HOME is not a card title");
-		Expect(as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos, "bounty paid title is BOUNTY PAID");
-		Expect(as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos, "bounty added title is BOUNTY");
+		Expect(as.find("if(sub == \"bounty\") { return this.hzcLt(\"BOUNTY PAID\"); }") != std::string::npos, "bounty paid title is BOUNTY PAID");
+		Expect(as.find("if(sub == \"bounty-add\") { return this.hzcLt(\"BOUNTY\"); }") != std::string::npos, "bounty added title is BOUNTY");
 		Expect(as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos, "bounty added is not a green credits gain");
 		Expect(as.find("private function hzcCardMatch(kind:String, sub:String, name:String, value:String)") != std::string::npos, "movie matcher takes a DLL payload");
 		Expect(as.find("this.hzcCardMatch(kind,sub,name,value)") != std::string::npos, "card draw uses the live matcher");
 		Expect(as.find("if(rage >= 0 && rage < HZC_RX_PAIR) { eR.rebound = false; return \"queued\"; }") != std::string::npos, "a rebound merge is one-shot");
 		Expect(as.find("this.hzcRxReveal(e0.it)") != std::string::npos, "rebind uncovers the old clip first");
-		Expect(as.find("if(kind == \"game\") { return n.length > 0 ? n.toUpperCase() : \"GAME\"; }") != std::string::npos,
+		Expect(as.find("if(kind == \"game\") { return n.length > 0 ? n.toUpperCase() : this.hzcLt(\"GAME\"); }") != std::string::npos,
 			"unmatched game cards title GAME or ARTIFACT");
-		Expect(as.find("if(sub == \"caught\") { return \"PICKPOCKET\"; }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
-		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return \"CAUGHT\"; }") != std::string::npos, "take-back and lock titles are CAUGHT");
-		if (as.find("if(sub == \"kid\") { return \"KID STUFF\"; }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";
+		Expect(as.find("if(sub == \"caught\") { return this.hzcLt(\"PICKPOCKET\"); }") != std::string::npos, "pickpocket crime title is PICKPOCKET");
+		Expect(as.find("if(sub == \"takeback\" || sub == \"lock\") { return this.hzcLt(\"CAUGHT\"); }") != std::string::npos, "take-back and lock titles are CAUGHT");
+		if (as.find("if(sub == \"kid\") { return this.hzcLt(\"KID STUFF\"); }") != std::string::npos) std::cout << "ok  Kid Stuff title is KID STUFF\n";
 		if (as.find("SENT HOME") == std::string::npos) std::cout << "ok  SENT HOME is not a card title\n";
-		if (as.find("if(sub == \"bounty\") { return \"BOUNTY PAID\"; }") != std::string::npos) std::cout << "ok  bounty paid title is BOUNTY PAID\n";
-		if (as.find("if(sub == \"bounty-add\") { return \"BOUNTY\"; }") != std::string::npos) std::cout << "ok  bounty added title is BOUNTY\n";
+		if (as.find("if(sub == \"bounty\") { return this.hzcLt(\"BOUNTY PAID\"); }") != std::string::npos) std::cout << "ok  bounty paid title is BOUNTY PAID\n";
+		if (as.find("if(sub == \"bounty-add\") { return this.hzcLt(\"BOUNTY\"); }") != std::string::npos) std::cout << "ok  bounty added title is BOUNTY\n";
 		if (as.find("if(sub == \"gain\" || sub == \"bounty-add\")") == std::string::npos) std::cout << "ok  bounty added is not a green credits gain\n";
 	}
 

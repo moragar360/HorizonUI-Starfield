@@ -127,7 +127,8 @@ function charHost(src) {
 	const n = charHost(as); n.hz26BuildChar();
 	const c = n.HorizonChar_mc;
 	expect(n.hz26ChS === null && c.kids.length === 1 && c.kids[0] === n.hz26ChF && n.syncs === 1 && n.top[0] === c && c.visible === false, "C2: the load-time build makes only the full card");
-	expect(n.log.length === 8 && n.log.every((l) => l[0] === "F") && o.log.filter((l) => l[0] === "F").join("\n") === n.log.join("\n"), "C2: the full card's eight text fields are made exactly as before");
+	const oldF = o.log.filter((l) => l[0] === "F").map((l) => l.replace("|CHARACTER|", "|Character|"));
+	expect(n.log.length === 8 && n.log.every((l) => l[0] === "F") && oldF.join("\n") === n.log.join("\n"), "C2: the full card's eight text fields are made exactly as before (name placeholder is Character, not CHARACTER)");
 	n.hz26BuildCharS();
 	const s = n.hz26ChS;
 	expect(c.kids.length === 2 && c.kids[1] === s && s.visible === false && s.kids.length === 7 && s.kids[0] === n.hz26ChSG && s.kids[2] === n.hz26ChsXpBar, "C2: the strip is the card's last child, hidden, same seven parts in the same order");

@@ -52,6 +52,7 @@ function bind(name) {
 let van = "", xl = "";
 H.hzT19VanLbl = function() { return van; };
 H.hzT19Xl = function() { return xl; };
+H.hzLt = function(s) { return s; };
 bind("hzT19Trim"); bind("hzT19OneLine"); bind("hzT19Label");
 
 const brk = [

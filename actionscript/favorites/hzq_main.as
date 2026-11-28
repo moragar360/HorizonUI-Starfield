@@ -54,6 +54,11 @@
       private static const HZQ_CHIP_MIN:Number = 8;       // extra chip font floor when Slot Scale shrinks the card
       private static const HZQ_ICBOUND:Number = 60;       // vanilla Icon_mc BoundClip_mc (FavoritesEntry timeline)
       private static const HZQ_GLYPH:String = "$Controller_Buttons";   // the game's controller glyph face (fontconfig map)
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
       // controller glyph character (GlobalFunc.NameToTextMap value) -> keycap text: the HUD's table (horizon_block.as HZ_T19_PADK)
       private static const HZQ_PADK:Object = {"A":"A","B":"B","C":"X","D":"Y","E":"VIEW","O":"MENU","G":"LB","L":"RB","I":"LT","N":"RT","Y":"LT","X":"RT","F":"LS","H":"LS","K":"RS","M":"RS","1":"LB+RB","J":"LT+RT","a":"A","d":"B","c":"X","b":"Y","z":"VIEW","p":"MENU","g":"LB","m":"RB","j":"LT","o":"RT","y":"LT","x":"RT","i":"LS","f":"LS","n":"RS","l":"RS","h":"LB+RB","k":"LT+RT","T":"LEFT","U":"RIGHT","V":"DOWN","W":"UP","t":"LEFT","u":"RIGHT","v":"DOWN","w":"UP","q":"D-PAD","r":"D-PAD","s":"D-PAD"};
       private static const HZQ_INF_W:Number = 380;
@@ -81,6 +86,9 @@
       private var hzqInfY:Number = 0;
       private var hzqInfObj:Object = null;      // what the info card shows (selected entry, or the item being assigned)
       private var hzqInfSel:Boolean = false;    // hzqInfObj is the selected slot (SLOT row allowed)
+      private var hzqL10n:Object = null;        // dotted-key table from DLL hzqSetL10n (FavoritesMenu movie)
+      private var hzqL10nUsed:String = "en";
+      private var hzqL10nCjk:Boolean = false;
       private var hzqCtA:ColorTransform = null; // reused: accent multiply tint for non-weapon symbol icons
       private var hzqCtM:ColorTransform = null; // reused: main text tint for non-weapon symbol icons
       private var hzqCtN:ColorTransform = null; // reused: identity (non-weapon pictures)
@@ -115,7 +123,7 @@
       // defaults = HZ_SET_DEF; ranges = the HUD ini reader (horizon_block.as hzIniApply)
       private function hzqParse(txt:String) : Object
       {
-         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
+         var st:Object = {"On":true,"AccentColor":0,"AccentHex":-1,"CardColor":0,"CardHex":-1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"TextTone":0,"FontFace":1,"Font":"Exo2","TextScale":1,"HeaderStyle":0,"TextShadow":false,"HudScale":1,"Extended":false,"SlotCount":24,"SlotsPerRow":6,"ExtLayout":0,"ExtEmptyShow":true,"ExtPanelOpacity":92,"ExtSlotScale":1,"Keys":["","","","","","","","","","","",""]};
          if(txt == null) { return st; }
          var sec:String = "";
          for each(var ln:String in this.hzq37Lines(txt))
@@ -160,6 +168,7 @@
                else if(k == "cardshadow") { st.CardShadow = this.hzqPct(v,12); }
                else if(k == "texttone" && !isNaN(nv)) { st.TextTone = Math.max(0,Math.min(2,int(nv))); }
                else if(k == "fontface" && !isNaN(nv)) { st.FontFace = Math.max(0,Math.min(3,int(nv))); }
+               else if(k == "font") { st.Font = this.hzqFontFamNorm(v); }
                else if(k == "textscale" && !isNaN(nv)) { st.TextScale = Math.max(0.8,Math.min(1.3,nv)); }
                else if(k == "headerstyle" && !isNaN(nv)) { st.HeaderStyle = Math.max(0,Math.min(1,int(nv))); }
                else if(k == "textshadow") { st.TextShadow = !off && v.length > 0; }
@@ -525,11 +534,116 @@
          g.lineTo(cx + sx * r,cy);
          g.endFill();
       }
-      // hzUC: CAPS, or Title Case when HeaderStyle = 1
+      // Purpose: cache the HUD localization snapshot on this movie. One Invoke
+      // per FavoritesMenu open / language reload. No file I/O.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzqSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = ln.substr(tabAt + 1);
+                  if(k == "used") { this.hzqL10nUsed = v; }
+                  else if(k != "g" && k != "gn" && k != "files" && k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzqL10n = tab;
+            this.hzqL10nCjk = this.hzqL10nUsed == "zh-cn" || this.hzqL10nUsed == "zhhans" || this.hzqL10nUsed == "ja" || this.hzqL10nUsed == "jp";
+            if(this.hzqOn)
+            {
+               try { this.hzqHeader(); } catch(eHdr:Error) { }
+               try { this.hzqInfo(); } catch(eInf:Error) { }
+            }
+         }
+         catch(err:Error) { }
+      }
+      private function hzqL(key:String, fb:String) : String
+      {
+         if(this.hzqL10n != null)
+         {
+            var v:* = this.hzqL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      private function hzqHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      private function hzqLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += s.charAt(i).toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      private function hzqLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var slug:String = this.hzqLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","hud.hud_label.","hud.option.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var v:String = this.hzqL(String(pfx[i]) + slug, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         return en;
+      }
+      // hzUC: CAPS, or Title Case when HeaderStyle = 1. CJK is left as-is.
       private function hzqUC(s:String) : String
       {
          if(s == null) { return ""; }
-         if(int(this.hzqS.HeaderStyle) == 0) { return s.toUpperCase(); }
+         if(this.hzqHasCjk(s)) { return s; }
+         if(this.hzqS != null && int(this.hzqS.HeaderStyle) == 0) { return s.toUpperCase(); }
          var w:Array = s.split(" ");
          var i:int = 0;
          while(i < w.length)
@@ -587,9 +701,84 @@
          this.hzqFontOk[n] = ok ? 1 : 0;
          return ok;
       }
-      // FontFace: 1 $Horizon_Font, 2 $Horizon_Font_Alt (both wait for font.marker), 0 the game font, 3 the game face of the slot key field
+      // Game Chinese UI face (fonts_zhcn / DFZongYi). Loaded only when the
+      // game language is Chinese. Never embed a CJK font.
+      private function hzqCjkFont() : String
+      {
+         if(this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
+         return "$MAIN_Font";
+      }
+      private function hzqFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      private function hzqFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzqFontFamNorm(fam);
+         var lang:String = this.hzqL10nUsed != null && this.hzqL10nUsed.length > 0 ? this.hzqL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      private function hzqFontFamLive() : String
+      {
+         var fam:String = this.hzqFontFamNorm(String(this.hzqS != null ? this.hzqS.Font : "Exo2"));
+         if(this.hzqFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      private function hzqFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzqFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      private function hzqFontHorizonBase() : String
+      {
+         var fam:String = this.hzqFontFamLive();
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
+      // FontFace: 1 $Horizon_Font family (Font=), 2 $Horizon_Font_Alt (both wait for font.marker), 0 the game font, 3 the game face of the slot key field
       private function hzqFace(w:String) : String
       {
+         if(this.hzqL10nCjk && this.hzqProbe("DFZongYi-GB Otf W5 Regular")) { return this.hzqCjkFont(); }
          var f:int = int(this.hzqS.FontFace);
          if(f == 3)
          {
@@ -605,10 +794,15 @@
             if(want == "$Horizon_Font_Alt" || this.hzqProbe(want)) { return want; }
             return "$Horizon_Font_Alt";
          }
-         if(!this.hzqProbe("$Horizon_Font")) { return "$MAIN_Font"; }
-         want = w == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font";
-         if(want == "$Horizon_Font" || this.hzqProbe(want)) { return want; }
-         return "$Horizon_Font";
+         var base:String = this.hzqFontHorizonBase();
+         if(!this.hzqProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzqProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return "$MAIN_Font"; }
+         }
+         want = w == "bd" ? base + "_Bold" : base;
+         if(want == base || this.hzqProbe(want)) { return want; }
+         return base;
       }
       private function hzqFs(size:Number) : Number
       {
@@ -631,11 +825,12 @@
       private function hzqSet(t:TextField, s:String, size:Number, col:uint, w:String, tr:Number, hdr:Boolean) : void
       {
          var fs:Number = this.hzqFs(size);
-         var f:TextFormat = new TextFormat(this.hzqFace(w),fs,col);
-         f.letterSpacing = hdr && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10;
+         var cjk:Boolean = this.hzqL10nCjk || this.hzqHasCjk(s);
+         var f:TextFormat = new TextFormat(cjk ? this.hzqCjkFont() : this.hzqFace(w),fs,col);
+         f.letterSpacing = cjk ? 0 : (hdr && this.hzqS != null && int(this.hzqS.HeaderStyle) == 1 ? 0 : Math.round(fs * tr * 10) / 10);
          t.embedFonts = true;
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzqFontText(s);
          t.setTextFormat(f);
          t.filters = this.hzqS.TextShadow ? [this.hzqDarkText() ? new DropShadowFilter(1.5,90,0xFFFFFF,0.75,2,2,1.6,2) : new DropShadowFilter(1.5,60,0x000000,1,2.5,2.5,2,2)] : [];
       }
@@ -1025,7 +1220,7 @@
          var r:Rectangle = this.hzqCards[6].r;
          var g:* = this.hzqHdr.graphics;
          g.clear();
-         this.hzqSet(this.hzqHdrT,this.hzqUC("Quick Menu"),13,this.hzqTextAccent(),"bd",0.14,true);
+         this.hzqSet(this.hzqHdrT,this.hzqUC(this.hzqLt("Quick Menu")),13,this.hzqTextAccent(),"bd",0.14,true);
          var kt:String = "";
          var kf:String = "";
          if(this.hzqKb) { kt = this.hzqKey("Cancel"); }
@@ -1166,7 +1361,7 @@
          if(!empty && o.bIsEquippable && o.sAmmoName != null && String(o.sAmmoName).length > 0)
          {
             var n:uint = uint(o.uAmmoCount);
-            rows.push(["AMMO",String(o.sAmmoName) + "  " + (n > 999 ? "999+" : String(n))]);
+            rows.push([this.hzqLt("AMMO"),String(o.sAmmoName) + "  " + (n > 999 ? "999+" : String(n))]);
          }
          if(!empty && o.bIsEquippable && o.aElementalStats != null && o.aElementalStats.length > 0)
          {
@@ -1178,7 +1373,7 @@
                if(lb.length > 0) { d.push(lb + " " + Math.floor(Number(o.aElementalStats[q].fValue))); }
                q++;
             }
-            if(d.length > 0) { rows.push(["DAMAGE",d.join("   ")]); }
+            if(d.length > 0) { rows.push([this.hzqLt("DAMAGE"),d.join("   ")]); }
          }
          if(this.hzqInfSel && this.hzqKb)
          {
@@ -1188,7 +1383,7 @@
                sk = this.hzqExtKeyShort(String(this.hzqS.Keys[this.hzqExtSel - 13] != null ? this.hzqS.Keys[this.hzqExtSel - 13] : ""));
             }
             else { sk = this.hzqKey("Quickkey" + (int(this.selectedIndex) + 1)); }
-            if(sk.length > 0) { rows.push(["SLOT",sk]); }
+            if(sk.length > 0) { rows.push([this.hzqLt("SLOT"),sk]); }
          }
          var y:Number = (extEmpty ? 10 : nt.y + nt.height) + (rows.length > 0 ? 8 : 4);
          var div:Number = y - 4;
@@ -2190,7 +2385,7 @@
          f.letterSpacing = Math.round(fs * 0.04 * 10) / 10;
          t.embedFonts = true;
          t.defaultTextFormat = f;
-         t.text = s;
+         t.text = this.hzqFontText(s);
          t.setTextFormat(f);
       }
       // Purpose: size the extra-slot key chip to Slot Scale, then shrink the font if a long name
@@ -2483,7 +2678,7 @@
          }
          if(this.hzqExtFrameT != null)
          {
-            this.hzqSet(this.hzqExtFrameT,this.hzqUC("EXTENDED FAVORITES"),13,this.hzqTextAccent(),"bd",0.18,true);
+            this.hzqSet(this.hzqExtFrameT,this.hzqUC(this.hzqLt("EXTENDED FAVORITES")),13,this.hzqTextAccent(),"bd",0.18,true);
             this.hzqExtFrameT.x = fx + HZQ_FRAME_PAD;
             this.hzqExtFrameT.y = fy + 6;
             this.hzqExtFrameT.visible = true;

@@ -51,7 +51,7 @@
          if(rows.length == 0) { rows = [{"k":"_empty","l":"NO SETTINGS IN THIS SECTION","t":"x","btn":"—","h":"THIS SECTION","dis":true}]; }
          if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
          try { this.hzSetFollow(rows); } catch(eFol:Error) { }
-         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,"This page could not be drawn.",HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
+         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,this.hzLt("This page could not be drawn."),HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
          this.hz51DrawRight(b,g,T,acc,rows,H);
          this.hz51DrawFooter(b,g,T,acc,W,H);
          // Row labels are TextFields (children). body.graphics is behind them, so a
@@ -83,16 +83,51 @@
       private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          this.hz51Hair(g,0,HZ51_HEAD - 1,W,1,uint(T.txt),0.10);
-         this.hz51T(b,"HORIZON UI",16,14,150,16,"bd",uint(T.txt),2.4);
-         this.hz51T(b,"SETTINGS",16 + 128,18,90,11,"sb",uint(T.lab),2.0);
+         var lay:Object = this.hz51HeadSlots();
+         var maxR:Number = Number(lay.cx) - 8;
+         var title:String = this.hzLt("HORIZON UI");
+         var setn:String = this.hzLt("SETTINGS");
+         var t1:TextField = this.hz51T(b,title,16,14,280,16,"bd",uint(T.txt),2.4);
+         var tw1:Number = Math.ceil(this.hzTW(t1));
+         t1.width = tw1 + 4;
+         var sx:Number = 16 + tw1 + 10;
+         var t2:TextField = this.hz51T(b,setn,sx,18,280,11,"sb",uint(T.lab),2.0);
+         var tw2:Number = Math.ceil(this.hzTW(t2));
          var hv:String = HZ_BUILD;
          if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
-         var pillW:Number = 78;
-         var pillX:Number = 250;
+         var ver:String = "v" + hv;
+         var t3:TextField = this.hz51T(b,ver,0,16,200,11,"sb",uint(T.lab),0.4);
+         var tw3:Number = Math.ceil(this.hzTW(t3));
+         var pillW:Number = Math.max(52, tw3 + 28);
+         var gap:Number = 10;
+         var pillX:Number = sx + tw2 + gap;
+         if(pillX + pillW > maxR)
+         {
+            tw2 = Math.max(24, maxR - pillW - gap - sx);
+            pillX = sx + tw2 + gap;
+         }
+         t2.width = tw2 + 4;
+         // 1000 px F11 floor: EINSTELLUNGEN can overflow the leftover slot.
+         // Shrink the SETTINGS face first, then ellipsis, so glyphs are not clipped.
+         if(Math.ceil(this.hzTW(t2)) > tw2)
+         {
+            var f2:TextFormat = t2.getTextFormat();
+            var sz2:int = int(f2.size);
+            while(sz2 > 8 && t2.textWidth > tw2)
+            {
+               sz2--;
+               f2.size = sz2;
+               t2.defaultTextFormat = f2;
+               t2.setTextFormat(f2);
+            }
+            t2.height = sz2 + 10;
+            if(t2.textWidth > tw2) { this.hzFitText(t2, setn, tw2 + 4); }
+         }
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
-         this.hz51T(b,"v" + hv,pillX + 16,16,pillW - 22,11,"sb",uint(T.lab),0.4);
+         t3.x = Math.round(pillX + 16 - 2);
+         t3.width = tw3 + 4;
          this.hz51DrawCompact(b,g,T,acc,W);
       }
       private function hz51DrawTabs(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
@@ -108,7 +143,7 @@
          {
             var sel:Boolean = i == this.hzSetTab;
             var hov:Boolean = this.hzSetHover == "tab" + i;
-            var tb:TextField = this.hz51T(b,String(HZ_SET_TABS[i]),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
+            var tb:TextField = this.hz51T(b,this.hzLt(String(HZ_SET_TABS[i])),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
             tabTf.push(tb);
             tabSum += Math.round(this.hzTW(tb));
             i++;
@@ -142,7 +177,7 @@
          g.drawRoundRect(px0,py0,pw,ph,15,15);
          g.endFill();
          this.hz51Stroke(g,px0,py0,pw,ph,uint(T.txt),psel ? 0.28 : 0.16,15);
-         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
+         this.hz51T(b,this.hzLt("COMPACT MODE (STRIPS)"),px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
          this.hz51Switch(b,g,px0 + pw - 8,py0 + ph / 2,pon,T);
          this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":ph});
       }
@@ -150,7 +185,7 @@
       {
          var lay:Object = this.hz51HeadSlots();
          if(Number(lay.arrW) <= 0) { return; }
-         var alab:String = this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS";
+         var alab:String = this.hzLt(this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS");
          var aid:String = this.hzSetTab == 2 ? "arrscan" : "arrange";
          var aw:Number = Number(lay.arrW);
          var ax:Number = Number(lay.ax);
@@ -169,7 +204,7 @@
          g.endFill();
          this.hz34Ring(b,bx,by,bw,HZ51_FIND_H,HZ51_BOX_R,on ? acc : uint(T.txt),on ? 0.70 : 0.28,1);
          var typed:Boolean = this.hz51FindOpen();
-         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : "Search settings...");
+         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : this.hzLt("Search settings..."));
          var col:uint = this.hzSetFind.length > 0 ? uint(T.txt) : uint(T.lab);
          var textW:Number = typed ? bw - 36 : bw - 18;
          this.hz51T(b,txt,bx + 10,by + 8,textW,12,"sb",col,0.2);
@@ -192,7 +227,7 @@
          var sh:Number = HZ51_SW_H;
          var sx:Number = Math.round(R - sw);
          var sy:Number = Math.round(cy - sh / 2);
-         this.hz51T(b,on ? "ON" : "OFF",sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
+         this.hz51T(b,this.hzLt(on ? "ON" : "OFF"),sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
          g.beginFill(on ? acc : uint(T.off),on ? 0.92 : 1);
          g.drawRoundRect(sx,sy,sw,sh,sh,sh);
          g.endFill();
@@ -217,7 +252,7 @@
          while(gi < groups.length)
          {
             var grp:Object = groups[gi];
-            this.hz51T(b,String(grp.g),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
+            this.hz51T(b,this.hzLt(String(grp.g)),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
             this.hz51Hair(g,x0 + 16,y + 18,w - 32,1,acc,HZ51_SH_A);
             y += 22;
             var items:Array = grp.items as Array;
@@ -235,8 +270,8 @@
                   g.beginFill(acc,1); g.drawRoundRect(x0,y + 6,3,ih - 12,2,2); g.endFill();
                }
                else { this.hz51Hair(g,x0 + 16,y + ih - 1,w - 16,1,uint(T.txt),0.04); }
-               this.hz51T(b,String(it.l),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
-               this.hz51T(b,String(it.s),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
+               this.hz51T(b,this.hzLt(String(it.l)),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
+               this.hz51T(b,this.hzLt(String(it.s)),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
                this.hzSetHits.push({"id":"side" + pi,"x":x0,"y":y,"w":w,"h":ih});
                if(sel) { this.hz34Ring(b,x0 + 4,y + 2,w - 8,ih - 4,HZ51_BOX_R,acc,0.55,1); }
                y += ih;
@@ -296,7 +331,7 @@
          this.hz51T(b,this.hz51Crumb(this.hzSetTab, this.hz51PageClamp(this.hzSetTab)),x0,HZ_SET_TOP + 10,crumbW,10,"sb",uint(T.mut),1.2);
          var pages:Array = this.hz51Pages(this.hzSetTab);
          var pobj:Object = pages[this.hz51PageClamp(this.hzSetTab)];
-         var title:String = pobj != null ? String(pobj.l) : "";
+         var title:String = pobj != null ? this.hzLt(String(pobj.l)) : "";
          this.hz51T(b,title,x0,HZ_SET_TOP + 24,crumbW,16,"bd",uint(T.txt),1.8);
          var list:Array = [];
          var ri:int = 0;
@@ -319,7 +354,7 @@
          var firstSec:Boolean = true;
          if(list.length == 0)
          {
-            this.hz51T(b,"No settings in this section.",x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings in this section."),x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
          }
          while(li < list.length)
          {
@@ -330,10 +365,18 @@
             {
                boxOpen = false;
                var shY:Number = y + 10;
-               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,Math.min(240,boxW * 0.45),HZ51_SH_PX,"bd",acc,1.4);
-               var ruleX:Number = x0 + Math.round(this.hzTW(ht) + 12);
-               this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
-               y += HZ51_SEC;
+               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,boxW,HZ51_SH_PX,"bd",acc,1.4);
+               ht.wordWrap = true;
+               ht.multiline = true;
+               var shTw:Number = Math.round(this.hzTW(ht));
+               if(shTw + 28 < boxW)
+               {
+                  var ruleX:Number = x0 + shTw + 12;
+                  this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
+               }
+               var shExtra:Number = 0;
+               if(ht.textHeight > HZ51_SH_PX + 8) { shExtra = Math.ceil(ht.textHeight - (HZ51_SH_PX + 6)); }
+               y += HZ51_SEC + shExtra;
                firstSec = false;
                boxY = y;
                if(r.t != "m" && r.t != "mb" && r.t != "mc")
@@ -411,13 +454,15 @@
                g.endFill();
             }
             var labX:Number = r.dis ? x0 + 32 : x0 + 16;
-            var labW:Number = Math.max(120, boxW - 220);
+            var ctrlReserve:Number = r.t == "z" ? HZ51_Z_RESERVE : 220;
+            var labW:Number = Math.max(80, boxW - ctrlReserve);
             var lb35:TextField = this.hz51T(b,String(r.l),labX,y + 6,labW,HZ51_TITLE_PX,"bd",uint(T.txt),0.8);
             this.hzSetHits.push({"id":"row" + i,"x":x0,"y":y,"w":boxW,"h":HZ51_ROW});
             var inf35:String = r.dis ? null : this.hz35InfoOf(r);
             if(inf35 != null && lb35 != null && String(r.l).length > 0)
             {
                var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
+               if(ix35 + 16 > labX + labW) { ix35 = labX + labW - 16; }
                var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
                this.hz51InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
                if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
@@ -426,8 +471,10 @@
             if(help.length > 0)
             {
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
-               ht2.wordWrap = false;
-               ht2.multiline = false;
+               ht2.wordWrap = true;
+               ht2.multiline = true;
+               ht2.width = labW;
+               ht2.height = 20;
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -489,7 +536,7 @@
          if(inst) { g.beginFill(acc,0.07); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          if(paused) { g.beginFill(warn,0.08); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          this.hz34Ring(b,x0,y,boxW,h,HZ51_BOX_R,edge,inst || paused ? 0.65 : 0.28,1);
-         this.hz51T(b,"MODULE",x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,String(r.l),x0 + 14,y + 22,boxW * 0.55,12,"bd",uint(T.txt),0.8);
          var body:String = r.body != undefined ? String(r.body) : "";
          if(body.length > 0) { this.hz51T(b,body,x0 + 14,y + 42,boxW * 0.55,10,"rg",uint(T.lab),0.1); }
@@ -508,14 +555,14 @@
          {
             var R:Number = x0 + boxW - 14;
             var cy:Number = y + 52;
-            this.hz51T(b,"ENABLE",R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
+            this.hz51T(b,this.hzLt("ENABLE"),R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
             this.hz51Switch(b,g,R,cy,this.hz51On(swk),T,"tog" + idx);
          }
          return h;
       }
       private function hz51UnavailChip(b:Sprite, g:*, R:Number, cy:Number, T:Object) : void
       {
-         var lab:String = "UNAVAILABLE";
+         var lab:String = this.hzLt("UNAVAILABLE");
          var t:TextField = this.hz51T(b,lab,0,cy - 7,140,9,"sb",uint(T.mut),1.2);
          var w:Number = Math.round(this.hzTW(t) + 16);
          var h:Number = HZ51_BTN_H;
@@ -577,8 +624,25 @@
             var optsA:Array = r.opts as Array;
             if(optsA == null) { optsA = r.names as Array; }
             if(txt.length == 0 && optsA != null && optsA.length > 0) { txt = String(optsA[0]); }
-            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"bd",vcol,0.3);
-            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(this.hzTW(ct) + 36));
+            txt = this.hz51Exo2Text(txt);
+            var ct:TextField = this.hz51T(b,txt,0,cy - 8,280,12,"bd",vcol,0.3);
+            var maxTw:Number = this.hzTW(ct);
+            var labs:Array = r.t == "l" && r.names != undefined ? r.names as Array : dropOpts;
+            var li:int = 0;
+            while(labs != null && li < labs.length)
+            {
+               var lab:String = this.hz51Exo2Text(String(labs[li]));
+               if(lab != txt)
+               {
+                  ct.text = lab;
+                  var twLab:Number = this.hzTW(ct);
+                  if(twLab > maxTw) { maxTw = twLab; }
+               }
+               li++;
+            }
+            ct.text = txt;
+            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(maxTw + 36));
+            if(cw > 280) { cw = 280; }
             var cx:Number = Math.round(R - cw);
             var dy:Number = Math.round(cy - HZ51_DD_H / 2);
             b.removeChild(ct);
@@ -646,7 +710,7 @@
          var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
          if(dis && !qmOff)
          {
-            this.hzWT(b,"Turn on Extended Mode to bind keys. Saved keys are kept.",x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
+            this.hzWT(b,this.hzLt("Turn on Extended Mode to bind keys. Saved keys are kept."),x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
             y += HZ51_QM_LOCK;
          }
          var bMain:Sprite = b;
@@ -666,12 +730,12 @@
          var btnH:Number = 22;
          var btnX:Number = Math.round(x0 + innerW - btnW - 12);
          var btnY:Number = y + 8;
-         this.hz51T(b,"Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count.",x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
+         this.hz51T(b,this.hzLt("Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count."),x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
          g.beginFill(uint(T.fill),0.70);
          g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
          g.endFill();
          this.hz51Stroke(g,btnX,btnY,btnW,btnH,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,6);
-         this.hz51T(b,"CLEAR ALL KEYS",btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         this.hz51T(b,this.hzLt("CLEAR ALL KEYS"),btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
          if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
          y += HZ51_QM_HEAD;
          var count:int = this.hz51QmCount();
@@ -689,8 +753,8 @@
             var raw:String = this.hzSetPend != null ? String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "") : "";
             var cap:Boolean = this.hzQmCap == k;
             var kn:String = raw;
-            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS ANY KEY…"; }
-            else if(kn.length == 0) { kn = "UNBOUND"; }
+            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : this.hzLt("PRESS ANY KEY…"); }
+            else if(kn.length == 0) { kn = this.hzLt("UNBOUND"); }
             var kind:String = "";
             if(cap && this.hzQmCapCand.length > 0) { kind = this.hzQmCapKind; }
             else if(!cap && raw.length > 0) { kind = this.hzQmNameKind(raw, k); }
@@ -703,11 +767,11 @@
             g.drawRoundRect(xx,yy,tw,th,8,8);
             g.endFill();
             this.hz51Stroke(g,xx,yy,tw,th,bcol,cap || isClash ? 0.85 : 0.22,8);
-            this.hz51T(b,"SLOT " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
+            this.hz51T(b,this.hzLt("SLOT") + " " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
             g.beginFill(uint(T.tile),0.55);
             g.drawRoundRect(xx + 8,yy + 24,14,14,3,3);
             g.endFill();
-            this.hz51T(b,"Empty",xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("Empty"),xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
             var chipH:Number = 22;
             var chipY:Number = yy + th - chipH - 8;
             var chipW:Number = tw - 16;
@@ -716,9 +780,9 @@
             g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
             g.endFill();
             this.hz51Stroke(g,chipX,chipY,chipW,chipH,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,6);
-            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn.indexOf("PRESS") == 0 ? uint(T.mut) : uint(T.txt));
+            var chipCol:uint = isClash ? clashCol : (raw.length == 0 || (cap && this.hzQmCapCand.length == 0) ? uint(T.mut) : uint(T.txt));
             this.hz51T(b,kn,chipX + chipW / 2,chipY + 4,chipW - 4,9,"bd",chipCol,0.4,"center");
-            if(isClash) { this.hz51T(b,"CLASH",xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
+            if(isClash) { this.hz51T(b,this.hzLt("CLASH"),xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
             if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":tw,"h":th}); }
             col++;
             if(col >= per) { col = 0; row++; }
@@ -742,13 +806,13 @@
          var ph:Number = H - HZ51_FOOT - py;
          this.hz51Hair(g,px,py,1,ph,uint(T.txt),HZ51_DIV_A);
          var inn:Number = HZ51_PREV_W - 24;
-         this.hz51T(b,"LIVE PREVIEW",px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("LIVE PREVIEW"),px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
          var pvcX:Number = px + 12;
          var pvcY:Number = py + 30;
          var pvcW:Number = inn;
          var r:Object = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? rows[this.hzSetRow] : null;
          this.hz51PvPaint(b,g,T,acc,pvcX,pvcY,pvcW,HZ51_PVC_H,r);
-         var cap:String = r != null && r.l != undefined ? String(r.l) : "Pick a setting.";
+         var cap:String = r != null && r.l != undefined ? String(r.l) : this.hzLt("Pick a setting.");
          var pvn:TextField = this.hz51T(b,cap,px + 12,pvcY + HZ51_PVC_H + 8,inn,11,"rg",uint(T.mut),0.1);
          pvn.wordWrap = true; pvn.multiline = true; pvn.width = inn;
          var dy:Number = pvcY + HZ51_PVC_H + 36;
@@ -757,14 +821,17 @@
          g.drawRoundRect(px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,HZ51_BOX_R);
          g.endFill();
          this.hz34Ring(b,px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,uint(T.txt),0.14,1);
-         this.hz51T(b,"SETTING DETAILS",px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
          this.hz51Hair(g,px + 12 + 118,dy + 12,Math.max(8,inn - 118),1,acc,HZ51_SH_A);
-         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : "Pick a setting to see what it does.";
+         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : this.hzLt("Pick a setting to see what it does.");
          var title:String = r != null && r.l != undefined ? String(r.l) : "";
          if(title.length > 0) { this.hz51T(b,title,px + 12,dy + 20,inn,HZ51_TITLE_PX,"bd",uint(T.txt),0.8); }
          var tf:TextField = this.hz51T(b,help,px + 12,dy + 40,inn,HZ51_HELP_PX,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = inn; tf.text = help;
-         this.hzMsglogWrap(tf,inn,Math.max(48, dH - 56));
+         // Fill the details box. hzMsglogWrap shrinks to textHeight, which
+         // Scaleform often reports as one line for embedFonts fields, clipping
+         // the paragraph at the bottom.
+         tf.height = Math.max(48, dH - 56);
          if(r != null && this.hz51On(String(r.k)) && String(r.k).indexOf("Show") == 0 && r.k != "ShowFollowers" && r.k != "ShowLocations" && r.k != "ShowShip" && r.k != "ShowEnemies" && r.k != "ShowPlayerMarker" && r.k != "ShowSpeaker" && r.k != "ShowTarget")
          {
             var ruleK:String = String(r.k).substr(4) + "Rule";
@@ -807,8 +874,8 @@
          if(kind == "preset")
          {
             var pr:Object = this.hz37Cur();
-            this.hz51T(b,pr != null ? String(pr.n) : "NO PRESET",x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
-            this.hz51T(b,"Pending look · CANCEL reverts",x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
+            this.hz51T(b,pr != null ? String(pr.n) : this.hzLt("NO PRESET"),x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
+            this.hz51T(b,this.hzLt("Pending look · CANCEL reverts"),x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
             return;
          }
          this.hz51PvCard(b,g,T,acc,x,y,w,h,p,k);
@@ -822,7 +889,7 @@
          if(k.indexOf("_goto") == 0 || k == "_arrange" || k == "_empty" || k == "_diagoff" || k == "_dirinst" || k == "_cmpok" || k.indexOf("_own") == 0 || k.indexOf("_hz31") == 0 || k.indexOf("_modban") == 0) { return "text"; }
          if(k.indexOf("_hz37") == 0) { return (k == "_hz37pick" || k == "_hz37save") ? "preset" : "text"; }
          if(k.indexOf("_mod_") == 0) { return "module"; }
-         if(k.indexOf("_ml") == 0 || k == "_msglog" || k == "Record" || k == "Persist" || k == "HistorySize" || k == "SettingsKey" || k == "StartupIntro" || k == "Debug" || k.indexOf("Perf") == 0) { return "text"; }
+         if(k.indexOf("_ml") == 0 || k == "_msglog" || k == "Record" || k == "Persist" || k == "HistorySize" || k == "SettingsKey" || k == "Language" || k == "_l10nGame" || k == "StartupIntro" || k == "Debug" || k.indexOf("Perf") == 0) { return "text"; }
          if(k.indexOf("_hz40") == 0 || k.indexOf("_hz41") == 0 || k == "_hz42scrst" || k == "_qmclear" || k == "_qmkeys") { return "text"; }
          if(k == "SubAutoPause" || k == "DlgAutoPause" || k == "DlgInputDelay" || k == "DlgRolloverSound" || k == "DlgMarkers" || k == "MissionToastSound" || k == "DlgHoverScroll" || k == "DlgWheel" || k == "DlgNumberKeys" || k == "DlgSelectHint" || k == "DlgQuickPickHint") { return "text"; }
          if(k == "ShowPlanet" || k.indexOf("Planet") == 0 || k == "HazardAlert" || k == "TimeDisplay" || k == "ClockFormat" || k == "TempUnit") { return "planet"; }
@@ -847,14 +914,14 @@
          if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { return "subtitle"; }
          if(k == "Dialogue" || k.indexOf("Dlg") == 0) { return "dialogue"; }
          if(k.indexOf("Scan") == 0 || (k.indexOf("Hide") == 0 && k.indexOf("Scan") > 0) || k == "DimTraitPopupDuringBioscan" || k == "TraitPopupDim" || k == "HideQuestPopupsWhileScanning" || k == "HideMainHudWhileScanning" || k == "HideWatchWhileScanning") { return "scanner"; }
-         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
+         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "Font" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
          return "card";
       }
       private function hz51PvText(b:Sprite, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object, k:String) : void
       {
          var help:String = this.hz51HelpOf(k, r);
          if(help == null || help.length == 0) { help = r != null && r.note != undefined ? String(r.note) : "This setting has no separate HUD picture. The details below describe what it does."; }
-         this.hz51T(b,"SETTING DETAILS",x + 10,y + 10,w - 20,8,"sb",acc,0.8);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),x + 10,y + 10,w - 20,8,"sb",acc,0.8);
          var tf:TextField = this.hz51T(b,help,x + 10,y + 26,w - 20,10,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = w - 20;
          this.hzMsglogWrap(tf,w - 20,h - 36);
@@ -1293,7 +1360,7 @@
          var fs:Number = Math.max(9, Math.min(13, 11 * (ts > 0 ? ts : 1)));
          this.hz51T(b,face,cx + 10,cy + 8,cw - 20,fs,"bd",uint(T.txt),0.4);
          this.hz51T(b,"Sample HUD text",cx + 10,cy + 28,cw - 20,9,"rg",uint(T.lab),0.2);
-         this.hz51T(b,k == "FontFace" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
+         this.hz51T(b,k == "FontFace" || k == "Font" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
       }
       private function hz51PvModule(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
@@ -1378,29 +1445,29 @@
          var by:Number = fy + 12;
          if(this.hz51Pad)
          {
-            this.hz51T(b,"CONTROLLER",hx,by + 2,88,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("CONTROLLER"),hx,by + 2,88,9,"bd",uint(T.mut),1.2);
             hx = 108;
             for each(var ck:Array in [["LB/RB","TABS"],["D-PAD","MOVE"],["A","SELECT"],["B","BACK"]])
             {
                var ckw:Number = this.hzSetKey(b,g,hx,by,String(ck[0]),acc,16,7,9);
-               var cl:TextField = this.hz51T(b,String(ck[1]),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
+               var cl:TextField = this.hz51T(b,this.hzLt(String(ck[1])),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + ckw + 4 + this.hzTW(cl) + 10);
             }
          }
          else
          {
-            this.hz51T(b,"KEYBOARD",hx,by + 2,80,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("KEYBOARD"),hx,by + 2,80,9,"bd",uint(T.mut),1.2);
             hx = 100;
             for each(var hk:Array in [["UP/DN","SELECT"],["L/R","CHANGE"],["ENTER","OK"],["ESC","CANCEL"],["/","SEARCH"]])
             {
                var hkw:Number = this.hzSetKey(b,g,hx,by,String(hk[0]),uint(T.mut),16,7,9);
-               var hl:TextField = this.hz51T(b,String(hk[1]),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
+               var hl:TextField = this.hz51T(b,this.hzLt(String(hk[1])),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + hkw + 4 + this.hzTW(hl) + 10);
             }
          }
          var bxr:Number = W - 16;
-         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,"CANCEL",false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
-         this.hzSetBtn(b,g,bxr,fy + 9,"OK",true,false,this.hzSetHover == "ok",T,"ok",11,10);
+         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("CANCEL"),false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
+         this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("OK"),true,false,this.hzSetHover == "ok",T,"ok",11,10);
       }
       private function hz51DrawFind(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
       {
@@ -1423,7 +1490,7 @@
          if(!this.hzSetFindOn && this.hzSetFind.length == 0) { return; }
          if(hits.length == 0)
          {
-            this.hz51T(b,"No settings match",x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings match"),x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
             return;
          }
          if(this.hzSetFindHi >= hits.length) { this.hzSetFindHi = 0; }
@@ -1484,13 +1551,14 @@
             if(yy + HZ51_DROP_ITEM > y + h) { break; }
             var sel:Boolean = oi == this.hzSetDropHi;
             if(sel) { g.beginFill(acc,0.18); g.drawRoundRect(x + 3,yy,w - 6,HZ51_DROP_ITEM - 2,4,4); g.endFill(); }
+            var dlab:String = this.hz51Exo2Text(String(opts[oi]));
             if(r.t == "a" && r.pal != undefined)
             {
                var pal:Array = r.pal as Array;
                g.beginFill(uint(pal[Math.min(pal.length - 1,oi)]),1); g.drawRoundRect(x + 10,yy + 6,10,10,2,2); g.endFill();
-               this.hz51T(b,String(opts[oi]),x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
+               this.hz51T(b,dlab,x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
             }
-            else { this.hz51T(b,String(opts[oi]),x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
+            else { this.hz51T(b,dlab,x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
             this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM});
             i++;
          }

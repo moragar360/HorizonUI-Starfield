@@ -70,10 +70,11 @@ function host(cfg, lrg) {
 		HZC_LRG: !!lrg, HZC_V3_W: 460, HZC_V3_MAX: 3, HZC_V3_TTL: 0xF2F7F9, HZC_V3_BODY: 0x96A6AE, HZC_TXT: 0xE8F0F5, HZC_EDGE: 0.10,
 		HZC_GAME_TITLES: ["INFO","DATA","MISC","GAME"], HZC_RX_LBL: ["LOVED THAT","LIKED THAT","DISLIKED THAT","HATED THAT"], HZC_RX_COL: [0x5EE3A1,0x5EE3A1,0xF2A93B,0xFF5B5B], HZC_RX_DIR: [2,1,-1,-2], HZC_GRN: 0x5EE3A1, HZC_RED: 0xFF5B5B, HZC_ACC: [0x4DD2E6, 0xF2A93B], HZC_CARD_AMB: 0xF2A93B,
 		hzcOpacity: 1, hzcRxLayer: new Spr(), Sprite: Spr, Point: class { constructor(x, y) { this.x = x; this.y = y; } }, TextFieldAutoSize: { LEFT: "left", NONE: "none" }, sets: [],
+		hzcL10n: null, hzcL10nC: {},
 	});
 	h.hzcField = () => new TF();
 	h.hzcSet = (t, s, role, size, col, sp, al) => { t.text = s; t.fmt = { size: Math.round(size), col, sp, role, leading: role === "rg" ? Math.round(size * 0.38 - 4) : 0 }; h.sets.push({ s, size: Math.round(size), col, role }); };
-	for (const n of ["hzcCardZ", "hzcAccent", "hzcV3Fs", "hzcV3Fill", "hzcV3Body", "hzcV3Fit", "hzcV3Icon", "hzcV3Card", "hzcFit", "hzcCard", "hzcCardMatch", "hzcCardTone", "hzcCardTitle", "hzcCardPhrase", "hzcGameTitle", "hzcCardDraw", "hzcRxDraw"]) bind(h, hzc, n);
+	for (const n of ["hzcLt", "hzcL", "hzcLSlug", "hzcHasCjk", "hzcCardZ", "hzcAccent", "hzcV3Fs", "hzcV3Fill", "hzcV3Body", "hzcV3Fit", "hzcV3Icon", "hzcV3Card", "hzcFit", "hzcCard", "hzcCardMatch", "hzcCardTone", "hzcCardTitle", "hzcCardPhrase", "hzcGameTitle", "hzcCardDraw", "hzcRxDraw"]) bind(h, hzc, n);
 	h.hzcRxDrop = () => {}; h.hzcAlertGroup = () => ""; h.hzcSpeakerCol = () => 0x4DD2E6;
 	return h;
 }

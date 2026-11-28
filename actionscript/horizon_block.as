@@ -169,11 +169,22 @@
       // v0.18
       public var hzTextTone:int = 0; // 0 auto (from card color), 1 light text, 2 dark text
       private static const HZ_TONE_NAMES:Array = ["AUTO","LIGHT TEXT","DARK TEXT"];
-      public var hzFontFace:int = 1; // 0 game font, 1 Exo 2 via $Horizon_Font, 2 Roboto via $Horizon_Font_Alt (v0.29; needs fonts_horizon.swf + fontconfig)
-      // v0.29: shown in this order; the stored ini values stay 0 = game, 1 = Exo 2 (unchanged meaning), 2 = Roboto (new)
+      public var hzFontFace:int = 1; // 0 game font, 1 Horizon family via Font= / $Horizon_Font*, 2 Roboto via $Horizon_Font_Alt (v0.29; needs fonts_horizon.swf + fontconfig)
+      // v0.29: shown in this order; the stored ini values stay 0 = game, 1 = Horizon family (unchanged meaning), 2 = Roboto (new)
       // v0.34: 3 = the game's own semibold face (run-time name only, never bundled; falls back to the game font)
+      // [Style] Font= picks the Horizon family when FontFace is 1. FontFace 0/1/2/3 stay.
+      public var hzFontFam:String = "Exo2";
       private static const HZ_FONT_NAMES:Array = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
       private static const HZ_FONT_IDS:Array = [1,2,0,3];
+      private static const HZ_FONT_FAM_IDS:Array = ["Exo2","Saira","Orbitron","Titillium"];
+      private static const HZ_FONT_FAM_NAMES:Array = ["EXO 2","SAIRA","ORBITRON","TITILLIUM WEB"];
+      // ---- generated font coverage (tools/build_font_coverage.js) ----
+      private static const HZ_FONT_COVER:Object = {"en":15,"de":15,"fr":15,"es":15,"es-mx":15,"pl":11,"zh-cn":15};
+      private static const HZ_ORB_FROM:Array = [171,183,187,8222];
+      private static const HZ_ORB_TO:Array = ["\u0022","\u2022","\u0022","\u0022"];
+      // ---- end generated font coverage ----
+      private var hzFontLive:String = "Exo2"; // coverage-resolved family; INI Font= is hzFontFam
+      private var hzMid:String = "\u00B7";    // compass separator; Orbitron may be U+2022. Not hzDot: that name is the status-dot painter.
       private var hzFontOk:int = -1; // -1 unknown, 0 missing, 1 available
       public var hzPlanDetails:Boolean = false;
       public var hzShowTarget:Boolean = true;
@@ -331,7 +342,7 @@
          this.hzCardBodies.push({"s":body,"w":w,"h":h,"k":"card"});
          this.hzDrawBody(body,w,h);
          if(icon != null) { this.hzIcon(p,icon,11,8,HZ_ACCENT); }
-         if(title != null) { this.hzText(p,title,icon != null ? 29 : 12,7,150,12,HZ_LABEL,false,"hdr"); }
+         if(title != null) { this.hzText(p,this.hzLt(title),icon != null ? 29 : 12,7,150,12,HZ_LABEL,false,"hdr"); }
          var dot:Sprite = new Sprite();
          dot.x = w - 12; dot.y = HZ_HDR / 2;
          p.addChild(dot);
@@ -833,6 +844,7 @@
          var o:Object = {"tf":t,"size":size,"col":col,"right":right,"role":role,"keep":keepCol,"y0":y,"raw":null};
          if(role == "hdr") { o.raw = txt; }
          this.hzTexts.push(o);
+         txt = this.hzFontText(txt);
          t.text = role == "hdr" ? this.hzHdrCase(txt) : txt;
          this.hzApplyFmt(o);
          return t;
@@ -862,6 +874,7 @@
       private function hzSetHdr(tf:TextField, s:String) : void
       {
          if(!tf) { return; }
+         s = this.hzFontText(s);
          for each(var o:Object in this.hzTexts)
          {
             if(o.tf == tf) { o.raw = s; break; }
@@ -938,12 +951,115 @@
          }
       }
 
-      // FontFace 1: Exo 2 faces from fonts_horizon.swf ($Horizon_Font = SemiBold, _Regular, _Bold); each face falls
-      // back to SemiBold, then to the game font, so a missing / partial install never shows empty text.
+      // FontFace 1: Horizon family from fonts_horizon.swf. Font=Exo2 uses $Horizon_Font (SemiBold, _Regular, _Bold).
+      // Font=Saira / Orbitron / Titillium use $Horizon_Font_Saira / _Orbitron / _Titillium with the same suffixes.
+      // Each face falls back to that family's base, then Exo 2, then the game font, so a missing install never shows empty text.
+      // Scaleform fontconfig loads those aliases at movie start (same as Roboto). F11 only switches the alias; there is
+      // no extra SWF load on pick (a runtime FontLib load would be new I/O). Probe cache is hzFontProbe.
       // v0.29 FontFace 2: Roboto ($Horizon_Font_Alt = Medium, _Alt_Regular, _Alt_Bold); falls back to Medium, then to
       // the matching Exo 2 face (older fonts_horizon.swf / fontconfig without Roboto), then to the game font.
+      // Purpose: the face Starfield already uses for its Chinese UI
+      // (fontconfig_zhhans: $MAIN_Font = DFZongYi-GB in fonts_zhcn).
+      // That FontLib is loaded only when the game language is Chinese.
+      // Never embed a CJK face. Probe once per name (hzFontProbe cache).
+      // Call from set-text / language apply, never per HUD tick.
+      private function hzCjkFont(face:String = null) : String
+      {
+         if(this.hzL10nUsed == "ja" || this.hzL10nUsed == "jp")
+         {
+            if(this.hzFontProbe("JP_NB Architekt Light Regular")) { return "JP_NB Architekt Light Regular"; }
+         }
+         if(this.hzFontProbe("DFZongYi-GB Otf W5 Regular")) { return "DFZongYi-GB Otf W5 Regular"; }
+         return this.hzFont ? this.hzFont : "$MAIN_Font";
+      }
+      // Purpose: canonical [Style] Font= token. Exo2 is the default. Unknown values keep Exo 2.
+      // Inputs: INI or F11 string. Outputs: Exo2, Saira, Orbitron, or Titillium.
+      // Author: Moragar. Last modified: 2026-11-28.
+      private function hzFontFamNorm(v:String) : String
+      {
+         if(v == null || v.length == 0) { return "Exo2"; }
+         var s:String = "";
+         var i:int = 0;
+         while(i < v.length)
+         {
+            var c:int = v.charCodeAt(i);
+            if(c != 32 && c != 9 && c != 45 && c != 95) { s += v.charAt(i); }
+            i++;
+         }
+         s = s.toLowerCase();
+         if(s == "saira") { return "Saira"; }
+         if(s == "orbitron") { return "Orbitron"; }
+         if(s == "titillium" || s == "titilliumweb") { return "Titillium"; }
+         return "Exo2";
+      }
+      // Purpose: true when the build-time coverage table offers this family for
+      // hzL10nUsed. The table is generated from font cmaps + JSON; this is a
+      // bitmask lookup, never a TTF read.
+      private function hzFontCovered(fam:String) : Boolean
+      {
+         var f:String = this.hzFontFamNorm(fam);
+         var lang:String = this.hzL10nUsed != null && this.hzL10nUsed.length > 0 ? this.hzL10nUsed : "en";
+         var bits:* = HZ_FONT_COVER[lang];
+         if(bits == undefined) { bits = HZ_FONT_COVER["en"]; }
+         if(bits == undefined) { return f == "Exo2"; }
+         var b:int = int(bits);
+         if(f == "Saira") { return (b & 2) != 0; }
+         if(f == "Orbitron") { return (b & 4) != 0; }
+         if(f == "Titillium") { return (b & 8) != 0; }
+         return (b & 1) != 0;
+      }
+      // Purpose: family that actually renders. Uncovered Font= (Polish Orbitron)
+      // draws Exo 2; hzFontFam / the INI value stay as saved.
+      private function hzFontFamLive() : String
+      {
+         var fam:String = this.hzFontFamNorm(this.hzFontFam);
+         if(this.hzFontCovered(fam)) { return fam; }
+         return "Exo2";
+      }
+      // Purpose: Orbitron punctuation substitutes at set-text time. Never from a
+      // HUD tick. Only when the live family is Orbitron.
+      private function hzFontText(s:String) : String
+      {
+         if(s == null || s.length == 0) { return s; }
+         if(this.hzFontFamLive() != "Orbitron") { return s; }
+         var n:int = HZ_ORB_FROM.length;
+         if(n <= 0) { return s; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            var j:int = 0;
+            var hit:Boolean = false;
+            while(j < n)
+            {
+               if(c == int(HZ_ORB_FROM[j])) { o += String(HZ_ORB_TO[j]); hit = true; break; }
+               j++;
+            }
+            if(!hit) { o += s.charAt(i); }
+            i++;
+         }
+         return o;
+      }
+      // Purpose: cache live family + middot for compass ticks. Call when Font=
+      // or language changes, not per frame. Writes hzMid, never the hzDot painter.
+      private function hzFontApply() : void
+      {
+         this.hzFontLive = this.hzFontFamLive();
+         this.hzMid = this.hzFontLive == "Orbitron" ? this.hzFontText("\u00B7") : "\u00B7";
+      }
+      // Purpose: Scaleform alias prefix for FontFace 1. Extra families are fontconfig maps, not a second SWF load.
+      private function hzFontHorizonBase() : String
+      {
+         var fam:String = this.hzFontFamLive();
+         if(fam == "Saira") { return "$Horizon_Font_Saira"; }
+         if(fam == "Orbitron") { return "$Horizon_Font_Orbitron"; }
+         if(fam == "Titillium") { return "$Horizon_Font_Titillium"; }
+         return "$Horizon_Font";
+      }
       private function hzFontName(face:String = null) : String
       {
+         if(this.hzL10nCjk && this.hzFontProbe("DFZongYi-GB Otf W5 Regular")) { return this.hzCjkFont(face); }
          var game:String = this.hzFont ? this.hzFont : "$MAIN_Font";
          if(this.hzFontFace == 3) { return this.hzFontProbe(HZ34_SEMI) ? HZ34_SEMI : game; }   // v0.34: one weight for every face
          if(this.hzFontFace != 1 && this.hzFontFace != 2) { return game; }
@@ -957,12 +1073,17 @@
             this.hzFontOk = 1;
             return "$Horizon_Font_Alt";
          }
+         var base:String = this.hzFontHorizonBase();
          // Bold and Regular wait until the base face really renders, so they are not looked up before the library is ready
-         if(!this.hzFontProbe("$Horizon_Font")) { return game; }
-         want = face == "rg" ? "$Horizon_Font_Regular" : (face == "bd" ? "$Horizon_Font_Bold" : "$Horizon_Font");
-         if(want == "$Horizon_Font" || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
+         if(!this.hzFontProbe(base))
+         {
+            if(base != "$Horizon_Font" && this.hzFontProbe("$Horizon_Font")) { base = "$Horizon_Font"; }
+            else { return game; }
+         }
+         want = face == "rg" ? base + "_Regular" : (face == "bd" ? base + "_Bold" : base);
+         if(want == base || this.hzFontProbe(want)) { this.hzFontOk = 1; return want; }
          this.hzFontOk = 1;
-         return "$Horizon_Font";
+         return base;
       }
 
       // Live typography update (TextScale / HeaderStyle / TextShadow / card color).
@@ -1199,7 +1320,7 @@
                var idx:int = int(Math.round(deg / 45)) % 8;
                var ds:String = String(hi);
                while(ds.length < 3) { ds = "0" + ds; }
-               this.hzCmpCenter.text = HZ_CARD[idx] + " · " + ds + "°";
+               this.hzCmpCenter.text = HZ_CARD[idx] + " " + this.hzMid + " " + ds + "°";
             }
          }
          this.hzCmpDeg = deg;
@@ -2277,9 +2398,9 @@
          if(this.hzHsSt == 0) { return; }   // the fade (hzShow) takes the card away; nothing to draw
          var txt:String;
          if(this.hzHsSrc == 1) { txt = this.hzHsAlTxt; }
-         else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? "HAZARD" : this.hzHsWord + " HAZARD"; }
-         else if(this.hzHsSrc == 4) { txt = "RADIATION HAZARD"; }
-         else { txt = "SUIT PROTECTION RESTORING"; }
+         else if(this.hzHsSrc == 2) { txt = this.hzHsWord == "HAZARD" ? this.hzLt("HAZARD") : this.hzLt(this.hzHsWord) + " " + this.hzLt("HAZARD"); }
+         else if(this.hzHsSrc == 4) { txt = this.hzLt("RADIATION HAZARD"); }
+         else { txt = this.hzLt("SUIT PROTECTION RESTORING"); }
          txt = this.hzUC(txt);
          var cm:int = this.hzHsCmp();
          var h:Number = cm == 1 ? HZ_HS_H : HZ_HS_HS;
@@ -2901,6 +3022,7 @@
                case "containeropacity": if(!isNaN(nv)) { this.hzContOpacity = Math.max(0.2,Math.min(1.6,nv)); this.hzT19Sig = ""; } break;
                case "texttone": if(!isNaN(nv)) { this.hzTextTone = Math.max(0,Math.min(2,int(nv))); } break;
                case "fontface": if(!isNaN(nv)) { this.hzFontFace = Math.max(0,Math.min(3,int(nv))); } break;
+               case "font": this.hzFontFam = this.hzFontFamNorm(v); this.hzFontApply(); break;
                case "timedisplay": if(!isNaN(nv)) { this.hzTimeDisplay = Math.max(0,Math.min(3,int(nv))); } break;
                case "clockformat": if(!isNaN(nv)) { this.hzClockFmt = Math.max(0,Math.min(1,int(nv))); try { this.hzPpLayout(); } catch(eClk:Error) { } } break;
                case "tempunit": if(!isNaN(nv)) { this.hzTempUnit = Math.max(0,Math.min(1,int(nv))); } break;
@@ -2940,6 +3062,7 @@
                case "showenemies": this.hzCmpEnemies = bv; break;
                case "showplayermarker": this.hzCmpPlayerMark = bv; break;
                case "settingskey": if(v.length > 0) { this.hzSettingsKeyName = v; } break;
+               case "language": if(v.length > 0) { this.hzLanguage = v; } break;
                case "cardcolor": if(!isNaN(nv)) { this.hzCardColor = Math.max(0,Math.min(HZ_CARDCOLS.length,int(nv))); } break;
                case "hudscale": if(!isNaN(nv)) { this.hzHudScale = Math.max(0.7,Math.min(1.4,nv)); this.hzApplyScale(); } break;
                case "textscale": if(!isNaN(nv)) { this.hzTextScale = Math.max(0.8,Math.min(1.3,nv)); this.hzApplyTypo(); } break;
@@ -4779,6 +4902,15 @@
       private var hz51FbDbg:String = "";          // Debug Overlay lines so a fallback never looks like success
       private var hz51OpenFolder:String = "";     // one-shot folder request for the DLL (Message Log SHOW)
       private var hzSetWinMask:Sprite = null;     // rounded clip for the settings window body
+      // Localization: filled once by hzSetL10n from the DLL. Lookups at build / language change only.
+      private var hzL10n:Object = null;
+      private var hzL10nGame:String = "";
+      private var hzL10nGameName:String = "";
+      private var hzL10nFiles:Array = null;
+      private var hzL10nUsed:String = "en";
+      private var hzL10nCjk:Boolean = false;
+      private var hzLanguage:String = "auto";
+      private var hzHsWordLoc:String = "HAZARD";
       // Compact shell: old F11 was 1000x660. Height stays 726. Width 1260 gives the
       // header, extended key grid, and right-aligned controls room without covering
       // HUD side cards at 1080p or 1440p (hz51Fit never grows past this cap).
@@ -4795,6 +4927,7 @@
       private static const HZ51_FIND_H:Number = 30;     // header control height
       private static const HZ51_DD_H:Number = 28;       // dropdown box height
       private static const HZ51_CTRL_W:Number = 148;    // dropdown / button min width; all controls share right edge R
+      private static const HZ51_Z_RESERVE:Number = 320; // z-row: GLOBAL/CUSTOM chip + slider + value; labels must end before this
       private static const HZ51_SW_W:Number = 42;       // mock toggle track
       private static const HZ51_SW_H:Number = 22;
       private static const HZ51_BTN_H:Number = 22;      // OPEN / RESET / SHOW on 48px rows
@@ -4960,6 +5093,374 @@
          else if(this.hzVehPad == 1 && (code == "up" || code == "down" || code == "left" || code == "right" || code == "ok" || code == "cancel")) { this.hz51Pad = true; }
          else if(this.hz51TypeChar(code).length > 0) { this.hz51Pad = false; }
       }
+      // Purpose: unescape one payload field from the DLL (#l10n1 snapshot).
+      private function hzL10nUnesc(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:String = s.charAt(i);
+            if(c == "\\" && i + 1 < s.length)
+            {
+               var n:String = s.charAt(i + 1);
+               if(n == "n") { o += "\n"; i += 2; continue; }
+               if(n == "r") { o += "\r"; i += 2; continue; }
+               if(n == "t") { o += "\t"; i += 2; continue; }
+               if(n == "\\") { o += "\\"; i += 2; continue; }
+               o += n; i += 2; continue;
+            }
+            o += c; i++;
+         }
+         return o;
+      }
+      // Purpose: true when every character is in the HUD Exo 2 face (Latin,
+      // Latin Extended, Vietnamese, combining marks, punctuation, currency).
+      // CJK / Hangul / Arabic / Thai / Cyrillic / surrogates are false. Used
+      // by the Language dropdown so it never draws tofu and never switches
+      // that list to $MAIN_Font. Not a per-stem flag: a future script Exo 2
+      // lacks is rejected the same way. Translated HUD text still uses
+      // hzHasCjk + $MAIN_Font per string when that string has CJK. The
+      // Language dropdown never uses that path (Final rule: English name
+      // in Exo 2 when Exo 2 cannot render the native name).
+      // Inputs: a UI string. Outputs: whether Exo 2 can render it.
+      private function hzExo2Can(s:String) : Boolean
+      {
+         if(s == null) { return true; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0xD800 && c <= 0xDFFF) { return false; }
+            var ok:Boolean = c <= 0x024F || (c >= 0x0300 && c <= 0x036F) || (c >= 0x1E00 && c <= 0x1EFF) || (c >= 0x2000 && c <= 0x206F) || (c >= 0x20A0 && c <= 0x20CF);
+            if(!ok) { return false; }
+            i++;
+         }
+         return true;
+      }
+      // Purpose: Language dropdown label that Exo 2 can draw. Native name if
+      // Exo 2 has the glyphs; otherwise the last parenthetical (English) or fb.
+      // Never returns CJK. Call at catalog / language change, not per HUD frame.
+      private function hz51Exo2Text(s:String, fb:String = null) : String
+      {
+         if(s == null || s.length == 0) { return fb != null ? fb : ""; }
+         if(this.hzExo2Can(s)) { return s; }
+         var a:int = s.lastIndexOf("(");
+         var b:int = s.lastIndexOf(")");
+         if(a >= 0 && b > a + 1)
+         {
+            var inner:String = s.substring(a + 1, b);
+            while(inner.length > 0 && inner.charAt(0) == " ") { inner = inner.substr(1); }
+            while(inner.length > 0 && inner.charAt(inner.length - 1) == " ") { inner = inner.substr(0, inner.length - 1); }
+            if(inner.length > 0 && this.hzExo2Can(inner)) { return inner; }
+         }
+         if(fb != null && fb.length > 0 && this.hzExo2Can(fb)) { return fb; }
+         var o:String = "";
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var ch:String = s.charAt(i);
+            if(this.hzExo2Can(ch)) { o += ch; }
+            i++;
+         }
+         while(o.length > 0 && o.charAt(0) == " ") { o = o.substr(1); }
+         while(o.length > 0 && o.charAt(o.length - 1) == " ") { o = o.substr(0, o.length - 1); }
+         if(o.length > 0) { return o; }
+         return fb != null && fb.length > 0 ? fb : s;
+      }
+      private function hz51Exo2Arr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hz51Exo2Text(String(a[i])); i++; }
+      }
+      // Purpose: MapCode for dropdown stems so es-419 / esmx / latam collapse
+      // to es-mx (one Español (Latinoamérica) row, not a community duplicate).
+      private function hz51LangCode(raw:String) : String
+      {
+         var c:String = raw != null ? String(raw).toLowerCase() : "";
+         while(c.length > 0 && (c.charAt(0) == " " || c.charAt(0) == "\t")) { c = c.substr(1); }
+         while(c.length > 0 && (c.charAt(c.length - 1) == " " || c.charAt(c.length - 1) == "\t")) { c = c.substr(0, c.length - 1); }
+         if(c.length == 0 || c == "auto") { return "auto"; }
+         if(c.indexOf("/") >= 0 || c.indexOf("\\") >= 0 || c.indexOf(":") >= 0 || c.indexOf("..") >= 0) { return "auto"; }
+         if(c == "en" || c == "english" || c == "en-us" || c == "en_us" || c == "enus") { return "en"; }
+         if(c == "de" || c == "german" || c == "de-de" || c == "de_de") { return "de"; }
+         if(c == "fr" || c == "french" || c == "fr-fr" || c == "fr_fr") { return "fr"; }
+         if(c == "it" || c == "italian" || c == "it-it" || c == "it_it") { return "it"; }
+         if(c == "esmx" || c == "es-mx" || c == "es_mx" || c == "esla" || c == "es-419" || c == "latam" || c == "es-latam" || c == "es_latam") { return "es-mx"; }
+         if(c == "es" || c == "spanish" || c == "es-es" || c == "es_es" || c == "eses") { return "es"; }
+         if(c == "jp" || c == "ja" || c == "japanese") { return "ja"; }
+         if(c == "pl" || c == "polish" || c == "pl-pl" || c == "pl_pl") { return "pl"; }
+         if(c == "ptbr" || c == "pt-br" || c == "pt_br" || c == "brazilian" || c == "pt-brz") { return "pt-br"; }
+         if(c == "zhhans" || c == "zh-cn" || c == "zhcn" || c == "zh_cn" || c == "zh" || c == "zh-hans" || c == "schinese") { return "zh-cn"; }
+         return c;
+      }
+      // Purpose: Settings 2.0 label for a Localization file code. Exo 2 only:
+      // native name when the face has the glyphs, English name otherwise.
+      private function hz51LangName(code:String) : String
+      {
+         var c:String = this.hz51LangCode(code);
+         var fb:String = "";
+         if(c == "auto") { fb = "Auto (game)"; }
+         else if(c == "en") { fb = "English"; }
+         else if(c == "de") { fb = "Deutsch (German)"; }
+         else if(c == "fr") { fb = "Français (French)"; }
+         else if(c == "es-mx") { fb = "Español (Latinoamérica)"; }
+         else if(c == "es") { fb = "Español (Spanish)"; }
+         else if(c == "it") { fb = "Italiano (Italian)"; }
+         else if(c == "ja") { fb = "Japanese"; }
+         else if(c == "pl") { fb = "Polski (Polish)"; }
+         else if(c == "pt-br") { fb = "Português (Brasil)"; }
+         else if(c == "zh-cn") { fb = "Simplified Chinese"; }
+         else { return this.hz51Exo2Text(c.toUpperCase(), c.toUpperCase()); }
+         return this.hz51Exo2Text(this.hzL("settings.language." + c, fb), fb);
+      }
+      // Purpose: Auto plus one option per unique mapped stem the DLL listed.
+      // Alias files (es-419, esmx) share es-mx so Latinoamérica is not listed twice.
+      private function hz51LangOpts() : Object
+      {
+         var vals:Array = ["auto"];
+         var names:Array = [this.hz51LangName("auto")];
+         var seen:Object = {"auto":true};
+         var files:Array = this.hzL10nFiles != null ? this.hzL10nFiles : ["en"];
+         var i:int = 0;
+         while(i < files.length)
+         {
+            var c:String = this.hz51LangCode(String(files[i]));
+            if(c.length > 0 && seen[c] != true)
+            {
+               seen[c] = true;
+               vals.push(c);
+               names.push(this.hz51LangName(c));
+            }
+            i++;
+         }
+         return {"vals":vals,"names":names};
+      }
+      // Purpose: cache the localization snapshot from HorizonUI.dll. One Invoke
+      // per movie load or Language reload. No file I/O. Lookups run when a menu
+      // is built or the language changes, never from a HUD tick.
+      // Author: Moragar. Last modified: 2026-11-27.
+      public function hzSetL10n(s:String) : void
+      {
+         try
+         {
+            if(s == null) { return; }
+            var lines:Array = String(s).split("\n");
+            if(lines.length == 0 || String(lines[0]).indexOf("#l10n1") != 0) { return; }
+            var tab:Object = {};
+            var files:Array = ["en"];
+            var i:int = 1;
+            while(i < lines.length)
+            {
+               var ln:String = String(lines[i]);
+               if(ln.length > 0 && ln.charAt(ln.length - 1) == "\r") { ln = ln.substr(0, ln.length - 1); }
+               var tabAt:int = ln.indexOf("\t");
+               if(tabAt > 0)
+               {
+                  var k:String = ln.substr(0, tabAt);
+                  var v:String = this.hzL10nUnesc(ln.substr(tabAt + 1));
+                  if(k == "g") { this.hzL10nGame = v; }
+                  else if(k == "gn") { this.hzL10nGameName = v; }
+                  else if(k == "used") { this.hzL10nUsed = v; }
+                  else if(k == "files") { files = v.length > 0 ? v.split(",") : ["en"]; }
+                  else if(k != "o") { tab[k] = v; }
+               }
+               i++;
+            }
+            this.hzL10n = tab;
+            this.hzL10nFiles = files;
+            this.hzL10nCjk = this.hzL10nStemCjk(this.hzL10nUsed);
+            this.hzFontApply();
+            this.hzL10nApplyHud();
+            if(this.hzSetIsOpen)
+            {
+               try { this.hz51IndexBuild(); } catch(eIdxL:Error) { }
+               this.hzSetDraw();
+            }
+         }
+         catch(err:Error) { }
+      }
+      // Purpose: look up a cached dotted key. Call from build / language change
+      // only. Inputs: table key and English fallback. Outputs: overlay or fallback.
+      private function hzL(key:String, fb:String) : String
+      {
+         if(this.hzL10n != null)
+         {
+            var v:* = this.hzL10n[key];
+            if(v != null)
+            {
+               var s:String = String(v);
+               if(s.length > 0) { return s; }
+            }
+         }
+         return fb != null ? fb : key;
+      }
+      // Purpose: true for shipped CJK stems. Set once in hzSetL10n so chrome
+      // uses the game CJK FontLib (fonts_zhcn) instead of Exo 2. Not a poll.
+      private function hzL10nStemCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var c:String = s.toLowerCase();
+         return c == "zh-cn" || c == "zhhans" || c == "zhcn" || c == "zh" || c == "ja" || c == "jp";
+      }
+      // Purpose: CJK / Hangul / kana / fullwidth. Used on set-text only so Exo 2
+      // stays on Latin and the game CJK face is chosen per field, never per frame.
+      private function hzHasCjk(s:String) : Boolean
+      {
+         if(s == null) { return false; }
+         var i:int = 0;
+         while(i < s.length)
+         {
+            var c:int = s.charCodeAt(i);
+            if(c >= 0x2E80 && c <= 0x9FFF) { return true; }
+            if(c >= 0xAC00 && c <= 0xD7AF) { return true; }
+            if(c >= 0xF900 && c <= 0xFAFF) { return true; }
+            if(c >= 0xFF00 && c <= 0xFFEF) { return true; }
+            i++;
+         }
+         return false;
+      }
+      // Purpose: slug used by en.json hud.hud_label / hud.help / settings.ui keys.
+      private function hzLSlug(s:String) : String
+      {
+         if(s == null) { return ""; }
+         var o:String = "";
+         var i:int = 0;
+         var prevUs:Boolean = false;
+         while(i < s.length && o.length < 48)
+         {
+            var c:String = s.charAt(i);
+            var code:int = s.charCodeAt(i);
+            var ok:Boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+            if(ok)
+            {
+               o += c.toLowerCase();
+               prevUs = false;
+            }
+            else if(o.length > 0 && !prevUs)
+            {
+               o += "_";
+               prevUs = true;
+            }
+            i++;
+         }
+         if(o.length > 0 && o.charAt(o.length - 1) == "_") { o = o.substr(0, o.length - 1); }
+         return o;
+      }
+      // Purpose: overlay-on-English lookup from a visible English literal.
+      // Tries dotted prefixes the English table already uses. Missing key = English.
+      // Settings catalog uses this (settings.ui first). HUD clock labels must
+      // not: settings.ui.local_game / pc_real are Settings strings, not planet
+      // or watch chrome. Those call sites use hud.hud_label.* via hzL.
+      private function hzLt(en:String) : String
+      {
+         if(en == null || en.length == 0) { return en; }
+         var hit:String = this.hzL(en, "");
+         if(hit.length > 0 && hit != en && this.hzL10n != null && this.hzL10n[en] != undefined) { return hit; }
+         var slug:String = this.hzLSlug(en);
+         if(slug.length == 0) { return en; }
+         var pfx:Array = ["settings.ui.","settings.chrome.","settings.language.","settings.tabs.","hud.hud_label.","hud.option.","hud.help.","hud."];
+         var i:int = 0;
+         while(i < pfx.length)
+         {
+            var k:String = String(pfx[i]) + slug;
+            var v:String = this.hzL(k, "");
+            if(v.length > 0) { return v; }
+            i++;
+         }
+         if(slug.length > 48) { slug = slug.substr(0, 48); }
+         var h:String = this.hzL("hud.help." + slug, "");
+         if(h.length > 0) { return h; }
+         return en;
+      }
+      private function hz51LocArr(a:Array) : void
+      {
+         if(a == null) { return; }
+         var i:int = 0;
+         while(i < a.length) { a[i] = this.hzLt(String(a[i])); i++; }
+      }
+      // Purpose: stamp translated labels onto a Settings row at catalog finish
+      // (F11 build / language change), not per HUD frame. note / inote are already
+      // localized by hz51Line / hz51HelpOf (by setting key). Re-slugging them
+      // would expand a short row line back into the full details paragraph.
+      private function hz51LocOne(r:Object) : void
+      {
+         if(r == null) { return; }
+         if(r.l != undefined) { r.l = this.hzLt(String(r.l)); }
+         if(r.h != undefined && String(r.h).length > 0) { r.h = this.hzLt(String(r.h)); }
+         if(r.s != undefined) { r.s = this.hzLt(String(r.s)); }
+         if(r.body != undefined) { r.body = this.hzLt(String(r.body)); }
+         if(r.badge != undefined) { r.badge = this.hzLt(String(r.badge)); }
+         if(r.btn != undefined && r.t == "x") { r.btn = this.hzLt(String(r.btn)); }
+         if(String(r.k) == "_l10nGame" && r.btn != undefined) { r.btn = this.hz51Exo2Text(String(r.btn)); }
+         if(r.t == "p" || r.t == "c") { return; }
+         if(String(r.k) == "Language")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
+         if(String(r.k) == "Font")
+         {
+            this.hz51Exo2Arr(r.names as Array);
+            return;
+         }
+         this.hz51LocArr(r.opts as Array);
+         this.hz51LocArr(r.names as Array);
+      }
+      private function hz51LocRows(rows:Array) : Array
+      {
+         var i:int = 0;
+         while(i < rows.length) { this.hz51LocOne(rows[i]); i++; }
+         return rows;
+      }
+      // Purpose: stamp one HUD TextField from the l10n table. Optional key is the
+      // explicit dotted path (hud.hud_label.*) so planet/watch clocks do not pick
+      // up settings.ui.local_game / settings.ui.pc_real. Call from language apply
+      // only. Inputs: field, English fallback, optional table key. Outputs: text
+      // and format. Author: Moragar. Last modified: 2026-11-27.
+      private function hzL10nTf(tf:TextField, en:String, key:String = null) : void
+      {
+         if(tf == null || en == null) { return; }
+         tf.text = this.hzFontText(key != null && key.length > 0 ? this.hzL(key, en) : this.hzLt(en));
+         var o:Object = this.hzTxtObj(tf);
+         if(o != null) { this.hzApplyFmt(o); }
+      }
+      // Purpose: refresh HUD chrome that was stamped at card build. Called from
+      // hzSetL10n only. Ticks keep using the TextField text already set here.
+      // Never stamp player / planet / quest / credit / level fields: those hold
+      // live game values. MASS / POWER / RELOAD are state words; hz26CharSync
+      // and hzE19Sync pick the right one with hzLt. Target pill verbs (TRADE)
+      // live in hzT19Content: clearing hzT19Sig rebuilds them on the next tick
+      // when Hover is on. When Hover is off, restore vanilla so a language
+      // apply cannot leave Horizon's circle and leader line up.
+      private function hzL10nApplyHud() : void
+      {
+         try
+         {
+            if(this.hzVnLbl != null)
+            {
+               if(this.hzVnLbl.length > 0) { this.hzL10nTf(TextField(this.hzVnLbl[0]), "HEALTH"); }
+               if(this.hzVnLbl.length > 1) { this.hzL10nTf(TextField(this.hzVnLbl[1]), "OXYGEN"); }
+            }
+            this.hzL10nTf(this.hzJ19Title, "JETPACK");
+            this.hzL10nTf(this.hzPpLocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hzPpRealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43LocL, "LOCAL/GAME", "hud.hud_label.local_game");
+            this.hzL10nTf(this.hz43RealL, "PC/REAL", "hud.hud_label.pc_real");
+            this.hzL10nTf(this.hz43DayT, "DAY");
+            this.hzHsWordLoc = this.hzLt("HAZARD");
+            try { this.hz26CharSync(); } catch(eCh:Error) { }
+            try { this.hzE19Sync(); } catch(eEq:Error) { }
+            try { this.hzPpLayout(); } catch(ePp:Error) { }
+            this.hzT19Sig = "";
+            this.hz41VLay = "";
+            this.hz41VSig = "";
+            if(!this.hzShowTarget) { this.hzT19Off(); this.hzT19GiveRing(); }
+         }
+         catch(eApp:Error) { }
+      }
 
       private function hz51Side(tab:int) : Array
       {
@@ -4967,7 +5468,7 @@
          if(tab == 1) { return [{"g":"LOOK","items":[{"id":"col","l":"COLORS","s":"Accent · Card background"},{"id":"pan","l":"PANELS","s":"Opacity · Background % · Shadow"},{"id":"typ","l":"TYPOGRAPHY","s":"Font · Size · Tone"}]},{"g":"PLACE","items":[{"id":"siz","l":"SIZE & PLACEMENT","s":"HUD scale · Margin · Pixel snap"}]},{"g":"MOTION","items":[{"id":"mot","l":"MOTION & FADING","s":"Smooth bars · Fade · Combat dim"}]},{"g":"CLOCKS","items":[{"id":"clk","l":"CLOCKS & UNITS","s":"Planet time · 12/24 · Temperature"}]}]; }
          if(tab == 2) { return [{"g":"SCANNER","items":[{"id":"ov","l":"OVERVIEW","s":"Module · Layout · Reach"},{"id":"hud","l":"HUD","s":"What stays while you scan"},{"id":"tl","l":"TOOLS","s":"Mode pill · Hints · Outlines"}]},{"g":"FINDINGS","items":[{"id":"sig","l":"SIGNALS","s":"Signals · Compass · World tags"},{"id":"sv","l":"SURVEY","s":"Planet · Bioscan · Traits"}]},{"g":"LOOK","items":[{"id":"pop","l":"POPUPS","s":"Quest and trait popups"},{"id":"ap","l":"APPEARANCE","s":"Colors · Font · Distance"}]}]; }
          if(tab == 3) { return [{"g":"CONVERSATION","items":[{"id":"sub","l":"SUBTITLES","s":"Lines · Size · Card"},{"id":"spk","l":"SPEAKER","s":"Name · Color · Card"},{"id":"dly","l":"DIALOGUE LAYOUT","s":"List · Size · Offset"},{"id":"dlap","l":"DIALOGUE APPEARANCE","s":"Font · Colors · Panel"},{"id":"prs","l":"CHOICES & PERSUASION","s":"Already-said · Tags · Meter"},{"id":"inp","l":"INPUT & HINTS","s":"Keys · Wheel · Bar"}]},{"g":"ALERTS","items":[{"id":"mst","l":"MISSION TOASTS & REACTIONS","s":"Quest banner and companion lines"}]},{"g":"MODULE","items":[{"id":"cmp","l":"COMPATIBILITY","s":"Auto-pause · Conflicts · Use Horizon"}]}]; }
-         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
+         return [{"g":"SETUP","items":[{"id":"pr","l":"PRESETS","s":"Select · Apply · Save"},{"id":"mod","l":"MODULES","s":"Enabled · Paused · Missing"}]},{"g":"DATA","items":[{"id":"ml","l":"MESSAGE LOG","s":"Record · History · Open"}]},{"g":"SESSION","items":[{"id":"loc","l":"LANGUAGE / LOCALIZATION","s":"Detected language · Override"},{"id":"ctl","l":"CONTROLS & WINDOW","s":"Menu key · Opacity"},{"id":"bak","l":"BACKUP & RESET","s":"Backup · scoped resets"},{"id":"dg","l":"DIAGNOSTICS","s":"Debug overlay"}]}];
       }
       private function hz51Pages(tab:int) : Array
       {
@@ -5026,9 +5527,9 @@
             }
             g++;
          }
-         if(lab.length == 0) { return t; }
-         if(gname.length > 0 && gname != lab) { return t + " > " + gname + " > " + lab; }
-         return t + " > " + lab;
+         if(lab.length == 0) { return this.hzLt(t); }
+         if(gname.length > 0 && gname != lab) { return this.hzLt(t) + " > " + this.hzLt(gname) + " > " + this.hzLt(lab); }
+         return this.hzLt(t) + " > " + this.hzLt(lab);
       }
       private function hz51Copy(r:Object) : Object
       {
@@ -5057,26 +5558,47 @@
          }
          return out;
       }
+      // Purpose: table key for Setting Details. Module banners share settings.details.modban.
+      // Inputs: catalog k. Outputs: dotted-id used by hzL. Looked up at F11 build only.
+      private function hz51HelpKey(k:String) : String
+      {
+         if(k != null && k.indexOf("_modban_") == 0) { return "modban"; }
+         return k != null ? k : "";
+      }
       private function hz51HelpOf(k:String, r:Object) : String
       {
+         var id:String = this.hz51HelpKey(k);
+         var byId:String = id.length > 0 ? this.hzL("settings.details." + id, "") : "";
+         if(byId.length > 0) { return byId; }
          var h:String = this.hz51Help(k);
-         if(h != null && h.length > 0) { return h; }
-         if(r != null && r.inote != undefined) { return String(r.inote); }
-         if(r != null && r.info != undefined) { return String(r.info); }
-         if(r != null && r.note != undefined) { return String(r.note); }
-         var lab:String = r != null && r.l != undefined ? String(r.l) : k;
-         return "Changes " + lab.toLowerCase() + " on your HUD.";
+         if(h == null || h.length == 0)
+         {
+            if(r != null && r.inote != undefined) { h = String(r.inote); }
+            else if(r != null && r.info != undefined) { h = String(r.info); }
+            else if(r != null && r.note != undefined) { h = String(r.note); }
+            else
+            {
+               var lab:String = r != null && r.l != undefined ? String(r.l) : k;
+               h = "Changes " + lab.toLowerCase() + " on your HUD.";
+            }
+         }
+         return this.hzLt(h);
       }
       // Short line under the row label. Diagnostics wording is from the live overlay / timing / dump paths.
+      // settings.line.<k> wins so a copy edit of details does not restamp the row via slug collision.
       private function hz51Line(k:String, r:Object) : String
       {
+         var lineId:String = this.hzL("settings.line." + k, "");
+         if(lineId.length > 0) { return lineId; }
          switch(k)
          {
-            case "Debug": return "Shows extra on-screen info about the scanner and compass to help track down a problem.";
-            case "PerfDiag": return "Measures how long the HUD takes to update and saves it so a problem can be found.";
-            case "PerfMode": return "Switches which HUD test runs. Ordinary play uses Baseline.";
-            case "PerfDump": return "Saves one performance report the next time you apply settings.";
-            case "_diagoff": return "These stay off while you play. Turn them on only if something needs checking.";
+            case "Language": return this.hzLt("Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language.");
+            case "_l10nGame": return this.hzLt("Detected at start. Does not follow the override.");
+            case "Debug": return this.hzLt("Shows extra on-screen info about the scanner and compass to help track down a problem.");
+            case "PerfDiag": return this.hzLt("Measures how long the HUD takes to update and saves it so a problem can be found.");
+            case "PerfMode": return this.hzLt("Switches which HUD test runs. Ordinary play uses Baseline.");
+            case "PerfDump": return this.hzLt("Saves one performance report the next time you apply settings.");
+            case "_diagoff": return this.hzLt("These stay off while you play. Turn them on only if something needs checking.");
             default: break;
          }
          var h:String = this.hz51HelpOf(k, r);
@@ -5179,6 +5701,7 @@
             case "CardShadow": return "Strength of the shadow under HUD cards. 0 is none. 12 is the built-in look. 100 is a strong shadow.";
             case "SettingsOpacity": return "How see-through this settings window is. 30 is the lightest. 100 is solid.";
             case "FontFace": return "Font for Horizon text. Exo 2 is the default. If a Horizon font is not installed, the game font is used and your choice is kept.";
+            case "Font": return "Horizon font family when FONT is Exo 2. Families the active language cannot cover are hidden. Orbitron stays for English, German, French, and Spanish (a few punctuation marks are substituted). Polish uses Exo 2. A missing family falls back to Exo 2, then the game font. Your saved choice is kept. Roboto stays on the FONT row.";
             case "TextScale": return "Size of Horizon text, on top of HUD scale.";
             case "TextTone": return "Auto uses dark text on light card colors. Light and Dark force one tone.";
             case "HeaderStyle": return "Card titles in spaced capital letters, or in title case with tight spacing.";
@@ -5195,6 +5718,8 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.";
+            case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";
             case "HistorySize": return "How many messages to keep per character.";
@@ -5204,6 +5729,7 @@
             case "ScanReach": return "Changes how far the scanner can outline and scan things. Vanilla leaves the game as it is. 2x, 3x, and 5x multiply that distance, never past 500 meters. A long reach can cost frame rate in busy areas. Applies the next time you open the scanner.";
             case "ScanHighlightArea": return "How far from the screen center the scanner picks up and outlines things. This does not change how far away you can scan (that is Scan reach). Small is about half the game's circle. Vanilla leaves the game's cone: Horizon writes nothing, so the game or another highlight-radius mod stays. Large reaches the top and bottom. Wide reaches the left and right. Full screen covers the corners too. Applies the next time you open the scanner.";
             case "ScanOutlineThickness": return "How thick scanner outlines are. Vanilla keeps the game's own look. Thick is one and a half times. Thicker is twice. Applies the next time you open the scanner.";
+            case "ScanCompactAll": return "GLOBAL = COMPACT MODE (CARDS). On always uses compact scanner panels. Off always uses the full panels.";
             case "HideMainHudWhileScanning": return "Hides ordinary Horizon HUD cards while the hand scanner is open. Item cards, the container list, the activate prompt, and combat feedback always stay.";
             case "HideWatchWhileScanning": return "Hides the watch while the hand scanner is open. Shared clocks on the planet card are unchanged.";
             case "HideQuestPopupsWhileScanning": return "Hides quest popups and the mission toast while you scan. This belongs with messages and works even when the scanner add-on is not installed.";
@@ -5285,12 +5811,11 @@
             var k:String = String(r.k);
             var help:String = this.hz51HelpOf(k, r);
             r.inote = help;
-            if(r.dis)
-            {
-               if(r.note == undefined || String(r.note).length == 0) { r.note = help; }
-               r.n13 = true;
-            }
-            else { r.note = this.hz51Line(k, r); }
+            // Empty notes get the short row line. Disabled rows (GAME LANGUAGE)
+            // used to copy the long details string into note, which hzFitText
+            // then chopped with '...'. Details stay in inote / SETTING DETAILS.
+            if(r.note == undefined || String(r.note).length == 0) { r.note = this.hz51Line(k, r); }
+            if(r.dis) { r.n13 = true; }
             if(this.hz37Cf == k && k.indexOf("_hz37") != 0) { r.note = this.hz37Note(k, String(r.note)); }
             if(k.length >= 7 && k.substr(k.length - 7) == "Compact" && r.opts == undefined)
             {
@@ -5311,7 +5836,7 @@
             out.push(r);
             i++;
          }
-         return this.hz51Mute(out);
+         return this.hz51LocRows(this.hz51Mute(out));
       }
       private function hz51On(k:String) : Boolean
       {
@@ -5826,6 +6351,7 @@
          if(id == "typ")
          {
             return this.hz30FontRows([{"k":"FontFace","l":"FONT","t":"r","opts":HZ_FONT_NAMES,"ids":HZ_FONT_IDS,"h":"TYPE"},
+               {"k":"Font","l":"FONT FAMILY","t":"l","vals":HZ_FONT_FAM_IDS,"names":HZ_FONT_FAM_NAMES},
                {"k":"TextScale","l":"TEXT SIZE","t":"n","mn":0.8,"mx":1.3,"st":0.05},
                {"k":"TextTone","l":"TEXT TONE","t":"r","opts":HZ_TONE_NAMES},
                {"k":"HeaderStyle","l":"HEADER STYLE","t":"r","opts":HZ_HDRSTYLE_NAMES},
@@ -6043,6 +6569,14 @@
          }
          if(id == "mod") { return this.hz51Modules(); }
          if(id == "ml") { return this.hz51Msglog(); }
+         if(id == "loc")
+         {
+            var detected:String = this.hz51LangName(this.hzL10nGame);
+            if(detected == this.hzL("settings.language.auto", "Auto (game)") || detected.length == 0) { detected = "—"; }
+            var opts:Object = this.hz51LangOpts();
+            return [{"k":"_l10nGame","l":"GAME LANGUAGE","t":"x","btn":detected,"h":"DETECTION","dis":true,"dv":true},
+               {"k":"Language","l":"HORIZON LANGUAGE","t":"l","vals":opts.vals,"names":opts.names,"h":"OVERRIDE"}];
+         }
          if(id == "ctl")
          {
             return [{"k":"SettingsKey","l":"SETTINGS MENU KEY","t":"c","h":"CONTROLS"},
@@ -6422,9 +6956,9 @@
          else if(paused) { this.hz51T(b,"!",ccx,ccy - 7,16,11,"bd",warn,0,"center"); }
          else { this.hz30Lock(g,ccx,ccy + 1,10,uint(T.mut),1,uint(T.fill)); }
          var names:Object = {"scanner":"SCANNER MODULE","comms":"COMMS MODULE","comms_dialogue":"COMMS DIALOGUE","quickmenu":"QUICK MENU MODULE","scope":"SCOPE MODULE","font":"HORIZON FONT","core":"CORE HUD","msglog":"NOTIFICATIONS MODULE"};
-         var title:String = names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE");
-         var stx:String = on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED"));
-         this.hz51T(b,"MODULE",x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
+         var title:String = this.hzLt(names[mod] != undefined ? String(names[mod]) : (mod.toUpperCase() + " MODULE"));
+         var stx:String = this.hzLt(on ? "INSTALLED" : (paused ? "PAUSED - CONFLICT" : (live !== 0 && live !== 1 && kind != "off" ? "CHECKING..." : "NOT INSTALLED")));
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 38,y0 + 6,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,title,x0 + 38,y0 + 18,Math.max(80,w * 0.55),11,"bd",uint(T.txt),1.4);
          this.hz51T(b,stx,x0 + w - 16,y0 + 16,150,11,"sb",paused ? warn : (on ? acc : uint(T.lab)),1.2,"right");
          if(body.length > 0)
@@ -6503,7 +7037,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(rows.length == 0) { rows = [{"k":"_empty","l":"NO SETTINGS IN THIS SECTION","t":"x","btn":"—","h":"THIS SECTION","dis":true}]; }
          if(this.hzSetRow >= rows.length) { this.hzSetRow = 0; }
          try { this.hzSetFollow(rows); } catch(eFol:Error) { }
-         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,"This page could not be drawn.",HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
+         try { this.hz51DrawList(b,g,T,acc,rows); } catch(eList:Error) { this.hz51T(b,this.hzLt("This page could not be drawn."),HZ51_SIDE_W + 24,HZ_SET_TOP + 60,400,12,"sb",uint(T.mut),0.2); }
          this.hz51DrawRight(b,g,T,acc,rows,H);
          this.hz51DrawFooter(b,g,T,acc,W,H);
          // Row labels are TextFields (children). body.graphics is behind them, so a
@@ -6535,16 +7069,51 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          this.hz51Hair(g,0,HZ51_HEAD - 1,W,1,uint(T.txt),0.10);
-         this.hz51T(b,"HORIZON UI",16,14,150,16,"bd",uint(T.txt),2.4);
-         this.hz51T(b,"SETTINGS",16 + 128,18,90,11,"sb",uint(T.lab),2.0);
+         var lay:Object = this.hz51HeadSlots();
+         var maxR:Number = Number(lay.cx) - 8;
+         var title:String = this.hzLt("HORIZON UI");
+         var setn:String = this.hzLt("SETTINGS");
+         var t1:TextField = this.hz51T(b,title,16,14,280,16,"bd",uint(T.txt),2.4);
+         var tw1:Number = Math.ceil(this.hzTW(t1));
+         t1.width = tw1 + 4;
+         var sx:Number = 16 + tw1 + 10;
+         var t2:TextField = this.hz51T(b,setn,sx,18,280,11,"sb",uint(T.lab),2.0);
+         var tw2:Number = Math.ceil(this.hzTW(t2));
          var hv:String = HZ_BUILD;
          if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
-         var pillW:Number = 78;
-         var pillX:Number = 250;
+         var ver:String = "v" + hv;
+         var t3:TextField = this.hz51T(b,ver,0,16,200,11,"sb",uint(T.lab),0.4);
+         var tw3:Number = Math.ceil(this.hzTW(t3));
+         var pillW:Number = Math.max(52, tw3 + 28);
+         var gap:Number = 10;
+         var pillX:Number = sx + tw2 + gap;
+         if(pillX + pillW > maxR)
+         {
+            tw2 = Math.max(24, maxR - pillW - gap - sx);
+            pillX = sx + tw2 + gap;
+         }
+         t2.width = tw2 + 4;
+         // 1000 px F11 floor: EINSTELLUNGEN can overflow the leftover slot.
+         // Shrink the SETTINGS face first, then ellipsis, so glyphs are not clipped.
+         if(Math.ceil(this.hzTW(t2)) > tw2)
+         {
+            var f2:TextFormat = t2.getTextFormat();
+            var sz2:int = int(f2.size);
+            while(sz2 > 8 && t2.textWidth > tw2)
+            {
+               sz2--;
+               f2.size = sz2;
+               t2.defaultTextFormat = f2;
+               t2.setTextFormat(f2);
+            }
+            t2.height = sz2 + 10;
+            if(t2.textWidth > tw2) { this.hzFitText(t2, setn, tw2 + 4); }
+         }
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
-         this.hz51T(b,"v" + hv,pillX + 16,16,pillW - 22,11,"sb",uint(T.lab),0.4);
+         t3.x = Math.round(pillX + 16 - 2);
+         t3.width = tw3 + 4;
          this.hz51DrawCompact(b,g,T,acc,W);
       }
       private function hz51DrawTabs(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
@@ -6560,7 +7129,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          {
             var sel:Boolean = i == this.hzSetTab;
             var hov:Boolean = this.hzSetHover == "tab" + i;
-            var tb:TextField = this.hz51T(b,String(HZ_SET_TABS[i]),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
+            var tb:TextField = this.hz51T(b,this.hzLt(String(HZ_SET_TABS[i])),0,ty,140,12,"bd",sel || hov ? acc : uint(T.mut),1.6);
             tabTf.push(tb);
             tabSum += Math.round(this.hzTW(tb));
             i++;
@@ -6594,7 +7163,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(px0,py0,pw,ph,15,15);
          g.endFill();
          this.hz51Stroke(g,px0,py0,pw,ph,uint(T.txt),psel ? 0.28 : 0.16,15);
-         this.hz51T(b,"COMPACT MODE (STRIPS)",px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
+         this.hz51T(b,this.hzLt("COMPACT MODE (STRIPS)"),px0 + 12,py0 + 8,pw - 86,11,"bd",uint(T.lab),0.8);
          this.hz51Switch(b,g,px0 + pw - 8,py0 + ph / 2,pon,T);
          this.hzSetHits.push({"id":"compact","x":px0,"y":py0,"w":pw,"h":ph});
       }
@@ -6602,7 +7171,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          var lay:Object = this.hz51HeadSlots();
          if(Number(lay.arrW) <= 0) { return; }
-         var alab:String = this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS";
+         var alab:String = this.hzLt(this.hzSetTab == 2 ? "ARRANGE SCANNER" : "ARRANGE CARDS");
          var aid:String = this.hzSetTab == 2 ? "arrscan" : "arrange";
          var aw:Number = Number(lay.arrW);
          var ax:Number = Number(lay.ax);
@@ -6621,7 +7190,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.endFill();
          this.hz34Ring(b,bx,by,bw,HZ51_FIND_H,HZ51_BOX_R,on ? acc : uint(T.txt),on ? 0.70 : 0.28,1);
          var typed:Boolean = this.hz51FindOpen();
-         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : "Search settings...");
+         var txt:String = this.hzSetFind.length > 0 ? this.hzSetFind : (typed ? "" : this.hzLt("Search settings..."));
          var col:uint = this.hzSetFind.length > 0 ? uint(T.txt) : uint(T.lab);
          var textW:Number = typed ? bw - 36 : bw - 18;
          this.hz51T(b,txt,bx + 10,by + 8,textW,12,"sb",col,0.2);
@@ -6644,7 +7213,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sh:Number = HZ51_SW_H;
          var sx:Number = Math.round(R - sw);
          var sy:Number = Math.round(cy - sh / 2);
-         this.hz51T(b,on ? "ON" : "OFF",sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
+         this.hz51T(b,this.hzLt(on ? "ON" : "OFF"),sx - 4,cy - 7,28,10,"sb",on ? acc : uint(T.mut),1.5,"right");
          g.beginFill(on ? acc : uint(T.off),on ? 0.92 : 1);
          g.drawRoundRect(sx,sy,sw,sh,sh,sh);
          g.endFill();
@@ -6669,7 +7238,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          while(gi < groups.length)
          {
             var grp:Object = groups[gi];
-            this.hz51T(b,String(grp.g),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
+            this.hz51T(b,this.hzLt(String(grp.g)),x0 + 16,y + 4,w - 24,HZ51_SH_PX,"bd",acc,1.4);
             this.hz51Hair(g,x0 + 16,y + 18,w - 32,1,acc,HZ51_SH_A);
             y += 22;
             var items:Array = grp.items as Array;
@@ -6687,8 +7256,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                   g.beginFill(acc,1); g.drawRoundRect(x0,y + 6,3,ih - 12,2,2); g.endFill();
                }
                else { this.hz51Hair(g,x0 + 16,y + ih - 1,w - 16,1,uint(T.txt),0.04); }
-               this.hz51T(b,String(it.l),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
-               this.hz51T(b,String(it.s),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
+               this.hz51T(b,this.hzLt(String(it.l)),x0 + 16,y + 6,w - 24,11,"bd",sel ? acc : uint(T.lab),0.8);
+               this.hz51T(b,this.hzLt(String(it.s)),x0 + 16,y + 22,w - 24,10,"rg",uint(T.mut),0.1);
                this.hzSetHits.push({"id":"side" + pi,"x":x0,"y":y,"w":w,"h":ih});
                if(sel) { this.hz34Ring(b,x0 + 4,y + 2,w - 8,ih - 4,HZ51_BOX_R,acc,0.55,1); }
                y += ih;
@@ -6748,7 +7317,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz51T(b,this.hz51Crumb(this.hzSetTab, this.hz51PageClamp(this.hzSetTab)),x0,HZ_SET_TOP + 10,crumbW,10,"sb",uint(T.mut),1.2);
          var pages:Array = this.hz51Pages(this.hzSetTab);
          var pobj:Object = pages[this.hz51PageClamp(this.hzSetTab)];
-         var title:String = pobj != null ? String(pobj.l) : "";
+         var title:String = pobj != null ? this.hzLt(String(pobj.l)) : "";
          this.hz51T(b,title,x0,HZ_SET_TOP + 24,crumbW,16,"bd",uint(T.txt),1.8);
          var list:Array = [];
          var ri:int = 0;
@@ -6771,7 +7340,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var firstSec:Boolean = true;
          if(list.length == 0)
          {
-            this.hz51T(b,"No settings in this section.",x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings in this section."),x0,y + 10,boxW,12,"sb",uint(T.mut),0.2);
          }
          while(li < list.length)
          {
@@ -6782,10 +7351,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                boxOpen = false;
                var shY:Number = y + 10;
-               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,Math.min(240,boxW * 0.45),HZ51_SH_PX,"bd",acc,1.4);
-               var ruleX:Number = x0 + Math.round(this.hzTW(ht) + 12);
-               this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
-               y += HZ51_SEC;
+               var ht:TextField = this.hz51T(b,String(r.h),x0,shY + 6,boxW,HZ51_SH_PX,"bd",acc,1.4);
+               ht.wordWrap = true;
+               ht.multiline = true;
+               var shTw:Number = Math.round(this.hzTW(ht));
+               if(shTw + 28 < boxW)
+               {
+                  var ruleX:Number = x0 + shTw + 12;
+                  this.hz51Hair(g,ruleX,shY + 16,Math.max(16,boxW - (ruleX - x0)),1,acc,HZ51_SH_A);
+               }
+               var shExtra:Number = 0;
+               if(ht.textHeight > HZ51_SH_PX + 8) { shExtra = Math.ceil(ht.textHeight - (HZ51_SH_PX + 6)); }
+               y += HZ51_SEC + shExtra;
                firstSec = false;
                boxY = y;
                if(r.t != "m" && r.t != "mb" && r.t != "mc")
@@ -6863,13 +7440,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                g.endFill();
             }
             var labX:Number = r.dis ? x0 + 32 : x0 + 16;
-            var labW:Number = Math.max(120, boxW - 220);
+            var ctrlReserve:Number = r.t == "z" ? HZ51_Z_RESERVE : 220;
+            var labW:Number = Math.max(80, boxW - ctrlReserve);
             var lb35:TextField = this.hz51T(b,String(r.l),labX,y + 6,labW,HZ51_TITLE_PX,"bd",uint(T.txt),0.8);
             this.hzSetHits.push({"id":"row" + i,"x":x0,"y":y,"w":boxW,"h":HZ51_ROW});
             var inf35:String = r.dis ? null : this.hz35InfoOf(r);
             if(inf35 != null && lb35 != null && String(r.l).length > 0)
             {
                var ix35:Number = Math.round(lb35.x + 2 + Math.min(lb35.width,this.hzTW(lb35)) + 14);
+               if(ix35 + 16 > labX + labW) { ix35 = labX + labW - 16; }
                var ion35:Boolean = this.hzSetHover == "inf" + i || (rs && this.hz35Kb);
                this.hz51InfoIcon(b,g,ix35,y + 14,acc,T,ion35,i);
                if(ion35) { this.hz35Tip = {"t":inf35,"x":ix35,"y":y,"h":HZ51_ROW}; }
@@ -6878,8 +7457,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(help.length > 0)
             {
                var ht2:TextField = this.hz51T(b,help,labX,y + 24,labW,HZ51_HELP_PX,"rg",uint(T.mut),0.1);
-               ht2.wordWrap = false;
-               ht2.multiline = false;
+               ht2.wordWrap = true;
+               ht2.multiline = true;
+               ht2.width = labW;
+               ht2.height = 20;
             }
             var v:* = r.dis ? r.dv : this.hzSetPend[r.k];
             var cy:Number = y + Math.round(HZ51_ROW / 2);
@@ -6941,7 +7522,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(inst) { g.beginFill(acc,0.07); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          if(paused) { g.beginFill(warn,0.08); g.drawRoundRect(x0,y,boxW,h,HZ51_BOX_R,HZ51_BOX_R); g.endFill(); }
          this.hz34Ring(b,x0,y,boxW,h,HZ51_BOX_R,edge,inst || paused ? 0.65 : 0.28,1);
-         this.hz51T(b,"MODULE",x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
+         this.hz51T(b,this.hzLt("MODULE"),x0 + 14,y + 8,70,8,"sb",uint(T.mut),1.2);
          this.hz51T(b,String(r.l),x0 + 14,y + 22,boxW * 0.55,12,"bd",uint(T.txt),0.8);
          var body:String = r.body != undefined ? String(r.body) : "";
          if(body.length > 0) { this.hz51T(b,body,x0 + 14,y + 42,boxW * 0.55,10,"rg",uint(T.lab),0.1); }
@@ -6960,14 +7541,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          {
             var R:Number = x0 + boxW - 14;
             var cy:Number = y + 52;
-            this.hz51T(b,"ENABLE",R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
+            this.hz51T(b,this.hzLt("ENABLE"),R - 90,cy - 8,90,9,"sb",uint(T.lab),0.8,"right");
             this.hz51Switch(b,g,R,cy,this.hz51On(swk),T,"tog" + idx);
          }
          return h;
       }
       private function hz51UnavailChip(b:Sprite, g:*, R:Number, cy:Number, T:Object) : void
       {
-         var lab:String = "UNAVAILABLE";
+         var lab:String = this.hzLt("UNAVAILABLE");
          var t:TextField = this.hz51T(b,lab,0,cy - 7,140,9,"sb",uint(T.mut),1.2);
          var w:Number = Math.round(this.hzTW(t) + 16);
          var h:Number = HZ51_BTN_H;
@@ -7029,8 +7610,25 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var optsA:Array = r.opts as Array;
             if(optsA == null) { optsA = r.names as Array; }
             if(txt.length == 0 && optsA != null && optsA.length > 0) { txt = String(optsA[0]); }
-            var ct:TextField = this.hz51T(b,txt,0,cy - 8,220,12,"bd",vcol,0.3);
-            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(this.hzTW(ct) + 36));
+            txt = this.hz51Exo2Text(txt);
+            var ct:TextField = this.hz51T(b,txt,0,cy - 8,280,12,"bd",vcol,0.3);
+            var maxTw:Number = this.hzTW(ct);
+            var labs:Array = r.t == "l" && r.names != undefined ? r.names as Array : dropOpts;
+            var li:int = 0;
+            while(labs != null && li < labs.length)
+            {
+               var lab:String = this.hz51Exo2Text(String(labs[li]));
+               if(lab != txt)
+               {
+                  ct.text = lab;
+                  var twLab:Number = this.hzTW(ct);
+                  if(twLab > maxTw) { maxTw = twLab; }
+               }
+               li++;
+            }
+            ct.text = txt;
+            var cw:Number = Math.max(HZ51_CTRL_W,Math.round(maxTw + 36));
+            if(cw > 280) { cw = 280; }
             var cx:Number = Math.round(R - cw);
             var dy:Number = Math.round(cy - HZ51_DD_H / 2);
             b.removeChild(ct);
@@ -7098,7 +7696,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var qmOff:Boolean = this.hz30Mod != null && this.hz30Mod["quickmenu"] !== 1;
          if(dis && !qmOff)
          {
-            this.hzWT(b,"Turn on Extended Mode to bind keys. Saved keys are kept.",x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
+            this.hzWT(b,this.hzLt("Turn on Extended Mode to bind keys. Saved keys are kept."),x0 + 16,y + 8,innerW - 24,12,"rg",uint(T.mut),0.1,"left",12);
             y += HZ51_QM_LOCK;
          }
          var bMain:Sprite = b;
@@ -7118,12 +7716,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnH:Number = 22;
          var btnX:Number = Math.round(x0 + innerW - btnW - 12);
          var btnY:Number = y + 8;
-         this.hz51T(b,"Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count.",x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
+         this.hz51T(b,this.hzLt("Click a key chip to bind. Backspace or Delete clears. A clash is warned and ignored. Tiles are slots 13 through Slot Count."),x0 + 12,y + 8,Math.max(80,btnX - x0 - 20),10,"rg",uint(T.mut),0.1);
          g.beginFill(uint(T.fill),0.70);
          g.drawRoundRect(btnX,btnY,btnW,btnH,6,6);
          g.endFill();
          this.hz51Stroke(g,btnX,btnY,btnW,btnH,dis ? uint(T.mut) : acc,dis ? 0.35 : 0.7,6);
-         this.hz51T(b,"CLEAR ALL KEYS",btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
+         this.hz51T(b,this.hzLt("CLEAR ALL KEYS"),btnX + btnW / 2,btnY + 4,btnW,9,"sb",dis ? uint(T.mut) : acc,0.8,"center");
          if(!dis) { this.hzSetHits.push({"id":"qmclr","x":btnX,"y":btnY,"w":btnW,"h":btnH}); }
          y += HZ51_QM_HEAD;
          var count:int = this.hz51QmCount();
@@ -7141,8 +7739,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var raw:String = this.hzSetPend != null ? String(this.hzSetPend[k] != null ? this.hzSetPend[k] : "") : "";
             var cap:Boolean = this.hzQmCap == k;
             var kn:String = raw;
-            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : "PRESS ANY KEY…"; }
-            else if(kn.length == 0) { kn = "UNBOUND"; }
+            if(cap) { kn = this.hzQmCapCand.length > 0 ? this.hzQmCapCand : this.hzLt("PRESS ANY KEY…"); }
+            else if(kn.length == 0) { kn = this.hzLt("UNBOUND"); }
             var kind:String = "";
             if(cap && this.hzQmCapCand.length > 0) { kind = this.hzQmCapKind; }
             else if(!cap && raw.length > 0) { kind = this.hzQmNameKind(raw, k); }
@@ -7155,11 +7753,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             g.drawRoundRect(xx,yy,tw,th,8,8);
             g.endFill();
             this.hz51Stroke(g,xx,yy,tw,th,bcol,cap || isClash ? 0.85 : 0.22,8);
-            this.hz51T(b,"SLOT " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
+            this.hz51T(b,this.hzLt("SLOT") + " " + n,xx + 8,yy + 6,tw - 16,9,"bd",acc,1.2);
             g.beginFill(uint(T.tile),0.55);
             g.drawRoundRect(xx + 8,yy + 24,14,14,3,3);
             g.endFill();
-            this.hz51T(b,"Empty",xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("Empty"),xx + 26,yy + 25,tw - 34,9,"rg",uint(T.mut),0.2);
             var chipH:Number = 22;
             var chipY:Number = yy + th - chipH - 8;
             var chipW:Number = tw - 16;
@@ -7168,9 +7766,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             g.drawRoundRect(chipX,chipY,chipW,chipH,6,6);
             g.endFill();
             this.hz51Stroke(g,chipX,chipY,chipW,chipH,isClash ? clashCol : (cap ? acc : uint(T.line)),isClash || cap ? 0.9 : 0.4,6);
-            var chipCol:uint = isClash ? clashCol : (kn == "UNBOUND" || kn.indexOf("PRESS") == 0 ? uint(T.mut) : uint(T.txt));
+            var chipCol:uint = isClash ? clashCol : (raw.length == 0 || (cap && this.hzQmCapCand.length == 0) ? uint(T.mut) : uint(T.txt));
             this.hz51T(b,kn,chipX + chipW / 2,chipY + 4,chipW - 4,9,"bd",chipCol,0.4,"center");
-            if(isClash) { this.hz51T(b,"CLASH",xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
+            if(isClash) { this.hz51T(b,this.hzLt("CLASH"),xx + 8,yy + 42,tw - 16,8,"sb",clashCol,0.8); }
             if(!dis) { this.hzSetHits.push({"id":"qmk" + n,"x":xx,"y":yy,"w":tw,"h":th}); }
             col++;
             if(col >= per) { col = 0; row++; }
@@ -7194,13 +7792,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var ph:Number = H - HZ51_FOOT - py;
          this.hz51Hair(g,px,py,1,ph,uint(T.txt),HZ51_DIV_A);
          var inn:Number = HZ51_PREV_W - 24;
-         this.hz51T(b,"LIVE PREVIEW",px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("LIVE PREVIEW"),px + 12,py + 12,inn,HZ51_SH_PX,"bd",acc,1.4);
          var pvcX:Number = px + 12;
          var pvcY:Number = py + 30;
          var pvcW:Number = inn;
          var r:Object = this.hzSetRow >= 0 && this.hzSetRow < rows.length ? rows[this.hzSetRow] : null;
          this.hz51PvPaint(b,g,T,acc,pvcX,pvcY,pvcW,HZ51_PVC_H,r);
-         var cap:String = r != null && r.l != undefined ? String(r.l) : "Pick a setting.";
+         var cap:String = r != null && r.l != undefined ? String(r.l) : this.hzLt("Pick a setting.");
          var pvn:TextField = this.hz51T(b,cap,px + 12,pvcY + HZ51_PVC_H + 8,inn,11,"rg",uint(T.mut),0.1);
          pvn.wordWrap = true; pvn.multiline = true; pvn.width = inn;
          var dy:Number = pvcY + HZ51_PVC_H + 36;
@@ -7209,14 +7807,17 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,HZ51_BOX_R);
          g.endFill();
          this.hz34Ring(b,px + 8,dy - 4,inn + 8,dH,HZ51_BOX_R,uint(T.txt),0.14,1);
-         this.hz51T(b,"SETTING DETAILS",px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),px + 12,dy,inn,HZ51_SH_PX,"bd",acc,1.4);
          this.hz51Hair(g,px + 12 + 118,dy + 12,Math.max(8,inn - 118),1,acc,HZ51_SH_A);
-         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : "Pick a setting to see what it does.";
+         var help:String = r != null ? this.hz51HelpOf(String(r.k), r) : this.hzLt("Pick a setting to see what it does.");
          var title:String = r != null && r.l != undefined ? String(r.l) : "";
          if(title.length > 0) { this.hz51T(b,title,px + 12,dy + 20,inn,HZ51_TITLE_PX,"bd",uint(T.txt),0.8); }
          var tf:TextField = this.hz51T(b,help,px + 12,dy + 40,inn,HZ51_HELP_PX,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = inn; tf.text = help;
-         this.hzMsglogWrap(tf,inn,Math.max(48, dH - 56));
+         // Fill the details box. hzMsglogWrap shrinks to textHeight, which
+         // Scaleform often reports as one line for embedFonts fields, clipping
+         // the paragraph at the bottom.
+         tf.height = Math.max(48, dH - 56);
          if(r != null && this.hz51On(String(r.k)) && String(r.k).indexOf("Show") == 0 && r.k != "ShowFollowers" && r.k != "ShowLocations" && r.k != "ShowShip" && r.k != "ShowEnemies" && r.k != "ShowPlayerMarker" && r.k != "ShowSpeaker" && r.k != "ShowTarget")
          {
             var ruleK:String = String(r.k).substr(4) + "Rule";
@@ -7259,8 +7860,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(kind == "preset")
          {
             var pr:Object = this.hz37Cur();
-            this.hz51T(b,pr != null ? String(pr.n) : "NO PRESET",x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
-            this.hz51T(b,"Pending look · CANCEL reverts",x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
+            this.hz51T(b,pr != null ? String(pr.n) : this.hzLt("NO PRESET"),x + w / 2,y + h / 2 - 8,w - 16,11,"bd",acc,0.6,"center");
+            this.hz51T(b,this.hzLt("Pending look · CANCEL reverts"),x + w / 2,y + h / 2 + 8,w - 16,9,"rg",uint(T.mut),0.2,"center");
             return;
          }
          this.hz51PvCard(b,g,T,acc,x,y,w,h,p,k);
@@ -7274,7 +7875,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(k.indexOf("_goto") == 0 || k == "_arrange" || k == "_empty" || k == "_diagoff" || k == "_dirinst" || k == "_cmpok" || k.indexOf("_own") == 0 || k.indexOf("_hz31") == 0 || k.indexOf("_modban") == 0) { return "text"; }
          if(k.indexOf("_hz37") == 0) { return (k == "_hz37pick" || k == "_hz37save") ? "preset" : "text"; }
          if(k.indexOf("_mod_") == 0) { return "module"; }
-         if(k.indexOf("_ml") == 0 || k == "_msglog" || k == "Record" || k == "Persist" || k == "HistorySize" || k == "SettingsKey" || k == "StartupIntro" || k == "Debug" || k.indexOf("Perf") == 0) { return "text"; }
+         if(k.indexOf("_ml") == 0 || k == "_msglog" || k == "Record" || k == "Persist" || k == "HistorySize" || k == "SettingsKey" || k == "Language" || k == "_l10nGame" || k == "StartupIntro" || k == "Debug" || k.indexOf("Perf") == 0) { return "text"; }
          if(k.indexOf("_hz40") == 0 || k.indexOf("_hz41") == 0 || k == "_hz42scrst" || k == "_qmclear" || k == "_qmkeys") { return "text"; }
          if(k == "SubAutoPause" || k == "DlgAutoPause" || k == "DlgInputDelay" || k == "DlgRolloverSound" || k == "DlgMarkers" || k == "MissionToastSound" || k == "DlgHoverScroll" || k == "DlgWheel" || k == "DlgNumberKeys" || k == "DlgSelectHint" || k == "DlgQuickPickHint") { return "text"; }
          if(k == "ShowPlanet" || k.indexOf("Planet") == 0 || k == "HazardAlert" || k == "TimeDisplay" || k == "ClockFormat" || k == "TempUnit") { return "planet"; }
@@ -7299,14 +7900,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(k == "Subtitles" || k.indexOf("Sub") == 0 || k == "TxtColIdx" || k == "KeepInDialogue" || k == "FixedInDialogue") { return "subtitle"; }
          if(k == "Dialogue" || k.indexOf("Dlg") == 0) { return "dialogue"; }
          if(k.indexOf("Scan") == 0 || (k.indexOf("Hide") == 0 && k.indexOf("Scan") > 0) || k == "DimTraitPopupDuringBioscan" || k == "TraitPopupDim" || k == "HideQuestPopupsWhileScanning" || k == "HideMainHudWhileScanning" || k == "HideWatchWhileScanning") { return "scanner"; }
-         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
+         if(k == "AccentColor" || k == "AccentHex" || k == "CardColor" || k == "CardHex" || k == "CardOpacity" || k == "CardBgOpacity" || k == "CardShadow" || k == "FontFace" || k == "Font" || k == "TextScale" || k == "TextTone" || k == "HeaderStyle" || k == "TextShadow" || k == "HudScale" || k == "Margin" || k == "ScreenHeight" || k == "FadeCards" || k == "CombatDim" || k == "DimOpacity" || k == "SettingsOpacity" || k == "CompactScale" || k == "Compact") { return "theme"; }
          return "card";
       }
       private function hz51PvText(b:Sprite, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object, k:String) : void
       {
          var help:String = this.hz51HelpOf(k, r);
          if(help == null || help.length == 0) { help = r != null && r.note != undefined ? String(r.note) : "This setting has no separate HUD picture. The details below describe what it does."; }
-         this.hz51T(b,"SETTING DETAILS",x + 10,y + 10,w - 20,8,"sb",acc,0.8);
+         this.hz51T(b,this.hzLt("SETTING DETAILS"),x + 10,y + 10,w - 20,8,"sb",acc,0.8);
          var tf:TextField = this.hz51T(b,help,x + 10,y + 26,w - 20,10,"rg",uint(T.lab),0.1);
          tf.wordWrap = true; tf.multiline = true; tf.width = w - 20;
          this.hzMsglogWrap(tf,w - 20,h - 36);
@@ -7745,7 +8346,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var fs:Number = Math.max(9, Math.min(13, 11 * (ts > 0 ? ts : 1)));
          this.hz51T(b,face,cx + 10,cy + 8,cw - 20,fs,"bd",uint(T.txt),0.4);
          this.hz51T(b,"Sample HUD text",cx + 10,cy + 28,cw - 20,9,"rg",uint(T.lab),0.2);
-         this.hz51T(b,k == "FontFace" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
+         this.hz51T(b,k == "FontFace" || k == "Font" || k == "TextScale" ? "TYPOGRAPHY" : "THEME",cx + 10,cy + ch + 8,cw - 20,8,"sb",acc,0.8);
       }
       private function hz51PvModule(b:Sprite, g:*, T:Object, acc:uint, x:Number, y:Number, w:Number, h:Number, r:Object) : void
       {
@@ -7830,29 +8431,29 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var by:Number = fy + 12;
          if(this.hz51Pad)
          {
-            this.hz51T(b,"CONTROLLER",hx,by + 2,88,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("CONTROLLER"),hx,by + 2,88,9,"bd",uint(T.mut),1.2);
             hx = 108;
             for each(var ck:Array in [["LB/RB","TABS"],["D-PAD","MOVE"],["A","SELECT"],["B","BACK"]])
             {
                var ckw:Number = this.hzSetKey(b,g,hx,by,String(ck[0]),acc,16,7,9);
-               var cl:TextField = this.hz51T(b,String(ck[1]),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
+               var cl:TextField = this.hz51T(b,this.hzLt(String(ck[1])),hx + ckw + 4,by + 2,90,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + ckw + 4 + this.hzTW(cl) + 10);
             }
          }
          else
          {
-            this.hz51T(b,"KEYBOARD",hx,by + 2,80,9,"bd",uint(T.mut),1.2);
+            this.hz51T(b,this.hzLt("KEYBOARD"),hx,by + 2,80,9,"bd",uint(T.mut),1.2);
             hx = 100;
             for each(var hk:Array in [["UP/DN","SELECT"],["L/R","CHANGE"],["ENTER","OK"],["ESC","CANCEL"],["/","SEARCH"]])
             {
                var hkw:Number = this.hzSetKey(b,g,hx,by,String(hk[0]),uint(T.mut),16,7,9);
-               var hl:TextField = this.hz51T(b,String(hk[1]),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
+               var hl:TextField = this.hz51T(b,this.hzLt(String(hk[1])),hx + hkw + 4,by + 2,70,10,"sb",uint(T.lab),0.6);
                hx = Math.round(hx + hkw + 4 + this.hzTW(hl) + 10);
             }
          }
          var bxr:Number = W - 16;
-         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,"CANCEL",false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
-         this.hzSetBtn(b,g,bxr,fy + 9,"OK",true,false,this.hzSetHover == "ok",T,"ok",11,10);
+         bxr -= this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("CANCEL"),false,false,this.hzSetHover == "cancel",T,"cancel",11,10) + 6;
+         this.hzSetBtn(b,g,bxr,fy + 9,this.hzLt("OK"),true,false,this.hzSetHover == "ok",T,"ok",11,10);
       }
       private function hz51DrawFind(b:Sprite, g:*, T:Object, acc:uint, W:Number, H:Number) : void
       {
@@ -7875,7 +8476,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(!this.hzSetFindOn && this.hzSetFind.length == 0) { return; }
          if(hits.length == 0)
          {
-            this.hz51T(b,"No settings match",x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
+            this.hz51T(b,this.hzLt("No settings match"),x + 14,y + 18,w - 28,12,"sb",uint(T.mut),0.2);
             return;
          }
          if(this.hzSetFindHi >= hits.length) { this.hzSetFindHi = 0; }
@@ -7936,13 +8537,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(yy + HZ51_DROP_ITEM > y + h) { break; }
             var sel:Boolean = oi == this.hzSetDropHi;
             if(sel) { g.beginFill(acc,0.18); g.drawRoundRect(x + 3,yy,w - 6,HZ51_DROP_ITEM - 2,4,4); g.endFill(); }
+            var dlab:String = this.hz51Exo2Text(String(opts[oi]));
             if(r.t == "a" && r.pal != undefined)
             {
                var pal:Array = r.pal as Array;
                g.beginFill(uint(pal[Math.min(pal.length - 1,oi)]),1); g.drawRoundRect(x + 10,yy + 6,10,10,2,2); g.endFill();
-               this.hz51T(b,String(opts[oi]),x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
+               this.hz51T(b,dlab,x + 26,yy + 4,w - 36,11,"sb",sel ? acc : uint(T.txt),0.2);
             }
-            else { this.hz51T(b,String(opts[oi]),x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
+            else { this.hz51T(b,dlab,x + 10,yy + 4,w - 20,11,"sb",sel ? acc : uint(T.txt),0.2); }
             this.hzSetHits.push({"id":"dopt" + oi,"x":x + 3,"y":yy,"w":w - 6,"h":HZ51_DROP_ITEM});
             i++;
          }
@@ -8089,12 +8691,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
 
       private function hzSetCurrent() : Object
       {
-         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"CardShadow":this.hzCardShadow,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
+         var cur:Object = {"ShowJetpack":this.hzShowJetpack,"JetpackAutoHide":this.hzJetpackAutoHide,"ShowVitals":this.hzShowVitals,"ShowPlanet":this.hzShowPlanet,"ShowAfflictions":this.hzShowAfflictions,"AfflictionsAutoHide":this.hzAfflAutoHide,"ShowAmmo":this.hzShowAmmo,"AmmoOnlyWhenDrawn":this.hzAmmoOnlyWhenDrawn,"ShowQuests":this.hzShowQuests,"ShowCompass":this.hzShowCompass,"VehicleExitPill":this.hzVehOn,"CompassMarkers":this.hzShowCompassMarkers,"CardOpacity":this.hzCardOpacity,"CardBgOpacity":this.hzCardBgOpacity,"CardShadow":this.hzCardShadow,"ContainerOpacity":this.hzContOpacity,"SettingsOpacity":this.hzSetWinOpacity,"AccentColor":Math.max(0,Math.min(this.hzAccPal().length - 1,this.hzAccentChoice)),"Margin":this.hzMargin,"Compact":this.hzCompact,"SmoothBars":this.hzSmoothBars,"FadeCards":this.hzFadeCards,"CombatDim":this.hzCombatDim,"DimOpacity":this.hzDimAlpha,"HazardAlert":this.hzHazardAlert,"CardColor":Math.max(0,Math.min(this.hzCardPal().length - 1,this.hzCardColor)),"HudScale":this.hzHudScale,"AutoCenterVitals":this.hzAutoCenterVitals,"JetpackRule":this.hzRuleJetpack,"VitalsRule":this.hzRuleVitals,"PlanetRule":this.hzRulePlanet,"AfflictionsRule":this.hzRuleAffl,"AmmoRule":this.hzRuleAmmo,"QuestsRule":this.hzRuleQuests,"CompassRule":this.hzRuleCompass,"SettingsKey":this.hzSettingsKeyName,"ShowFollowers":this.hzCmpFollowers,"TextTone":this.hzTextTone,"FontFace":this.hzFontFace,"Font":this.hzFontFam,"PlanetDetails":this.hzPlanDetails,"ShowTarget":this.hzShowTarget,"TargetAnchor":this.hzTgAnchor,"TargetShowValue":this.hzTgShowValue,"ShowLocations":this.hzCmpLocations,"ShowShip":this.hzCmpShip,"ShowEnemies":this.hzCmpEnemies,"ShowPlayerMarker":this.hzCmpPlayerMark,"TextScale":this.hzTextScale,"ContainerScale":this.hzTgScale,"ScreenHeight":this.hzScrH,"CrosshairStyle":this.hzXhStyle,"ObjectRing":this.hzObjRing,"HeaderStyle":this.hzHeaderStyle,"TextShadow":this.hzTextShadow,"TimeDisplay":this.hzTimeDisplay,"ClockFormat":this.hzClockFmt,"TempUnit":this.hzTempUnit,"AfflictionLayout":this.hzAfLayout};
          try { this.hz26SetCur(cur); } catch(err26:Error) { }
          try { this.hz31SetCur(cur); } catch(err31:Error) { }
          try { this.hz34SetCur(cur); } catch(err34:Error) { }
          try { this.hz40SetCur(cur); } catch(err40:Error) { }
          try { this.hz42ScSetCur(cur); } catch(err42c:Error) { }   // v0.42.0 r2: [Scope]
+         cur.Language = this.hzLanguage != null && String(this.hzLanguage).length > 0 ? String(this.hzLanguage) : "auto";
          cur.Debug = this.hzDebug;
          cur.PerfDiag = this.hzPerfDiag;
          cur.PerfMode = this.hzPerfMode;
@@ -8401,7 +9004,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          }
          if(pins.length > 0)
          {
-            list.push({"g":1,"lab":"PINNED " + String(this.hzMlPinN) + " / " + String(this.hzMlPinCap)});
+            list.push({"g":1,"lab":this.hzLt("PINNED {n} / {cap}").split("{n}").join(String(this.hzMlPinN)).split("{cap}").join(String(this.hzMlPinCap))});
             i = 0;
             while(i < pins.length) { list.push(pins[i]); i++; }
          }
@@ -8433,8 +9036,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzMsglogGroup(e:Object) : String
       {
          var today:Boolean = this.hzMsglogIsToday(Number(e.ts));
-         if(int(e.sess) == this.hzMlSess) { return today ? "Today · this session" : "This session"; }
-         return today ? "Today · earlier" : "Earlier";
+         if(int(e.sess) == this.hzMlSess) { return today ? this.hzLt("Today · this session") : this.hzLt("This session"); }
+         return today ? this.hzLt("Today · earlier") : this.hzLt("Earlier");
       }
 
       private function hzMsglogIsToday(ts:Number) : Boolean
@@ -8449,10 +9052,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          if(ts <= 0) { return ""; }
          var sec:Number = Math.max(0, Math.floor(new Date().getTime() / 1000 - ts));
-         if(sec < 60) { return "just now"; }
-         if(sec < 3600) { return String(Math.floor(sec / 60)) + " min ago"; }
-         if(sec < 86400) { return String(Math.floor(sec / 3600)) + " h ago"; }
-         return String(Math.floor(sec / 86400)) + " d ago";
+         if(sec < 60) { return this.hzLt("just now"); }
+         if(sec < 3600) { return String(Math.floor(sec / 60)) + this.hzLt(" min ago"); }
+         if(sec < 86400) { return String(Math.floor(sec / 3600)) + this.hzLt(" h ago"); }
+         return String(Math.floor(sec / 86400)) + this.hzLt(" d ago");
       }
 
       private function hzMsglogClockTxt(v:Number) : String
@@ -8471,17 +9074,17 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var i:int = 0;
          while(i < HZ_ML_KIND.length)
          {
-            if(String(HZ_ML_KIND[i]) == k) { return String(HZ_ML_CHIPS[i]); }
+            if(String(HZ_ML_KIND[i]) == k) { return this.hzLt(String(HZ_ML_CHIPS[i])); }
             i++;
          }
-         return "GAME";
+         return this.hzLt("GAME");
       }
 
       private function hzMsglogStatusLab() : String
       {
-         if(this.hzMlStatus == "memory" || this.hzMlStatus == "paused") { return "History not saved"; }
-         if(this.hzMlStatus == "saving") { return "Saving"; }
-         if(this.hzMlStatus == "fallback") { return "Character key fallback"; }
+         if(this.hzMlStatus == "memory" || this.hzMlStatus == "paused") { return this.hzLt("History not saved"); }
+         if(this.hzMlStatus == "saving") { return this.hzLt("Saving"); }
+         if(this.hzMlStatus == "fallback") { return this.hzLt("Character key fallback"); }
          return "";
       }
 
@@ -8732,7 +9335,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(ox,oy,HZ_ML_W,HZ_ML_H,36,36);
          g.endFill();
          this.hz33Edge(b,ox,oy,HZ_ML_W,HZ_ML_H,36,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"HORIZON UI · MESSAGE LOG",ox + 22,oy + 14,520,15,"bd",uint(T.txt),2, "left", 13);
+         this.hzWT(b,this.hzLt("HORIZON UI · MESSAGE LOG"),ox + 22,oy + 14,520,15,"bd",uint(T.txt),2, "left", 13);
          var st:String = this.hzMsglogStatusLab();
          if(st.length > 0) { this.hzWT(b,st,ox + HZ_ML_W - 22,oy + 16,240,13,"sb",uint(T.mut),0.4,"right",13); }
 
@@ -8803,8 +9406,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(boxX, fy, boxW, 28, 8, 8);
          g.endFill();
          g.lineStyle();
-         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : "Find...";
-         if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = "Find (keyboard only)"; }
+         var findLab:String = this.hzMlFind.length > 0 ? this.hzMlFind : this.hzL("settings.ui.find_ellipsis", "Find...");
+         if(this.hzMlPad && !this.hzMlFindOn && this.hzMlFind.length == 0) { findLab = this.hzLt("Find (keyboard only)"); }
          var findCol:uint = (this.hzMlFindOn || this.hzMlFind.length > 0) ? uint(T.txt) : uint(T.mut);
          var ftf:TextField = this.hzWT(b,findLab,boxX + 10,fy + 6,boxW - 28,13,"rg",findCol,0.3,"left",13);
          if(this.hzMlFindOn && !overlayOn)
@@ -8830,7 +9433,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var allR:Number = ox + HZ_ML_W - 22;
          this.hzSetSwitch(b,g,allR,fy + 18,allOn,T,false);
          // hzMlAllTime: the words sit left of the switch with a gap, wide enough for the full label.
-         var atf:TextField = this.hzWT(b,"ALL TIME",0,fy + 8,220,13,"sb",uint(T.lab),1.2,"left",13);
+         var atf:TextField = this.hzWT(b,this.hzLt("ALL TIME"),0,fy + 8,220,13,"sb",uint(T.lab),1.2,"left",13);
          var atw:Number = Math.ceil(this.hzTW(atf) + 6);
          if(atw < 24) { atw = 8 * 13; }
          atf.width = atw;
@@ -8858,7 +9461,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(!haveSel) { this.hzMlSelId = 0; }
          if(list.length == 0)
          {
-            var empty:String = this.hzMlRows.length > 0 ? "No messages for the types that are shown. Stored messages stay." : "Starts empty. Messages from before this log was on cannot be recovered.";
+            var empty:String = this.hzMlRows.length > 0 ? this.hzLt("No messages for the types that are shown. Stored messages stay.") : this.hzLt("Starts empty. Messages from before this log was on cannot be recovered.");
             this.hzWT(b,empty,ox + 28,rowTop + 40,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
          }
          var vis:int = 0;
@@ -8906,7 +9509,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                var tt:TextField = this.hzWT(b,line,textX,ry + 6,textW,13,"rg",tcol,0.3,"left",13);
                tt.alpha = aMul;
                this.hzMsglogWrap(tt,textW,rh - 8);
-               var chipLab:String = later ? "from a later point" : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
+               var chipLab:String = later ? this.hzLt("from a later point") : (String(it.tag).length > 0 ? String(it.tag) : this.hzMsglogKindLab(String(it.k)));
                var chp:TextField = this.hzWT(b,chipLab,0,0,140,13,"sb",later ? uint(T.mut) : uint(T.lab),1.2,"left",13);
                var chw:Number = Math.min(108, Math.round(this.hzTW(chp) + 14));
                g.beginFill(later ? uint(T.mut) : acc, later ? 0.12 : 0.18);
@@ -8964,8 +9567,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzMsglogEllip(dtf,HZ_ML_W - 78);
             var uts:String = this.hzMsglogClockTxt(Number(sel.ut));
             var lts:String = Number(sel.lt) >= 0 ? this.hzMsglogClockTxt(Number(sel.lt)) : "";
-            var when:String = uts.length > 0 ? "IN-GAME " + uts : "";
-            if(lts.length > 0) { when += (when.length > 0 ? " + " : "") + "local " + lts; }
+            var when:String = uts.length > 0 ? this.hzLt("IN-GAME") + " " + uts : "";
+            if(lts.length > 0) { when += (when.length > 0 ? " + " : "") + this.hzLt("local") + " " + lts; }
             var where:String = String(sel.loc).length > 0 ? String(sel.loc) : "";
             var real:String = "";
             if(Number(sel.ts) > 0)
@@ -8976,7 +9579,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var d2:String = when;
             if(where.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + where; }
             if(real.length > 0) { d2 += (d2.length > 0 ? "  ·  " : "") + real; }
-            if(sel.later == true) { d2 += (d2.length > 0 ? "  ·  " : "") + "from a later point"; }
+            if(sel.later == true) { d2 += (d2.length > 0 ? "  ·  " : "") + this.hzLt("from a later point"); }
             var dtf2:TextField = this.hzWT(b,d2.length > 0 ? d2 : " ",ox + 28,dy + 32,HZ_ML_W - 56,13,"rg",uint(T.mut),0.3,"left",13);
             this.hzMsglogEllip(dtf2,HZ_ML_W - 56);
          }
@@ -8987,10 +9590,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.endFill();
          var hx:Number = ox + 28;
          var hy:Number = foot + 10;
-         var pinLab:String = (sel != null && int(sel.pin) != 0) ? "UNPIN" : "PIN";
+         var pinLab:String = (sel != null && int(sel.pin) != 0) ? this.hzLt("UNPIN") : this.hzLt("PIN");
          var hints:Array = this.hzMlPad
-            ? [["LB/RB","CHIPS"],["A",pinLab],["X","SETTINGS"],["Y","CLEAR"],["B","BACK"]]
-            : [["UP/DN","SELECT"],["ENTER",pinLab],["ESC","BACK"],["/","FIND"]];
+            ? [["LB/RB",this.hzLt("CHIPS")],["A",pinLab],["X",this.hzLt("SETTINGS")],["Y",this.hzLt("CLEAR")],["B",this.hzLt("BACK")]]
+            : [["UP/DN",this.hzLt("SELECT")],["ENTER",pinLab],["ESC",this.hzLt("BACK")],["/",this.hzLt("FIND")]];
          // hzMlHintSlot: each hint is as wide as its words, so CLEAR, SETTINGS, UNPIN, and SELECT are not cut at 70 px.
          var hi:int = 0;
          while(hi < hints.length)
@@ -9006,10 +9609,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var by:Number = foot + 48;
          var bxr:Number = ox + HZ_ML_W - 22;
          var hit0:int = this.hzSetHits.length;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"BACK",false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
-         bxr -= this.hzSetBtn(b,g,bxr,by,"CLEAR SESSION",false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,this.hzLt("BACK"),false,false,this.hzMlHover == "back",T,"mlback",13,13) + 10;
+         bxr -= this.hzSetBtn(b,g,bxr,by,this.hzLt("CLEAR SESSION"),false,true,this.hzMlHover == "clear",T,"mlclear",13,13) + 10;
          bxr -= this.hzSetBtn(b,g,bxr,by,pinLab,true,false,this.hzMlHover == "pin",T,"mlpin",13,13) + 10;
-         var setW:Number = this.hzSetBtn(b,g,bxr,by,"SETTINGS",false,true,this.hzMlHover == "set",T,"mlset",13,13);
+         var setW:Number = this.hzSetBtn(b,g,bxr,by,this.hzLt("SETTINGS"),false,true,this.hzMlHover == "set",T,"mlset",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -9044,8 +9647,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var n:int = clearIds.length == 0 ? 0 : clearIds.split(",").length;
          var cw:Number = 560;
          var noteW:Number = cw - 44;
-         var title:TextField = this.hzWT(b,"Clear this session?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
-         var note:TextField = this.hzWT(b,"Removes " + String(n) + " shown unpinned messages. Hidden messages stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         var title:TextField = this.hzWT(b,this.hzLt("Clear this session?"),0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,this.hzLt("Removes {n} shown unpinned messages. Hidden messages stay. Can't be undone.").split("{n}").join(String(n)),0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
          note.height = 160;
          var nh:Number = this.hzMsglogWrap(note,noteW,160);
          var guess:Number = this.hzMsglogGuessH(note.text,noteW);
@@ -9069,8 +9672,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,this.hzLt("CANCEL"),false,false,this.hzMlHover == "cfcancel",T,"cfcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,this.hzLt("CLEAR"),true,false,this.hzMlHover == "cfok",T,"cfok",13,13);
          while(this.hzSetHits.length > hit0)
          {
             this.hzMlHits.push(this.hzSetHits.pop());
@@ -9178,19 +9781,19 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzMsglogSetRows() : Array
       {
          var rows:Array = [
-            {"id":"record","k":"record","l":"RECORD MESSAGES"},
-            {"id":"persist","k":"persist","l":"SAVE TO DISK"}
+            {"id":"record","k":"record","l":this.hzLt("RECORD MESSAGES")},
+            {"id":"persist","k":"persist","l":this.hzLt("SAVE TO DISK")}
          ];
-         if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":"FOLDER"}); }
-         rows.push({"id":"history","k":"history","l":"HISTORY"});
-         rows.push({"id":"viewnote","k":"viewnote","l":"SHOW hides rows in this log. RECORD chooses what is saved."});
+         if(!this.hzMlPersist) { rows.push({"id":"folder","k":"folder","l":this.hzLt("FOLDER")}); }
+         rows.push({"id":"history","k":"history","l":this.hzLt("HISTORY")});
+         rows.push({"id":"viewnote","k":"viewnote","l":this.hzLt("SHOW hides rows in this log. RECORD chooses what is saved.")});
          var i:int = 1;
          while(i < HZ_ML_KIND.length)
          {
-            rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":String(HZ_ML_CHIPS[i]),"type":1});
+            rows.push({"id":"type" + String(i),"k":String(HZ_ML_KIND[i]),"l":this.hzLt(String(HZ_ML_CHIPS[i])),"type":1});
             i++;
          }
-         rows.push({"id":"old","k":"old","l":"OLD CHARACTERS"});
+         rows.push({"id":"old","k":"old","l":this.hzLt("OLD CHARACTERS")});
          return rows;
       }
 
@@ -9209,7 +9812,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"MESSAGE LOG SETTINGS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,this.hzLt("MESSAGE LOG SETTINGS"),cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
          var rows:Array = this.hzMsglogSetRows();
          var bodyY:Number = cy + 44;
          var bodyH:Number = ch - 44 - 56;
@@ -9236,7 +9839,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if(r.id == "folder")
             {
                var path:String = this.hzMlFolder.length > 0 ? this.hzMlFolder : "MessageLog";
-               this.hzWT(b,"Memory only. Existing files stay on disk.",cx + 22,ry + 2,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+               this.hzWT(b,this.hzLt("Memory only. Existing files stay on disk."),cx + 22,ry + 2,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
                var ptf:TextField = this.hzWT(b,path,cx + 22,ry + 16,cw - 44,13,"rg",uint(T.lab),0.3,"left",13);
                this.hzMsglogEllip(ptf,cw - 44);
             }
@@ -9255,9 +9858,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             }
             else if(r.id == "old")
             {
-               this.hzWT(b,"OLD CHARACTERS (" + String(this.hzMlOtherN) + " FILES)",cx + 22,ry + 8,320,13,"sb",uint(T.txt),1.2,"left",13);
+               this.hzWT(b,this.hzLt("OLD CHARACTERS ({n} FILES)").split("{n}").join(String(this.hzMlOtherN)),cx + 22,ry + 8,320,13,"sb",uint(T.txt),1.2,"left",13);
                var hit0:int = this.hzSetHits.length;
-               this.hzSetBtn(b,g,cx + cw - 18,ry + 4,"VIEW LIST",false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
+               this.hzSetBtn(b,g,cx + cw - 18,ry + 4,this.hzLt("VIEW LIST"),false,true,this.hzMlHover == "mlslist",T,"mlslist",13,13);
                while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
             }
             else if(r.id == "viewnote")
@@ -9268,11 +9871,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                this.hzWT(b,String(r.l),cx + 22,ry + 8,180,13,"sb",uint(T.txt),1.2,"left",13);
                // SHOW uses the RECORD label-to-switch gap. The switch stays put; the label moves left to match it.
-               var recTf:TextField = this.hzWT(b,"RECORD",cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
+               var recTf:TextField = this.hzWT(b,this.hzLt("RECORD"),cx + cw - 168,ry + 8,70,13,"sb",uint(T.lab),0.4,"left",13);
                var recGap:Number = (cx + cw - 22 - 38) - (recTf.x + this.hzTW(recTf));
                if(!(recGap > 0)) { recGap = 16; }
                var showR:Number = cx + cw - 228;
-               var showTf:TextField = this.hzWT(b,"SHOW",0,ry + 8,80,13,"sb",uint(T.lab),0.4,"left",13);
+               var showTf:TextField = this.hzWT(b,this.hzLt("SHOW"),0,ry + 8,80,13,"sb",uint(T.lab),0.4,"left",13);
                var showW:Number = this.hzTW(showTf);
                showTf.x = Math.round(showR - 38 - recGap - showW);
                if(showTf.x < cx + 210) { showTf.x = cx + 210; }
@@ -9302,12 +9905,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(this.hzMlPad)
          {
             this.hzSetKey(b,g,hx,hy,"A",uint(T.mut),22,13,13);
-            this.hzWT(b,"TOGGLE",hx + 30,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
+            this.hzWT(b,this.hzLt("TOGGLE"),hx + 30,hy + 4,70,13,"sb",uint(T.mut),1.2,"left",13);
          }
          var br:Number = cx + cw - 22;
          var hit1:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,foot + 20,"BACK",false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
-         this.hzSetBtn(b,g,br,foot + 20,"CLEAR HISTORY",false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
+         br -= this.hzSetBtn(b,g,br,foot + 20,this.hzLt("BACK"),false,false,this.hzMlHover == "mlsback",T,"mlsback",13,13) + 10;
+         this.hzSetBtn(b,g,br,foot + 20,this.hzLt("CLEAR HISTORY"),false,true,this.hzMlHover == "mlsclear",T,"mlsclear",13,13);
          while(this.hzSetHits.length > hit1) { this.hzMlHits.push(this.hzSetHits.pop()); }
          if(this.hzPopTop() == "mlhist") { this.hzMsglogDrawHist(T,acc,ox,oy); }
       }
@@ -9318,8 +9921,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var g:* = b.graphics;
          var cw:Number = 480;
          var noteW:Number = cw - 44;
-         var title:TextField = this.hzWT(b,"Clear all history?",0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
-         var note:TextField = this.hzWT(b,"Removes every unpinned message for this character. Pins stay. Can't be undone.",0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
+         var title:TextField = this.hzWT(b,this.hzLt("Clear all history?"),0,0,noteW,15,"bd",uint(T.txt),2,"left",13);
+         var note:TextField = this.hzWT(b,this.hzLt("Removes every unpinned message for this character. Pins stay. Can't be undone."),0,0,noteW,13,"rg",uint(T.lab),0.3,"left",13);
          note.height = 160;
          var nh:Number = this.hzMsglogWrap(note,noteW,160);
          var guess:Number = this.hzMsglogGuessH(note.text,noteW);
@@ -9343,8 +9946,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var btnY:Number = cy + ch - 48;
          var br:Number = cx + cw - 22;
          var hit0:int = this.hzSetHits.length;
-         br -= this.hzSetBtn(b,g,br,btnY,"CANCEL",false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
-         this.hzSetBtn(b,g,br,btnY,"CLEAR",true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
+         br -= this.hzSetBtn(b,g,br,btnY,this.hzLt("CANCEL"),false,false,this.hzMlHover == "mhcancel",T,"mhcancel",13,13) + 10;
+         this.hzSetBtn(b,g,br,btnY,this.hzLt("CLEAR"),true,false,this.hzMlHover == "mhok",T,"mhok",13,13);
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
@@ -9363,25 +9966,25 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          g.drawRoundRect(cx,cy,cw,ch,28,28);
          g.endFill();
          this.hz33Edge(b,cx,cy,cw,ch,28,uint(T.edge),Number(T.ea),1);
-         this.hzWT(b,"OLD CHARACTERS",cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
-         this.hzWT(b,"Read-only. The current character is not listed.",cx + 22,cy + 40,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+         this.hzWT(b,this.hzLt("OLD CHARACTERS"),cx + 22,cy + 16,cw - 44,15,"bd",uint(T.txt),2,"left",13);
+         this.hzWT(b,this.hzLt("Read-only. The current character is not listed."),cx + 22,cy + 40,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
          var i:int = 0;
          var ry:Number = cy + 68;
          if(this.hzMlOthers.length == 0)
          {
-            this.hzWT(b,"No other character files.",cx + 22,ry,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
+            this.hzWT(b,this.hzLt("No other character files."),cx + 22,ry,cw - 44,13,"rg",uint(T.mut),0.3,"left",13);
          }
          while(i < this.hzMlOthers.length && ry < cy + ch - 64)
          {
             var oc:Object = this.hzMlOthers[i];
             var nmCh:TextField = this.hzWT(b,String(oc.name),cx + 22,ry,300,13,"sb",uint(T.txt),1.2,"left",13);
             this.hzMsglogEllip(nmCh,300);
-            this.hzWT(b,String(oc.n) + " messages",cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
+            this.hzWT(b,String(oc.n) + " " + this.hzLt("messages"),cx + cw - 22,ry,160,13,"rg",uint(T.mut),0.3,"right",13);
             ry += 28;
             i++;
          }
          var hit0:int = this.hzSetHits.length;
-         this.hzSetBtn(b,g,cx + cw - 22,cy + ch - 44,"BACK",false,false,this.hzMlHover == "mlcback",T,"mlcback",13,13);
+         this.hzSetBtn(b,g,cx + cw - 22,cy + ch - 44,this.hzLt("BACK"),false,false,this.hzMlHover == "mlcback",T,"mlcback",13,13);
          while(this.hzSetHits.length > hit0) { this.hzMlHits.push(this.hzSetHits.pop()); }
       }
 
@@ -10140,6 +10743,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var rd:Boolean = false;
          if(p.TextTone != undefined && this.hzTextTone != int(p.TextTone)) { this.hzTextTone = int(p.TextTone); rd = true; }
          if(p.FontFace != undefined && this.hzFontFace != Math.max(0,Math.min(3,int(p.FontFace)))) { this.hzFontFace = Math.max(0,Math.min(3,int(p.FontFace))); rd = true; }
+         if(p.Font != undefined)
+         {
+            var fam:String = this.hzFontFamNorm(String(p.Font));
+            if(fam != this.hzFontFam) { this.hzFontFam = fam; rd = true; }
+         }
+         this.hzFontApply();
          if(Math.abs(this.hzCardOpacity - Number(p.CardOpacity)) > 0.001) { this.hzCardOpacity = Number(p.CardOpacity); rd = true; }
          if(p.CardBgOpacity != undefined)
          {
@@ -10188,6 +10797,11 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzDimAlpha = Number(p.DimOpacity);
          this.hzHazardAlert = p.HazardAlert;
          this.hzSettingsKeyName = String(p.SettingsKey);
+         if(p.Language != undefined)
+         {
+            var lang:String = String(p.Language);
+            this.hzLanguage = lang.length > 0 ? lang : "auto";
+         }
          this.hzAutoCenterVitals = p.AutoCenterVitals;
          this.hzRuleJetpack = int(p.JetpackRule);
          this.hzRuleVitals = int(p.VitalsRule);
@@ -10290,6 +10904,10 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          a.push("; Horizon UI - HUD module settings");
          a.push("; 1 = on, 0 = off. Change in-game with F11 (settings window).");
          a.push("");
+         a.push("[General]");
+         a.push("; Horizon UI language. auto = follow the game. A change is applied when settings load or you press OK.");
+         a.push("Language=" + (p.Language != null && String(p.Language).length > 0 ? String(p.Language) : "auto"));
+         a.push("");
          a.push("[Hotkeys]");
          a.push("; Settings menu key (needs the Horizon SFSE helper). Default F11. Takes effect after restart. F11 opens from the main HUD only (not while the scanner or a full-screen menu is open).");
          a.push("SettingsKey=" + p.SettingsKey);
@@ -10337,6 +10955,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          a.push("TextTone=" + int(p.TextTone));
          a.push("; Font: 1 Exo 2 (default), 2 Roboto, 0 game font, 3 game font semibold (built into the game, nothing to install). Exo 2 / Roboto need Interface/fonts_horizon.swf + fontconfig; the game font is used if missing");
          a.push("FontFace=" + int(p.FontFace));
+         a.push("; Horizon family when FontFace=1: Exo2 (default), Saira, Orbitron, Titillium. SIL OFL. Missing faces fall back to Exo 2, then the game font.");
+         a.push("Font=" + this.hzFontFamNorm(p.Font != undefined ? String(p.Font) : this.hzFontFam));
          a.push("; Planet card time: 0 off, 1 LOCAL planet time (GAME hh:mm UT where there is no local day), 2 PC/REAL clock, 3 both");
          a.push("TimeDisplay=" + int(p.TimeDisplay));
          a.push("; Clock format for LOCAL, GAME, and PC: 0 12-hour (AM/PM), 1 24-hour");
@@ -10465,6 +11085,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(role == "hdr") { col = HZ_ACCENT; al = Number(HZ_TY_ALPHA.hdr); txt = this.hzHdrCase(txt); }
          else if(role == "lbl") { al = Number(HZ_TY_ALPHA.lbl); }
          else if(role == "sec") { al = Number(HZ_TY_ALPHA.sec); }
+         txt = this.hzFontText(txt);
          t.width = w; t.height = sz + 10; t.x = x; t.y = y - (sz - size) / 2;
          var f:TextFormat = new TextFormat(this.hzFontName(),sz,col);
          f.align = align;
@@ -10515,7 +11136,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private static const HZ_SET_SCRH:Array = [0,720,900,1080,1200,1440,1600,2160];
       private static const HZ_SET_SCRH_N:Array = ["OFF","720","900","1080","1200","1440","1600","2160"];
       // shipped HorizonUI.ini defaults: a value shown in the accent color = differs from the default
-      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};
+      private static const HZ_SET_DEF:Object = {"SettingsKey":"F11","Language":"auto","ShowJetpack":1,"ShowVitals":1,"ShowPlanet":1,"ShowAfflictions":1,"ShowAmmo":1,"ShowQuests":1,"ShowCompass":1,"VehicleExitPill":1,"VehicleExitX":0,"VehicleExitY":0,"QuickMenuHorizon":1,"QuickMenuExtended":0,"QuickMenuSlotCount":24,"QuickMenuSlotsPerRow":6,"QuickMenuExtendedLayout":0,"QuickMenuKey13":"","QuickMenuKey14":"","QuickMenuKey15":"","QuickMenuKey16":"","QuickMenuKey17":"","QuickMenuKey18":"","QuickMenuKey19":"","QuickMenuKey20":"","QuickMenuKey21":"","QuickMenuKey22":"","QuickMenuKey23":"","QuickMenuKey24":"","QuickMenuExtEmptySlots":1,"QuickMenuExtPanelOpacity":92,"QuickMenuExtSlotScale":1,"PlanetDetails":0,"ShowTarget":1,"TargetAnchor":0,"TargetShowValue":1,"CompassMarkers":1,"ShowFollowers":1,"ShowLocations":1,"ShowShip":1,"ShowEnemies":1,"ShowPlayerMarker":1,"CardOpacity":1,"CardBgOpacity":92,"CardShadow":12,"ContainerOpacity":1,"SettingsOpacity":93,"AccentColor":0,"CardColor":0,"HudScale":1,"SmoothBars":1,"FadeCards":1,"CombatDim":1,"DimOpacity":0.6,"HazardAlert":1,"Compact":0,"Margin":40,"TextTone":0,"FontFace":1,"Font":"Exo2","TimeDisplay":3,"ClockFormat":0,"TempUnit":0,"AfflictionLayout":0,"TextScale":1,"ContainerScale":1.125,"HoverScale":1,"ScreenHeight":1440,"CrosshairStyle":1,"ObjectRing":0,"HeaderStyle":0,"TextShadow":0,"JetpackRule":4,"VitalsRule":0,"PlanetRule":0,"AfflictionsRule":6,"AmmoRule":3,"QuestsRule":0,"CompassRule":0,"CharacterRule":0,"FollowerColor":0,"AutoCenterVitals":1,"ShowCharacter":1,"EnemyBar":1,"StealthMeter":1,"EquipmentExtras":1,"EdgePulse":1,"HazardStatus":1,"XpToast":1,"HitMarkers":1,"DamageNumbers":1,"DirectionRing":1,"RegenSliver":1,"ModuleNoteCompact":1,"StartupIntro":1,"JetpackScale":-1,"VitalsScale":-1,"VitalsLayout":0,"NameHover":0,"VitalsBars":0,"ScopeHoldBreathChip":1,"ScopeChipX":0,"ScopeChipY":0,"ScopeChipScale":1,"CharacterScale":-1,"CharacterCompact":-1,"XpToastScale":-1,"PlanetScale":-1,"PlanetCompact":-1,"AfflictionsScale":-1,"EquipmentScale":-1,"EquipmentCompact":-1,"QuestsScale":-1,"QuestsCompact":-1,"QuestsWidth":380,"QuestsMaxHeight":160,"QuestsWrap":1,"CompassScale":-1,"CompassCompact":-1,"EnemyScale":-1,"StealthScale":-1,"HazardScale":-1,"HazardCompact":-1,"CompactScale":-1,"WatchScale":-1,"WatchStyle":0,"CrosshairRule":0,"CharacterShowSeconds":8,"Debug":0,"PerfDiag":0,"PerfMode":0,"PerfDump":0};
       private var hzSetScroll:int = 0;
       private var hzSetMaxScroll:int = 0;
       private var hzSetPv:Sprite = null;
@@ -10565,13 +11186,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var sz:int = Math.max(9,int(Math.round(fs * ts)));
          if(minPx > sz) { sz = minPx; }   // v0.42.0.4: the version label passes 13 so TextScale 0.9 cannot round it to 12
          if(face == "rg" && sz <= 12) { face = "sb"; }
-         var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
+         var cjk:Boolean = this.hzL10nCjk || this.hzHasCjk(txt);
+         var f:TextFormat = new TextFormat(cjk ? this.hzCjkFont(face) : this.hzFontName(face),sz,col);
          f.align = align;
-         f.letterSpacing = ls;
+         f.letterSpacing = cjk ? 0 : ls;
          t.defaultTextFormat = f;
          t.width = Math.round(w);
          t.height = sz + 10;
-         t.text = txt;
+         t.text = this.hzFontText(txt);
          t.setTextFormat(f);
          t.textColor = col;
          if(align == "right") { t.x = Math.round(x - w + 2); }
@@ -10765,10 +11387,16 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzSetListIdx(r:Object, v:*) : int
       {
          var vals:Array = r.vals as Array;
+         if(vals == null) { return 0; }
+         var vs:String = String(v);
+         var i:int = 0;
+         while(i < vals.length) { if(String(vals[i]) == vs) { return i; } i++; }
          var best:int = 0;
          var bd:Number = 1e9;
-         var i:int = 0;
-         while(i < vals.length) { var d:Number = Math.abs(Number(vals[i]) - Number(v)); if(d < bd) { bd = d; best = i; } i++; }
+         var nv:Number = Number(v);
+         if(isNaN(nv)) { return 0; }
+         i = 0;
+         while(i < vals.length) { var d:Number = Math.abs(Number(vals[i]) - nv); if(d < bd) { bd = d; best = i; } i++; }
          return best;
       }
 
@@ -11425,12 +12053,12 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             {
                var lcs:Array = this.hzLayClips(k);
                var c:Sprite = this.hz34C("Quests") && k == "Quests" ? this.HorizonCompactQuest_mc : (lcs.length > 0 ? Sprite(lcs[0]) : null);
-               if(c) { r.push({"k":k,"n":HZ_LAY_NAMES[i],"c":c}); }
+               if(c) { r.push({"k":k,"n":this.hzLt(HZ_LAY_NAMES[i]),"c":c}); }
             }
             i++;
          }
-         try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":"SCOPE: HOLD BREATH","c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
-         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":"VEHICLE EXIT PILL","c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
+         try { if(this.hz42ScAvail() && this.hz42ScPx != null) { r.push({"k":HZ42_SC_KEY,"n":this.hzLt("SCOPE: HOLD BREATH"),"c":this.hz42ScPx}); } } catch(err42a:Error) { }   // v0.42.0 r2
+         try { if(this.hzVehArr && this.hzVehPx != null) { r.push({"k":HZ_VEH_KEY,"n":this.hzLt("VEHICLE EXIT PILL"),"c":this.hzVehPx}); } } catch(errVhA:Error) { }   // 0.43.3.2
          return r;
       }
 
@@ -11964,6 +12592,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       // ellipsis-fit by measuring textWidth (never wider than the field)
       private function hzFitText(tf:TextField, full:String, maxW:Number) : void
       {
+         full = this.hzFontText(full);
          tf.text = full;
          if(this.hzTW(tf) <= maxW - 4 || full.length < 2) { return; }
          var lo:int = 1;
@@ -12567,8 +13196,18 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          if(this.hzTgOrigD.indexOf(d) >= 0) { return; }
          this.hzTgOrigD.push(d);
          var a:Number = d.alpha;
-         if(hideA && a < 0.05) { a = 1; }
-         this.hzTgOrig.push({"d":d,"v":d.visible,"a":a});
+         var vis:Boolean = d.visible;
+         // Prompt art (Header / name / TALK glyphs): vanilla rollOn / AnimIn can
+         // still have visible=false and alpha 0. Restore must bring those back
+         // (ObjectRing VANILLA keeps the circle and leader even when the name
+         // row stays hidden). Unused key boxes use hideA false and keep the
+         // real visible flag.
+         if(hideA)
+         {
+            if(a < 0.05) { a = 1; }
+            vis = true;
+         }
+         this.hzTgOrig.push({"d":d,"v":vis,"a":a});
       }
 
       private function hzTgRestore() : void
@@ -12841,9 +13480,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzPpDet = this.hzT(p,"",86,60,180,10,"rg","dim",1);
          var r:Number = HZ_PP_W - 16;
          this.hzPpLocT = this.hzT(p,"",r - 34 - 90,17,90,13,"sb","mut",0.6,"right");
-         this.hzPpLocL = this.hzT(p,"LOCAL/GAME",r - 80,21,80,8,"sb","dim",0.8,"right");
+         this.hzPpLocL = this.hzT(p,this.hzL("hud.hud_label.local_game","LOCAL/GAME"),r - 80,21,80,8,"sb","dim",0.8,"right");
          this.hzPpRealT = this.hzT(p,"",r - 34 - 90,42,90,12,"rg","dim",0.4,"right");
-         this.hzPpRealL = this.hzT(p,"PC/REAL",r - 62,45,64,8,"sb","dim",0.8,"right");
+         this.hzPpRealL = this.hzT(p,this.hzL("hud.hud_label.pc_real","PC/REAL"),r - 62,45,64,8,"sb","dim",0.8,"right");
          this.hzPpLocG = new Sprite(); p.addChild(this.hzPpLocG);
          this.hzPpRealG = new Sprite(); p.addChild(this.hzPpRealG);
          this.hzSetSz(this.HorizonEnv_mc,HZ_PP_W,84);
@@ -13074,7 +13713,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var showUT:Boolean = !locOk && this.hzPpUT >= 0 && (td == 1 || td == 3);
          var showLoc:Boolean = (locOk && (td == 1 || td == 3)) || showUT;
          this.hzPpShowUT = showUT;
-         this.hzPpLocL.text = "LOCAL/GAME";
+         this.hzPpLocL.text = this.hzL("hud.hud_label.local_game","LOCAL/GAME");
          var realStr:String = null;
          if(td >= 2)
          {
@@ -13148,13 +13787,14 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzFitText(this.hzPpName,this.hzUC(this.hzPpBodyName ? this.hzPpBodyName : "--"),nameW);
          // line 2: temp · status ; STATION / IN SHIP / IN SPACE
          var l2:String;
-         if(this.hzPpKind == "ship") { l2 = "IN SHIP"; }
-         else if(this.hzPpKind == "station") { l2 = "STATION"; }
-         else if(this.hzPpKind == "space") { l2 = "IN SPACE"; }
+         if(this.hzPpKind == "ship") { l2 = this.hzLt("IN SHIP"); }
+         else if(this.hzPpKind == "station") { l2 = this.hzLt("STATION"); }
+         else if(this.hzPpKind == "space") { l2 = this.hzLt("IN SPACE"); }
          else
          {
             var temp:String = this.hzEnvTemp ? this.hzEnvTemp.text : "--";
-            l2 = (temp.length > 0 && temp != "--") ? temp + "  ·  " + this.hzPpStatus : this.hzPpStatus;
+            var st:String = this.hzLt(this.hzPpStatus);
+            l2 = (temp.length > 0 && temp != "--") ? temp + "  ·  " + st : st;
          }
          if(cm)
          {
@@ -13175,7 +13815,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var parts:Array = [];
          if(this.hzPpSys.length > 0) { parts.push(this.hzPpSys.toUpperCase()); }
          if(surf && this.hzEnvGrav && this.hzEnvGrav.text != "--") { parts.push(this.hzEnvGrav.text); }
-         if(surf && this.hzEnvAir && this.hzEnvAir.text != "--") { parts.push("AIR " + this.hzEnvAir.text); }
+         if(surf && this.hzEnvAir && this.hzEnvAir.text != "--") { parts.push(this.hzLt("AIR") + " " + this.hzEnvAir.text); }
          var det:Boolean = this.hzPlanDetails && parts.length > 0 && !cm;
          this.hzPpDet.visible = det;
          if(cm)
@@ -13221,7 +13861,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             p.addChild(ic);
             this.hzIcons.push({"s":ic,"k":(i == 0 ? "vnheart" : "vno2"),"c":HZ_ACCENT,"acc":true});   // v0.35: icon + label follow the accent
             this.hzVnIc.push(ic);
-            var lab:TextField = this.hzT(p,i == 0 ? "HEALTH" : "OXYGEN",50,y + 9,150,13,"sb","acc",2);
+            var lab:TextField = this.hzT(p,this.hzLt(i == 0 ? "HEALTH" : "OXYGEN"),50,y + 9,150,13,"sb","acc",2);
             this.hzHdr19(lab);
             this.hzVnLbl.push(lab);
             var v:TextField = this.hzT(p,"--",HZ_VN_W - 14 - 160,y + 4,160,20,"sb","main",1,"right");
@@ -13420,7 +14060,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          p.addChild(t);
          var o:Object = {"tf":t,"size":fs,"fs":fs,"face":face,"tone":tone,"col":col,"ls":ls,"right":align == "right","center":align == "center","y0":y,"raw":null,"role":null,"keep":true};
          this.hzTexts.push(o);
-         t.text = txt;
+         t.text = this.hzFontText(txt);
          this.hzApplyFmt(o);
          return t;
       }
@@ -13443,13 +14083,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var face:String = String(o.face);
          if(face == "rg" && sz <= 12) { face = "sb"; } // small labels never thinner than SemiBold
          o.szAp = sz;   // 0.43.5 (PR #12 cache key): the applied pixel size, which HudScale / HoverScale floors change without o.fs changing
-         var f:TextFormat = new TextFormat(this.hzFontName(face),sz,col);
+         var tf:TextField = TextField(o.tf);
+         var keepTxt:String = o.hdr19 ? this.hzUC(tf.text) : tf.text;
+         var cjk19:Boolean = this.hzL10nCjk || this.hzHasCjk(keepTxt);
+         var f:TextFormat = new TextFormat(cjk19 ? this.hzCjkFont(face) : this.hzFontName(face),sz,col);
          if(o.right) { f.align = "right"; }
          if(o.center) { f.align = "center"; }
          // HeaderStyle 0: CAPS + letter-spaced titles; 1: Title Case, tight tracking
-         f.letterSpacing = (o.hdr19 && this.hzHeaderStyle == 1) ? Math.min(Number(o.ls),0.2) : Number(o.ls);
-         var tf:TextField = TextField(o.tf);
-         var keepTxt:String = o.hdr19 ? this.hzUC(tf.text) : tf.text;
+         // CJK skips tracking so glyphs are not pulled apart.
+         f.letterSpacing = cjk19 ? 0 : ((o.hdr19 && this.hzHeaderStyle == 1) ? Math.min(Number(o.ls),0.2) : Number(o.ls));
          tf.filters = [];
          tf.text = "";
          tf.defaultTextFormat = f;
@@ -13494,6 +14136,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hzUC(s:String) : String
       {
          if(s == null) { return ""; }
+         if(this.hzHasCjk(s)) { return s; }
          if(this.hzHeaderStyle == 0) { return s.toUpperCase(); }
          var w:Array = s.split(" ");
          var i:int = 0;
@@ -13560,7 +14203,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try { fn = this.hzFontName(o && o.face != null ? String(o.face) : null); } catch(eFn:Error) { fn = ""; }
          // FontFace / TextScale / HeaderStyle / resolved face (late fontlibs) must miss. Include them so F11 apply misses.
          if(o && o.twTxt === txt && o.twFs == o.fs && o.twLsVal == o.ls && o.twLsMode == this.hzLsMode
-            && o.twFace == this.hzFontFace && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
+            && o.twFace == this.hzFontFace && o.twFam === this.hzFontFam && o.twTs == this.hzTextScale && o.twHdr == this.hzHeaderStyle
             && o.twFn === fn && o.twSz === o.szAp && !isNaN(Number(o.twW)))
          {
             if(this.hzPerfOn && this.hzPerfN) { this.hzPerfN.twHit++; }
@@ -13597,6 +14240,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             o.twLsVal = o.ls;
             o.twLsMode = this.hzLsMode;
             o.twFace = this.hzFontFace;
+            o.twFam = this.hzFontFam;
             o.twTs = this.hzTextScale;
             o.twHdr = this.hzHeaderStyle;
             o.twFn = fn;
@@ -14296,6 +14940,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private var hzQsHdr:int = -1;
       private var hzQsTs:Number = NaN;
       private var hzQsFace:int = -1;
+      private var hzQsFam:String = null;
+      private var hzQsLive:String = null;
       private var hzQsFont:String = null;
       private var hzQsFMod:* = null;
       private var hzQsLs:int = -2;
@@ -14338,7 +14984,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try
          {
             if(this.hzQName !== this.hzQsName || this.hzQObjStr !== this.hzQsObj || this.hzQDistStr !== this.hzQsDist) { return false; }
-            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzLsMode != this.hzQsLs) { return false; }
+            if(this.hzHeaderStyle != this.hzQsHdr || this.hzTextScale !== this.hzQsTs || this.hzFontFace != this.hzQsFace || this.hzFontFam !== this.hzQsFam || this.hzFontLive !== this.hzQsLive || this.hzLsMode != this.hzQsLs) { return false; }
             if(this.hzFont !== this.hzQsFont || this.hz30Mod["font"] !== this.hzQsFMod) { return false; }
             if(this.hz27QL !== this.hzQsQL || this.hz27QLD !== this.hzQsQLD || this.hz27QL.length != this.hzQsQLN) { return false; }
             if(this.hz27QH !== this.hzQsH || this.HorizonQuest_mc !== this.hzQsMc) { return false; }
@@ -14400,6 +15046,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzQsHdr = this.hzHeaderStyle;
             this.hzQsTs = this.hzTextScale;
             this.hzQsFace = this.hzFontFace;
+            this.hzQsFam = this.hzFontFam;
+            this.hzQsLive = this.hzFontLive;
             this.hzQsFont = this.hzFont;
             this.hzQsFMod = this.hz30Mod["font"];
             this.hzQsLs = this.hzLsMode;
@@ -14522,7 +15170,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.HorizonCard_mc.addChild(p);
          this.hzJ19Body = new Sprite(); p.addChild(this.hzJ19Body);
          this.hzJ19Glyph = new Sprite(); this.hzJ19Glyph.x = 40; this.hzJ19Glyph.y = 34; p.addChild(this.hzJ19Glyph);
-         this.hzJ19Title = this.hzT(p,"JETPACK",78,9,170,14,"sb","main",2);
+         this.hzJ19Title = this.hzT(p,this.hzLt("JETPACK"),78,9,170,14,"sb","main",2);
          this.hzHdr19(this.hzJ19Title);
          this.hzChip13(this.hzJ19Title,"Jetpack");
          this.hzJ19Bolt = new Sprite(); this.hzJ19Bolt.x = 83; this.hzJ19Bolt.y = 39; p.addChild(this.hzJ19Bolt);
@@ -14972,7 +15620,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hzE19Cnt = this.hzT(p,"--",0,36,140,28,"bd","main",0.5,"right");
          this.hzE19Res = this.hzT(p,"",0,54,120,14,"rg","dim",0.4);
          this.hzE19Chip = new Sprite(); p.addChild(this.hzE19Chip);
-         this.hzE19RelT = this.hzT(this.hzE19Chip,"RELOAD",0,0,80,10,"sb","col",1.2,"left",HZ_AMB);
+         this.hzE19RelT = this.hzT(this.hzE19Chip,this.hzLt("RELOAD"),0,0,80,10,"sb","col",1.2,"left",HZ_AMB);
          this.hzE19Chip.visible = false;
          this.hzE19Draw();
       }
@@ -15215,7 +15863,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                var cg:* = this.hzE19Chip.graphics;
                cg.clear();
                var ccol:uint = empty ? HZ_RED : HZ_AMB;
-               this.hzE19RelT.text = "RELOAD";
+               this.hzE19RelT.text = this.hzLt("RELOAD");
                this.hzTxtTint(this.hzE19RelT,ccol);
                var cw:Number = this.hzTW(this.hzE19RelT) + 16;
                cg.lineStyle(1,this.hzIconCol(ccol),0.9,true);
@@ -16021,9 +16669,9 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       {
          var s:String = this.hzT19Trim(raw);
          if(s.length == 0) { return ""; }
-         if(s.indexOf("$") < 0) { return this.hzT19OneLine(s); }
          var v:String = this.hzT19Trim(this.hzT19VanLbl(aw,t,hold));
          if(v.length > 0 && v.indexOf("$") < 0) { return this.hzT19OneLine(v); }
+         if(s.indexOf("$") < 0) { return this.hzT19OneLine(this.hzLt(s)); }
          return this.hzT19OneLine(this.hzT19Trim(this.hzT19Xl(s)));
       }
 
@@ -17563,11 +18211,16 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
 
       private function hzT19Tick() : void
       {
+         // Hover + Container off: restore even when only hzTgOrig is nonempty
+         // (KeepHold / HideA snapshots with an empty hide-walk list). Skipping
+         // that left vanilla TALK/TRADE at alpha 0 and Horizon's circle +
+         // leader line on screen. Language apply also calls hzT19Off when off.
          if(!this.hzShowTarget)
          {
-            if((this.HorizonTarget_mc && this.HorizonTarget_mc.visible) || (this.hzTg19 && this.hzTg19.visible) || (this.hzTgHidden != null && this.hzTgHidden.length > 0))
+            if((this.HorizonTarget_mc && this.HorizonTarget_mc.visible) || (this.hzTg19 && this.hzTg19.visible) || (this.hzTgHidden != null && this.hzTgHidden.length > 0) || (this.hzTgOrig != null && this.hzTgOrig.length > 0))
             {
                this.hzT19Off();
+               this.hzT19GiveRing();
             }
             return;
          }
@@ -17782,16 +18435,55 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          catch(eV:Error) { }
       }
 
+      // Purpose: put the live vanilla targeting ring (Reticle_mc + current
+      // leader-line Shapes) in the HideA shown state. Orig can hold stale
+      // Shape children (RolloverReticle recreates them), so restore of the
+      // snapshot list is not enough on a live F11 toggle-off. ObjectRing
+      // OFF hid those clips while Horizon owned the prompt; after ShowTarget
+      // falls they must come back this frame. Not per-frame: the toggle-off
+      // edge, language apply with Hover off, and the first off tick that
+      // still has snapshots. Does not touch the activation widget.
+      // Inputs: HUDRolloverWidget. Outputs: alpha 1 / visible true on the
+      // current ring clips. Author: Moragar. Last modified: 2026-11-27.
+      private function hzT19GiveRing() : void
+      {
+         var rw:Object = null;
+         try { rw = this.RolloverWidget_mc; } catch(e0:Error) { rw = null; }
+         if(rw == null) { return; }
+         try { this.hzT19ShowClip(rw.Reticle_mc as DisplayObject); } catch(e1:Error) { }
+         try
+         {
+            var c:DisplayObjectContainer = rw as DisplayObjectContainer;
+            var i:int = 0;
+            while(c && i < c.numChildren)
+            {
+               var ch:DisplayObject = c.getChildAt(i);
+               if(ch && !(ch is DisplayObjectContainer) && !(ch is TextField)) { this.hzT19ShowClip(ch); }
+               i++;
+            }
+         }
+         catch(e2:Error) { }
+      }
+      private function hzT19ShowClip(d:DisplayObject) : void
+      {
+         if(d == null) { return; }
+         if(d.alpha != 1) { d.alpha = 1; }
+         if(d.visible != true) { d.visible = true; }
+      }
+
       // Purpose: Hover + Container off, on that setting edge only. Restore every snapshotted vanilla
       // prompt property (alpha and visible) and hide Horizon's card. HideA of art that was still at
       // alpha 0 (holder rollOn / Header AnimIn) restores 1 so the name, panel and TALK/TRADE row
       // come back; unused key boxes keep their snapshotted visible=false. Does not hard-code
-      // holder/activation to 1. The per-frame hide walk does not run.
+      // holder/activation to 1. Then force-shows the live ObjectRing clips (circle + leader)
+      // because orig can point at Shape children that RolloverReticle already replaced.
+      // The per-frame hide walk does not run.
       // Inputs: none. Outputs: vanilla prompt shown (leader line plus name and button row); Horizon card off.
-      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap. Author: Moragar. Last modified: 2026-11-27.
+      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap, hzT19GiveRing. Author: Moragar. Last modified: 2026-11-27.
       private function hz38GiveBackVanilla() : void
       {
          this.hzT19Off();
+         this.hzT19GiveRing();
          this.hzT19HcValid = false;
          this.hzT19HcDue = true;
          this.hz38VanShown = true;
@@ -18937,7 +19629,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          var f:Sprite = new Sprite(); c.addChild(f); this.hz26ChF = f;
          this.hz26ChG = new Sprite(); f.addChild(this.hz26ChG);
          var W:Number = HZ_CH_W;
-         this.hz26ChName = this.hzT(f,"CHARACTER",76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
+         this.hz26ChName = this.hzT(f,"Character",76,14,W - 90,15,"sb","main",2); this.hzHdr19(this.hz26ChName);
          this.hz26ChSpT = this.hzT(f,"",0,0,100,10,"bd","col",0.8,"left",0xFFFFFF);
          this.hz26ChSpT.visible = false;
          this.hz26ChCr = this.hzT(f,"",W - 14 - 150,15,150,14,"sb","main",0.5,"right");
@@ -18945,7 +19637,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz26ChXpT = this.hzT(f,"",W - 14 - 200,46,200,12,"sb","mut",0.4,"right");
          this.hz26ChXpBar = new Sprite(); this.hz26ChXpBar.x = 76; this.hz26ChXpBar.y = 70; f.addChild(this.hz26ChXpBar);
          this.hz26ChNext = this.hzT(f,"",W - 14 - 200,80,200,11,"sb","dim",0.6,"right");
-         this.hz26ChML = this.hzT(f,"MASS",44,114,160,11,"sb","mut",1.6);
+         this.hz26ChML = this.hzT(f,this.hzLt("MASS"),44,114,160,11,"sb","mut",1.6);
          this.hz26ChMV = this.hzT(f,"",W - 14 - 200,110,200,14,"sb","main",0.5,"right");
          // 0.43.6 (round 3 C): the compact strip is built the first time the card is drawn in compact form (hz26CharSync)
          addChild(c);
@@ -19056,7 +19748,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             this.hzT19Line(g,104,W,false);
             var mc:uint = this.hzIconCol(over ? HZ_RED : HZ_ACCENT);
             this.hz26Weight(g,26,124,mc,0.9);
-            this.hz26ChML.text = over ? "OVERWEIGHT" : "MASS";
+            this.hz26ChML.text = over ? this.hzLt("OVERWEIGHT") : this.hzLt("MASS");
             this.hzTxtTint(this.hz26ChML,over ? HZ_RED : null);
             this.hzTxtTop(this.hz26ChML,114);
             this.hz26ChMV.text = mS;
@@ -19320,7 +20012,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz26PowGly = new Sprite(); r.addChild(this.hz26PowGly);
          this.hz26PowHold = new Sprite(); r.addChild(this.hz26PowHold);
          this.hz26GrenT = this.hzT(r,"",0,0,60,12,"bd","main",0.5);   // v0.28: grenade chip text
-         this.hz26PowL = this.hzT(r,"POWER",0,0,80,12,"sb","mut",1.6);
+         this.hz26PowL = this.hzT(r,this.hzLt("POWER"),0,0,80,12,"sb","mut",1.6);
          this.hz26PowP = this.hzT(r,"",0,0,60,14,"sb","main",0.5,"right");
          r.visible = false;
       }
@@ -19536,7 +20228,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
                g.lineStyle();
                this.hz26PowIcon(tcx,cy,9,ready);
                lx += 36;
-               this.hz26PowL.text = ready ? "READY" : "POWER";
+               this.hz26PowL.text = ready ? this.hzLt("READY") : this.hzLt("POWER");
                this.hzTxtTint(this.hz26PowL,ready ? HZ_VIO : null);
                this.hz26PowL.x = lx; this.hzTxtTop(this.hz26PowL,cy - 8);
                this.hz26PowP.text = Math.round(pf * 100) + "%";
@@ -22331,8 +23023,32 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          try
          {
             var fv:int = this.hzSetPend ? int(this.hzSetPend.FontFace) : this.hzFontFace;
-            for each(var r0:Object in rows) { if(r0.k == "FontFace" && fv == 3) { r0.note = this.hz34SemiNote(); } }
-            if(this.hz30FontAvail()) { return rows; }
+            var pack:Boolean = this.hz30FontAvail();
+            for each(var r0:Object in rows)
+            {
+               if(r0.k == "FontFace" && fv == 3) { r0.note = this.hz34SemiNote(); }
+               if(r0.k == "Font")
+               {
+                  r0.dis = !pack || fv != 1;
+                  var ids:Array = [];
+                  var names:Array = [];
+                  var i:int = 0;
+                  while(i < HZ_FONT_FAM_IDS.length)
+                  {
+                     var id:String = String(HZ_FONT_FAM_IDS[i]);
+                     if(this.hzFontCovered(id)) { ids.push(id); names.push(HZ_FONT_FAM_NAMES[i]); }
+                     i++;
+                  }
+                  if(ids.length == 0) { ids = ["Exo2"]; names = ["EXO 2"]; }
+                  r0.vals = ids;
+                  r0.names = names;
+                  var saved:String = this.hzFontFamNorm(this.hzSetPend != null && this.hzSetPend.Font != undefined ? String(this.hzSetPend.Font) : this.hzFontFam);
+                  if(!pack) { r0.note = "Horizon font not installed: FONT FAMILY needs it, the game font is used (your choice is kept)."; }
+                  else if(fv != 1) { r0.note = "Used when FONT is Exo 2."; }
+                  else if(!this.hzFontCovered(saved)) { r0.note = this.hzLt("Not available for this language."); }
+               }
+            }
+            if(pack) { return rows; }
             for each(var r:Object in rows)
             {
                if(r.k == "FontFace")
@@ -23166,14 +23882,15 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          }
          this.hzSetHits.push({"id":"bar" + i,"x":bx,"y":cy - 10,"w":bw,"h":20,"bx":bx,"bw":bw});
          var pillH:Number = HZ51_BTN_H;
-         var ct:TextField = this.hz51T(b,glob ? "GLOBAL" : "CUSTOM",0,cy - 8,120,11,"sb",glob ? uint(T.txt) : acc,1.2);
+         var zlab:String = this.hzLt(glob ? "GLOBAL" : "CUSTOM");
+         var ct:TextField = this.hz51T(b,zlab,0,cy - 8,120,11,"sb",glob ? uint(T.txt) : acc,1.2);
          var cw:Number = Math.max(HZ51_CTRL_W > 88 ? 72 : 72, Math.round(this.hzTW(ct) + 20));
          var cx:Number = Math.round(bx - 12 - cw);
          var py:Number = Math.round(cy - pillH / 2);
          b.removeChild(ct);
          g.beginFill(acc,glob ? 0.08 : 0.18); g.drawRoundRect(cx,py,cw,pillH,6,6); g.endFill();
          this.hz34Ring(b,cx,py,cw,pillH,6,glob ? uint(T.line) : acc,glob ? 0.8 : 0.9,1);
-         this.hz51T(b,glob ? "GLOBAL" : "CUSTOM",cx + cw / 2,py + 4,cw,11,"sb",glob ? uint(T.txt) : acc,1.2,"center");
+         this.hz51T(b,zlab,cx + cw / 2,py + 4,cw,11,"sb",glob ? uint(T.txt) : acc,1.2,"center");
          this.hzSetHits.push({"id":"zg" + i,"x":cx,"y":py,"w":cw,"h":pillH});
       }
 
@@ -25351,7 +26068,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var id:String = String(st[i]);
             var f:Number = Number(fr[id]);
             var col:uint = this.hz41VitCol(id,f);
-            var lab:String = String(HZ41_VIT_LBL[HZ41_VIT_IDS.indexOf(id)]);
+            var lab:String = this.hzLt(String(HZ41_VIT_LBL[HZ41_VIT_IDS.indexOf(id)]));
             var val:String = Math.round(f * 100) + "%";
             var lx:Number; var ly:Number; var lw:Number; var vx:Number; var vy:Number; var vw:Number; var bx:Number; var by:Number; var bw:Number; var bh:Number;
             if(cmp && hor) { var x0:Number = 14 + i * (cw + 12); lx = x0; ly = 5; lw = cw; vx = x0; vy = 5; vw = cw; bx = x0; by = 27; bw = cw; bh = 4; }
@@ -27600,13 +28317,13 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          this.hz43O2L = this.hzT(this.hz43Face,"O2",-HZ43_R + 8,-8,40,13,"sb","main",1);
          this.hz43CO2L = this.hzT(this.hz43Face,"CO2",HZ43_R - 52,-8,48,13,"sb","main",1,"right");
          this.hz43LocT = this.hzT(this.hz43Face,"12:00",-90,-6,180,16,"sb","main",0,"center");
-         this.hz43LocL = this.hzT(this.hz43Face,"LOCAL/GAME",-90,22,180,13,"sb","dim",0.6,"center");
+         this.hz43LocL = this.hzT(this.hz43Face,this.hzL("hud.hud_label.local_game","LOCAL/GAME"),-90,22,180,13,"sb","dim",0.6,"center");
          this.hz43RealT = this.hzT(this.hz43Face,"12:00",-80,40,160,13,"rg","mut",0,"center");
-         this.hz43RealL = this.hzT(this.hz43Face,"PC/REAL",-70,60,140,13,"sb","dim",0.6,"center");
+         this.hz43RealL = this.hzT(this.hz43Face,this.hzL("hud.hud_label.pc_real","PC/REAL"),-70,60,140,13,"sb","dim",0.6,"center");
          this.hz43BodyT = this.hzT(this.hz43Face,"--",-100,84,200,14,"sb","main",1.2,"center");
          this.hz43TempT = this.hzT(this.hz43Face,"--",-80,104,160,13,"sb","acc",0.4,"center");
          this.hz43PmT = this.hzT(this.hz43Face,"PM",-16,-58,36,13,"sb","dim",0.4,"center");
-         this.hz43DayT = this.hzT(this.hz43Face,"DAY",-22,-40,48,13,"sb","main",0.6,"center");
+         this.hz43DayT = this.hzT(this.hz43Face,this.hzLt("DAY"),-22,-40,48,13,"sb","main",0.6,"center");
          this.hz43AttT = this.hzT(this.hz43Face,"",-90,120,180,13,"sb","col",0.4,"center",HZ43_ATTN);
          this.hz43AttT.visible = false;
          this.hz43Cards = [];
@@ -27685,8 +28402,8 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             tg.lineTo(-84,ay + 6);
             tg.endFill();
          }
-         this.hz43SetTx(this.hz43LocL,"LOCAL/GAME");
-         this.hz43SetTx(this.hz43RealL,"PC/REAL");
+         this.hz43SetTx(this.hz43LocL,this.hzL("hud.hud_label.local_game","LOCAL/GAME"));
+         this.hz43SetTx(this.hz43RealL,this.hzL("hud.hud_label.pc_real","PC/REAL"));
          this.hz43SetTx(this.hz43O2L,"O2");
          this.hz43SetTx(this.hz43CO2L,"CO2");
          this.hz43SetTx(this.hz43LocT,this.hz43Ok != 0 ? this.hzFmtLocGame(this.hz43H,this.hz43M,this.hz43Ut != 0) : "--");

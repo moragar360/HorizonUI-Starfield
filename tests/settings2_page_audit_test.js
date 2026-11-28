@@ -61,6 +61,8 @@ const HZ_RULE_NAMES = ["ALWAYS","COMBAT ONLY","HIDE IN SHIP","WEAPON DRAWN ONLY"
 const HZ_SET_TABS = ["CARDS","APPEARANCE","SCANNER","COMMS","SYSTEM"];
 const HZ_FONT_NAMES = ["EXO 2","ROBOTO","GAME FONT","GAME FONT (SEMIBOLD)"];
 const HZ_FONT_IDS = [1,2,0,3];
+const HZ_FONT_FAM_IDS = ["Exo2","Saira","Orbitron","Titillium"];
+const HZ_FONT_FAM_NAMES = ["EXO 2","SAIRA","ORBITRON","TITILLIUM WEB"];
 const HZ_TONE_NAMES = ["AUTO","LIGHT TEXT","DARK TEXT"];
 const HZ_HDRSTYLE_NAMES = ["CAPS + SPACED","TITLE CASE"];
 const HZ_SET_SCRH = [0,720,900,1080,1200,1440,1600,2160];
@@ -79,6 +81,8 @@ const PRELUDE = [
 	"const HZ_SET_TABS = " + JSON.stringify(HZ_SET_TABS),
 	"const HZ_FONT_NAMES = " + JSON.stringify(HZ_FONT_NAMES),
 	"const HZ_FONT_IDS = " + JSON.stringify(HZ_FONT_IDS),
+	"const HZ_FONT_FAM_IDS = " + JSON.stringify(HZ_FONT_FAM_IDS),
+	"const HZ_FONT_FAM_NAMES = " + JSON.stringify(HZ_FONT_FAM_NAMES),
 	"const HZ_TONE_NAMES = " + JSON.stringify(HZ_TONE_NAMES),
 	"const HZ_HDRSTYLE_NAMES = " + JSON.stringify(HZ_HDRSTYLE_NAMES),
 	"const HZ_SET_SCRH = " + JSON.stringify(HZ_SET_SCRH),
@@ -119,6 +123,10 @@ const host = {
 	},
 	hzSetPage: 0,
 	hzSetTab: 0,
+	hzL10nFiles: ["en"],
+	hzL10nGame: "en",
+	hzL10nGameName: "English",
+	hzLanguage: "auto",
 	hz31Page: 0,
 	hz37Cf: "",
 	hz31Val(k) { return k === "SubAutoPause" || k === "DlgAutoPause" ? 1 : 0; },
@@ -144,14 +152,20 @@ const host = {
 	hz40ScanRows() { return dummyFrom(as, "hz40ScanRows"); },
 	hz40PopupRows() { return dummyFrom(as, "hz40PopupRows"); },
 	hz31CommsRows() { return dummyFrom(as, "hz31CommsRows"); },
-	hz37Rows() { return dummyFrom(as, "hz37Rows"); }
+	hz37Rows() { return dummyFrom(as, "hz37Rows"); },
+	hzLt(en) { return String(en); },
+	hzL(k, d) { return d != null && String(d).length ? String(d) : String(k); },
+	hz51LocArr(a) { return a; },
+	hz51LocOne(r) { return r; },
+	hz51LocRows(out) { return out; }
 };
 
 for (const n of [
-	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
+	"hz51Copy","hz51ByKey","hz51Pick","hz51Help","hz51HelpMore","hz51HelpKey","hz51HelpOf","hz51Line","hz51On","hz51Mute","hz51Finish","hz51FbLog",
 	"hz51RuleRow","hz51Card","hz51AddCard","hz51Goto","hz51Unavail","hz51ModRow","hz51WrapMod","hz51ModState","hz51ModBadge",
 	"hz51Modules","hz51Msglog","hz51Quick","hz51Fallback","hz51Cards","hz51Appear","hz51Scan","hz51Comms","hz51CommsMap",
-	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb"
+	"hz51System","hz51Side","hz51Pages","hz51PageIndex","hz51PageClamp","hz51Rows","hz51Crumb",
+	"hz51LangName","hz51LangOpts","hzExo2Can","hz51Exo2Text","hz51Exo2Arr","hz51LangCode"
 ]) {
 	bind(host, n);
 }
@@ -178,6 +192,10 @@ for (let tab = 0; tab < 5; tab++) {
 		expect(real.length > 0, label + " has more than 0 rows (" + real.length + ")");
 	}
 }
+
+const loc = pageRows.find((p) => p.id === "loc");
+expect(!!loc && loc.keys.indexOf("Language") >= 0 && loc.keys.indexOf("_l10nGame") >= 0,
+	"SYSTEM > LANGUAGE / LOCALIZATION has detected language and the Language override");
 
 const sta = pageRows.find((p) => p.id === "sta");
 const com = pageRows.find((p) => p.id === "com");
@@ -237,7 +255,7 @@ for (const k of [...oldKeys].sort()) {
 expect(missing.length === 0, "every old F11 setting key maps to a Settings 2.0 row" + (missing.length ? (" missing: " + missing.join(", ")) : ""));
 expect(dupes.length === 0, "no old F11 key maps to two Settings 2.0 rows" + (dupes.length ? (" dupes: " + dupes.join("; ")) : ""));
 expect(keyMap.Compact === undefined, "Compact Mode stays in the header, not a list row");
-expect(pageRows.length === 35, "audit walked all 35 sidebar pages (found " + pageRows.length + ")");
+expect(pageRows.length === 36, "audit walked all 36 sidebar pages (found " + pageRows.length + ")");
 
 console.log("--- page row counts ---");
 for (const p of pageRows) {
