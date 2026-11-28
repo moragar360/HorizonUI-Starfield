@@ -1,7 +1,7 @@
 // Horizon localization checker: missing / duplicate / obsolete keys, and
 // placeholder parity. Run from the repo root: node tests/l10n_check_test.js
-// de.json, zh-cn.json, es.json, and es-mx.json are required. Other Steam stems
-// (fr, it, ja, pl, pt-br) may be absent: that is English fallback, not a failure.
+// de.json, zh-cn.json, es.json, es-mx.json, and pl.json are required. Other Steam
+// stems (fr, it, ja, pt-br) may be absent: that is English fallback, not a failure.
 // Fixtures that must fail write under test_scratch, never the system temp folder.
 // Author: Moragar. Last modified: 2026-11-27.
 "use strict";
@@ -71,6 +71,7 @@ expect(fs.existsSync(path.join(locDir, "zh-cn.json")), "shipped Localization/zh-
 expect(fs.existsSync(path.join(locDir, "de.json")), "shipped Localization/de.json is present");
 expect(fs.existsSync(path.join(locDir, "es.json")), "shipped Localization/es.json is present");
 expect(fs.existsSync(path.join(locDir, "es-mx.json")), "shipped Localization/es-mx.json is present");
+expect(fs.existsSync(path.join(locDir, "pl.json")), "shipped Localization/pl.json is present");
 expect(!fs.existsSync(path.join(locDir, "ko.json")), "Korean is not a shipped table");
 
 const en = loadLang(locDir, "en");
@@ -98,7 +99,7 @@ expect(!JSON.stringify(en).includes("$HEALTH"), "Horizon-owned strings are not w
 for (const code of langs) {
 	if (code === "en") continue;
 	const table = loadLang(locDir, code);
-	const required = code === "de" || code === "zh-cn" || code === "es" || code === "es-mx";
+	const required = code === "de" || code === "zh-cn" || code === "es" || code === "es-mx" || code === "pl";
 	if (!required && !table) {
 		expect(true, code + ": optional until a translator ships it (missing is English fallback)");
 		continue;
@@ -112,6 +113,48 @@ for (const code of langs) {
 	expect(r.extra.length === 0, code + ": no obsolete keys" + (r.extra.length ? " (" + r.extra.slice(0, 8).join(", ") + ")" : ""));
 	expect(r.phBad === 0, code + ": placeholders match English");
 }
+
+function exo2Can(s) {
+	for (let i = 0; i < s.length;) {
+		const cp = s.codePointAt(i);
+		const ok = cp <= 0x024F
+			|| (cp >= 0x0300 && cp <= 0x036F)
+			|| (cp >= 0x1E00 && cp <= 0x1EFF)
+			|| (cp >= 0x2000 && cp <= 0x206F)
+			|| (cp >= 0x20A0 && cp <= 0x20CF);
+		if (!ok) return false;
+		i += cp > 0xFFFF ? 2 : 1;
+	}
+	return true;
+}
+
+const plPath = path.join(locDir, "pl.json");
+const plBuf = fs.readFileSync(plPath);
+expect(!(plBuf.length >= 3 && plBuf[0] === 0xEF && plBuf[1] === 0xBB && plBuf[2] === 0xBF),
+	"pl.json is UTF-8 with no BOM");
+let plJsonOk = false;
+let plObj = null;
+try {
+	plObj = JSON.parse(plBuf.toString("utf8"));
+	plJsonOk = true;
+} catch (e) {
+	plJsonOk = false;
+}
+expect(plJsonOk, "pl.json is valid UTF-8 JSON");
+const plFlat = {};
+if (plObj) flatten(plObj, "", plFlat);
+let plGlyphBad = 0;
+for (const k of Object.keys(plFlat)) {
+	if (!exo2Can(String(plFlat[k]))) plGlyphBad++;
+}
+expect(plGlyphBad === 0, "pl.json Exo 2 glyph check (Latin / Polish diacritics)");
+expect(plObj && plObj._meta && plObj._meta.language === "pl" && plObj._meta.languageName === "Polski",
+	"pl.json _meta language is Polski");
+expect(plFlat["settings.language.pl"] === "POLSKI",
+	"Language dropdown shows Polski natively (POLSKI)");
+expect(plFlat["hud.health"] === "ZDROWIE", "pl.json hud.health is ZDROWIE");
+expect(exo2Can("Polski") && exo2Can("POLSKI") && exo2Can("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"),
+	"Exo 2 can draw Polski and Polish diacritics");
 
 const scratch = path.join(root, "test_scratch", "l10n_check_" + process.pid);
 fs.mkdirSync(scratch, { recursive: true });

@@ -209,6 +209,51 @@ const TABLES = {
 			saving: "Guardando"
 		}
 	},
+	pl: {
+		dlg: { of: "Z", above: "POWYŻEJ" },
+		comms: { level_up_you_are_now_level_n: "Awans! Jesteś teraz na poz. {n}." },
+		scan: {
+			landing_zone: "Strefa lądowania",
+			follower: "Towarzysz",
+			discovered: "Odkryto",
+			companion_ship: "Statek towarzysza",
+			still_some_to_find_here: "tu jeszcze coś zostało",
+			none_in_this_biome: "brak w tym biomie",
+			nothing_left_to_find_here: "tu już nic nie zostało",
+			no_bounty: "Brak nagrody",
+			no_social_skill_to_use: "brak umiej. społecznej"
+		},
+		ui: {
+			all: "WSZYSTKO",
+			pin: "PRZYPNIJ",
+			horizon_ui_message_log: "HORIZON UI · DZIENNIK",
+			find_ellipsis: "Szukaj...",
+			find_keyboard_only: "Szukaj (tylko klawiatura)",
+			clear_this_session: "Wyczyścić tę sesję?",
+			"Removes {n} shown unpinned messages. Hidden messages stay. Can't be undone.": "Usuwa {n} pokazanych nieprzypiętych wiadomości. Ukryte zostają. Nie cofniesz.",
+			pinned_n_cap: "PRZYPĘTE {n} / {cap}",
+			today_this_session: "Dziś · ta sesja",
+			this_session: "Ta sesja",
+			today_earlier: "Dziś · wcześniej",
+			earlier: "Wcześniej",
+			min_ago: " min temu",
+			h_ago: " godz. temu",
+			d_ago: " dn. temu",
+			no_messages_for_the_types_that_are_shown_stored: "Brak wiadomości dla pokazanych typów. Zapisane zostają.",
+			"Starts empty. Messages from before this log was on cannot be recovered.": "Na początku pusty. Wiadomości sprzed włączenia dziennika nie da się odzyskać.",
+			from_a_later_point: "od późniejszego momentu",
+			local: "lokalny",
+			memory_only_existing_files_stay_on_disk: "Tylko pamięć. Istniejące pliki zostają na dysku.",
+			show_hides_rows_in_this_log_record_chooses_what: "POKAŻ ukrywa wiersze w tym dzienniku. ZAPISUJ wybiera, co jest zapisywane.",
+			old_characters_n_files: "STARE POSTACIE ({n} PLIKÓW)",
+			clear_all_history: "Wyczyścić całą historię?",
+			"Removes every unpinned message for this character. Pins stay. Can't be undone.": "Usuwa każdą nieprzypiętą wiadomość tej postaci. Przypięte zostają. Nie cofniesz.",
+			read_only_the_current_character_is_not_listed: "Tylko odczyt. Bieżąca postać nie jest na liście.",
+			no_other_character_files: "Brak plików innych postaci.",
+			messages: "wiadomości",
+			saving: "Zapisywanie"
+		}
+	},
 	"zh-cn": {
 		dlg: { of: "/", above: "上方" },
 		comms: { level_up_you_are_now_level_n: "升级！你现在是等级 {n}。" },

@@ -43,10 +43,12 @@ const locZh = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI",
 const locDe = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "de.json");
 const locEs = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "es.json");
 const locEsMx = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "es-mx.json");
+const locPl = path.join(__dirname, "..", "Data", "SFSE", "Plugins", "HorizonUI", "Localization", "pl.json");
 expect(fs.existsSync(locZh), "shipped zh-cn.json is present so the Language dropdown can list it");
 expect(fs.existsSync(locDe), "shipped de.json is present");
 expect(fs.existsSync(locEs), "shipped es.json is present");
 expect(fs.existsSync(locEsMx), "shipped es-mx.json is present");
+expect(fs.existsSync(locPl), "shipped pl.json is present");
 const langName = fnText(as, "hz51LangName").body;
 const langCode = fnText(as, "hz51LangCode").body;
 expect(/zh-cn/.test(langName) && /zhhans/.test(langCode) && /Simplified Chinese/.test(langName),

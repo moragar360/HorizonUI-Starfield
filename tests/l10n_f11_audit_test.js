@@ -93,23 +93,26 @@ const de = {}; flatten(load("de"), "", de);
 const zh = {}; flatten(load("zh-cn"), "", zh);
 const es = {}; flatten(load("es"), "", es);
 const esmx = {}; flatten(load("es-mx"), "", esmx);
+const pl = {}; flatten(load("pl"), "", pl);
 function detailsOf(table, k) {
 	return table.settings && table.settings.details ? table.settings.details[k] : undefined;
 }
-const enJ = load("en"), deJ = load("de"), zhJ = load("zh-cn"), esJ = load("es"), mxJ = load("es-mx");
-let missingEn = 0, missingDe = 0, missingZh = 0, missingEs = 0, missingMx = 0;
+const enJ = load("en"), deJ = load("de"), zhJ = load("zh-cn"), esJ = load("es"), mxJ = load("es-mx"), plJ = load("pl");
+let missingEn = 0, missingDe = 0, missingZh = 0, missingEs = 0, missingMx = 0, missingPl = 0;
 for (const k of keys) {
 	if (!detailsOf(enJ, k)) missingEn++;
 	if (!detailsOf(deJ, k)) missingDe++;
 	if (!detailsOf(zhJ, k)) missingZh++;
 	if (!detailsOf(esJ, k)) missingEs++;
 	if (!detailsOf(mxJ, k)) missingMx++;
+	if (!detailsOf(plJ, k)) missingPl++;
 }
 expect(missingEn === 0, "en.json has settings.details for every hz51Help case (" + keys.length + ")");
 expect(missingDe === 0, "de.json has settings.details for every hz51Help case");
 expect(missingZh === 0, "zh-cn.json has settings.details for every hz51Help case");
 expect(missingEs === 0, "es.json has settings.details for every hz51Help case");
 expect(missingMx === 0, "es-mx.json has settings.details for every hz51Help case");
+expect(missingPl === 0, "pl.json has settings.details for every hz51Help case");
 
 expect(en["settings.line.ScanHighlightArea"] && en["settings.line.ScanHighlightArea"].indexOf("How far from the screen center") === 0,
 	"English Highlight Area row line is the first sentence");
@@ -133,6 +136,13 @@ expect(es["settings.details.modban"] && es["settings.details.modban"].indexOf("T
 	"Spain Spanish module details are translated");
 expect(esmx["hud.hud_label.press"] === "PRESIONA" && es["hud.hud_label.press"] === "PULSA",
 	"es-mx keeps Latin American wording over Spain");
+expect(pl["settings.line.ScanHighlightArea"] && pl["settings.line.ScanHighlightArea"].indexOf("How far") < 0,
+	"Polish Highlight Area row line is not English");
+expect(pl["settings.line.ScanCompactAll"] && /KOMPAKT/.test(pl["settings.line.ScanCompactAll"]),
+	"Polish Compact-all subtitle is translated");
+expect(pl["settings.details.modban"] && pl["settings.details.modban"].indexOf("This add-on") < 0,
+	"Polish module details are translated");
+expect(pl["hud.hud_label.press"] === "NACIŚNIJ", "Polish PRESS is NACIŚNIJ");
 
 const f11Draw = (insert + "\n" + draw).replace(/private function hz51Pv[A-Za-z]+\([\s\S]*?(?=\n      private function )/g, "");
 const rawHelp = f11Draw.match(/hz51T\(b,"[A-Za-z][^"]{12,}"/g) || [];
