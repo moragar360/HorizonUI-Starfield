@@ -118,7 +118,7 @@ const need = [
 	"hud.hud_label.all_time",
 	"settings.ui.all"
 ];
-for (const code of ["en", "de", "es", "es-mx", "zh-cn"]) {
+for (const code of ["en", "de", "es", "es-mx", "pl", "zh-cn"]) {
 	const j = JSON.parse(fs.readFileSync(path.join(loc, code + ".json"), "utf8"));
 	const flat = {};
 	flatten(j, "", flat);

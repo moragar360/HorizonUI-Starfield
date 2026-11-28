@@ -61,11 +61,14 @@ int main()
 		"MapCode: parent segments become auto");
 	Expect(MapCode("en\\de") == "auto" && MapCode("en/de") == "auto" && MapCode("C:en") == "auto",
 		"MapCode: path separators and drive letters become auto");
+	Expect(MapCode("pl") == "pl" && MapCode("polish") == "pl" && MapCode("pl-PL") == "pl",
+		"MapCode: Steam polish / sLanguage pl -> pl");
 	Expect(std::string(DisplayName("en")) == "English"
 			&& std::string(DisplayName("de")) == "Deutsch (German)"
 			&& std::string(DisplayName("esmx")).find("Latinoam") != std::string::npos
 			&& std::string(DisplayName("esmx")).find("Spanish, Latin America") == std::string::npos
 			&& std::string(DisplayName("ptbr")) == "Portugu\xC3\xAA" "s (Brasil)"
+			&& std::string(DisplayName("pl")) == "Polski (Polish)"
 			&& std::string(DisplayName("zhhans")) == "Simplified Chinese"
 			&& std::string(DisplayName("ja")) == "Japanese",
 		"DisplayName: Exo 2 native names; CJK stems are English-only");
@@ -354,13 +357,14 @@ int main()
 		"zh-cn.json is UTF-8 with no BOM");
 	{
 		const auto files = ListLangFiles(std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization"));
-		bool hasZh = false, hasEn = false;
+		bool hasZh = false, hasEn = false, hasPl = false;
 		for (const auto& f : files) {
 			if (f == "zh-cn") hasZh = true;
 			if (f == "en") hasEn = true;
+			if (f == "pl") hasPl = true;
 		}
-		Expect(hasEn && hasZh && !files.empty() && files.front() == "en",
-			"shipped Localization files are English first and include zh-cn");
+		Expect(hasEn && hasZh && hasPl && !files.empty() && files.front() == "en",
+			"shipped Localization files are English first and include zh-cn and pl");
 		const auto drop = DropdownCodes(std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization"));
 		bool hasMx = false, hasPt = false, hasKo = false;
 		for (const auto& f : drop) {
@@ -422,6 +426,31 @@ int main()
 			"shipped es-mx.json loads through the es then es-mx overlay chain");
 		Expect(Get(tes, "hud.hud_label.press", "X") == "PULSA" && Get(tmx, "hud.hud_label.press", "X") == "PRESIONA",
 			"es-mx overlay wins over es for Latin American wording");
+	}
+
+	const auto pl = ReadAll("Data/SFSE/Plugins/HorizonUI/Localization/pl.json");
+	Expect(!pl.empty() && Has(pl, "\"language\": \"pl\"") && Has(pl, "ZDROWIE") && Has(pl, "POLSKI"),
+		"shipped pl.json is Polish");
+	Expect(!(pl.size() >= 3 && static_cast<unsigned char>(pl[0]) == 0xEF
+			&& static_cast<unsigned char>(pl[1]) == 0xBB && static_cast<unsigned char>(pl[2]) == 0xBF),
+		"pl.json is UTF-8 with no BOM");
+	Expect(Exo2Can("Polski") && Exo2Can("POLSKI")
+			&& Exo2Can("\xC4\x85\xC4\x87\xC4\x99\xC5\x82\xC5\x84\xC3\xB3\xC5\x9B\xC5\xBA\xC5\xBC"),
+		"Exo2Can: Polski and Polish diacritics (a c e l n o s z with ogonek/acute/stroke)");
+	{
+		const auto shippedDir = std::filesystem::path("Data/SFSE/Plugins/HorizonUI/Localization");
+		const auto tpl = Load(shippedDir, "pl", "en");
+		Expect(tpl.usedCode == "pl" && Get(tpl, "hud.health", "X") == "ZDROWIE",
+			"shipped pl.json overlays English");
+		Expect(Get(tpl, "settings.language.pl", "X") == "POLSKI",
+			"Language dropdown shows Polski natively");
+		std::unordered_map<std::string, std::string> flat;
+		Expect(ParseFlat(pl, flat), "ParseFlat: shipped Polish table");
+		bool glyphOk = true;
+		for (const auto& kv : flat) {
+			if (!Exo2Can(kv.second)) { glyphOk = false; break; }
+		}
+		Expect(glyphOk, "every shipped pl.json string is in the Exo 2 glyph set");
 	}
 
 	if (g_fail) {

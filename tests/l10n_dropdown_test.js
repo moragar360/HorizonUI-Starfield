@@ -70,6 +70,8 @@ host.hz51LangOpts = toJs(insert, "hz51LangOpts").bind(host);
 
 expect(host.hzExo2Can("Deutsch (German)") && host.hzExo2Can("Español (Spanish)") && host.hzExo2Can("Français (French)"),
 	"Exo 2 can draw German / Spanish / French native names");
+expect(host.hzExo2Can("Polski") && host.hzExo2Can("POLSKI") && host.hzExo2Can("ąćęłńóśźż"),
+	"Exo 2 can draw Polski natively including Polish diacritics");
 expect(host.hzExo2Can("Polski") && host.hzExo2Can("Português (Brasil)") && host.hzExo2Can("Italiano (Italian)"),
 	"Exo 2 can draw Polish / Portuguese / Italian");
 expect(!host.hzExo2Can("日本語 (Japanese)") && !host.hzExo2Can("简体中文 (Simplified Chinese)"),
@@ -112,6 +114,8 @@ expect(host.hz51LangName("es-mx") === "Español (Latinoamérica)" && host.hz51La
 	"Latin American Spanish is the short native label");
 expect(host.hz51LangName("pt-br") === "Português (Brasil)",
 	"Brazilian Portuguese is the short native label");
+expect(host.hz51LangName("pl") === "Polski (Polish)" && host.hz51LangName("polish") === "Polski (Polish)",
+	"Polish dropdown entry is Polski natively with English in parentheses");
 expect(!String(host.hz51LangName("es-mx")).includes("...") && host.hz51LangName("es-mx").length <= 28,
 	"Latinoamérica label is short enough to fit");
 expect(!String(host.hz51LangName("pt-br")).includes("...") && host.hz51LangName("pt-br").length <= 24,
@@ -120,12 +124,15 @@ expect(!String(host.hz51LangName("pt-br")).includes("...") && host.hz51LangName(
 host.hzL10n = {
 	"settings.language.ja": "日本語 (Japanese)",
 	"settings.language.zh-cn": "简体中文 (Simplified Chinese)",
-	"settings.language.de": "Deutsch (German)"
+	"settings.language.de": "Deutsch (German)",
+	"settings.language.pl": "POLSKI"
 };
 expect(host.hz51LangName("ja") === "Japanese" && host.hz51LangName("zh-cn") === "Simplified Chinese",
 	"Final rule: overlay native CJK names still become English in Exo 2 (Clarification superseded)");
 expect(host.hz51LangName("de") === "Deutsch (German)",
 	"an overlay that stays in Exo 2 keeps the native name");
+expect(host.hz51LangName("pl") === "POLSKI",
+	"a Polish overlay keeps Polski natively in Exo 2");
 host.hzL10n = null;
 
 const steam = ["en", "de", "fr", "it", "es", "es-mx", "ja", "pl", "pt-br", "zh-cn"];
@@ -152,6 +159,8 @@ expect(/txt = this\.hz51Exo2Text\(txt\)/.test(draw) && /var maxTw:Number = this\
 	"closed chip and list width follow the longest Exo-2 label, not only the selected English row");
 
 const langs = en.settings.language;
+expect(langs.pl === "Polski (Polish)",
+	"en.json ships Polski natively for the Polish dropdown row");
 expect(langs.ja === "Japanese" && langs["zh-cn"] === "Simplified Chinese",
 	"en.json ships English-only ja / zh-cn dropdown labels");
 expect(langs["es-mx"] === "Español (Latinoamérica)" && langs["pt-br"] === "Português (Brasil)",
