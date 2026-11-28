@@ -3179,7 +3179,7 @@ int main()
 				"messages poll does not Invoke HUDMenu");
 		}
 		{
-			const auto slot = main.find("static int HzAddrSlot");
+			const auto slot = main.rfind("static int HzAddrSlot");
 			const auto next = main.find("static void HzAddrLogOnce", slot);
 			const auto body = slot != std::string::npos && next > slot ? main.substr(slot, next - slot) : std::string();
 			Expect(body.find("HzAddrLoad") == std::string::npos,
@@ -3455,7 +3455,7 @@ int main()
 			Expect(draw.find("hzMlHintSlot") != std::string::npos, "footer hints size to the label");
 			Expect(draw.find("hx += hk + 78") == std::string::npos, "footer hints do not use a fixed 70 px slot");
 			Expect(draw.find("hzMlAllTime") != std::string::npos, "ALL TIME sits clear of its switch");
-			Expect(draw.find("\"CLEAR SESSION\"") != std::string::npos, "the log page has a Clear session button");
+			Expect(draw.find("this.hzLt(\"CLEAR SESSION\")") != std::string::npos, "the log page has a Clear session button");
 			Expect(draw.find("this.hzMsglogEllip(tt,textW)") == std::string::npos,
 				"the log row does not cut the message with ...");
 			Expect(draw.find("\"h\":rh") != std::string::npos, "hit boxes use the wrapped row height");
@@ -3473,7 +3473,9 @@ int main()
 			Expect(confirm.find("Can't be undone.") != std::string::npos, "session clear says it can't be undone");
 			Expect(confirm.find("Hidden messages stay.") != std::string::npos, "session clear says hidden messages stay");
 			const auto list = AsFnBody(as, "private function hzMsglogList", "private function hzMsglogGroup");
-			Expect(list.find("PINNED \" + String(this.hzMlPinN) + \" / \" + String(this.hzMlPinCap)") != std::string::npos,
+			Expect(list.find("this.hzLt(\"PINNED {n} / {cap}\")") != std::string::npos
+				&& list.find("split(\"{n}\").join(String(this.hzMlPinN))") != std::string::npos
+				&& list.find("split(\"{cap}\").join(String(this.hzMlPinCap))") != std::string::npos,
 				"the PINNED header is the total pin count against the cap");
 		}
 		Expect(as.find("REACTIONS") != std::string::npos && as.find("ALL TIME") != std::string::npos,
@@ -3794,9 +3796,9 @@ int main()
 		}
 		Expect(as.find("hzSetKey(b,g,ox + 22,fy + 4,\"/\",uint(T.mut),24,13,13)") != std::string::npos,
 			"the Find keycap passes minPx 13");
-		Expect(as.find("hzSetBtn(b,g,bxr,by,\"BACK\",false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
+		Expect(as.find("hzSetBtn(b,g,bxr,by,this.hzLt(\"BACK\"),false,false,this.hzMlHover == \"back\",T,\"mlback\",13,13)") != std::string::npos,
 			"log buttons pass minPx 13");
-		Expect(as.find("hzSetBtn(b,g,br,btnY,\"CLEAR\",true,false,this.hzMlHover == \"cfok\",T,\"cfok\",13,13)") != std::string::npos,
+		Expect(as.find("hzSetBtn(b,g,br,btnY,this.hzLt(\"CLEAR\"),true,false,this.hzMlHover == \"cfok\",T,\"cfok\",13,13)") != std::string::npos,
 			"the confirm CLEAR button passes minPx 13");
 		ExpectEqI(TextScaleFloorPx(13, 13), 13, "TextScale 0.90 on a 13 px face stays 13");
 		ExpectEqI(TextScaleFloorPx(13, 0), 12, "without minPx, TextScale 0.90 drops 13 to 12");
