@@ -5315,7 +5315,9 @@
             try { this.hzE19Sync(); } catch(eEq:Error) { }
             try { this.hzPpLayout(); } catch(ePp:Error) { }
             this.hzT19Sig = "";
-            if(!this.hzShowTarget) { this.hzT19Off(); }
+            this.hz41VLay = "";
+            this.hz41VSig = "";
+            if(!this.hzShowTarget) { this.hzT19Off(); this.hzT19GiveRing(); }
          }
          catch(eApp:Error) { }
       }
@@ -6925,15 +6927,29 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
       private function hz51DrawHead(b:Sprite, g:*, T:Object, acc:uint, W:Number) : void
       {
          this.hz51Hair(g,0,HZ51_HEAD - 1,W,1,uint(T.txt),0.10);
-         this.hz51T(b,this.hzLt("HORIZON UI"),16,14,150,16,"bd",uint(T.txt),2.4);
-         this.hz51T(b,this.hzLt("SETTINGS"),16 + 128,18,90,11,"sb",uint(T.lab),2.0);
-         var hv:String = HZ_BUILD;
-         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
+         var lay:Object = this.hz51HeadSlots();
+         var maxR:Number = Number(lay.cx) - 8;
+         var title:String = this.hzLt("HORIZON UI");
+         var setn:String = this.hzLt("SETTINGS");
+         var t1:TextField = this.hz51T(b,title,16,14,280,16,"bd",uint(T.txt),2.4);
+         var tw1:Number = Math.ceil(this.hzTW(t1));
+         t1.width = tw1 + 4;
+         var sx:Number = 16 + tw1 + 10;
+         var t2:TextField = this.hz51T(b,setn,sx,18,280,11,"sb",uint(T.lab),2.0);
+         var tw2:Number = Math.ceil(this.hzTW(t2));
          var pillW:Number = 78;
-         var pillX:Number = 250;
+         var pillX:Number = sx + tw2 + 10;
+         if(pillX + pillW > maxR)
+         {
+            pillX = Math.max(sx + 36, maxR - pillW);
+            tw2 = Math.max(24, pillX - sx - 8);
+         }
+         t2.width = tw2 + 4;
          g.beginFill(uint(T.txt),0.04); g.drawRoundRect(pillX,12,pillW,24,12,12); g.endFill();
          this.hz51Stroke(g,pillX,12,pillW,24,uint(T.txt),0.16,12);
          g.beginFill(acc,1); g.drawCircle(pillX + 10,24,3); g.endFill();
+         var hv:String = HZ_BUILD;
+         if(this.hz42FileVerOk(this.hzDllFileVer)) { hv = this.hzDllFileVer; }
          this.hz51T(b,"v" + hv,pillX + 16,16,pillW - 22,11,"sb",uint(T.lab),0.4);
          this.hz51DrawCompact(b,g,T,acc,W);
       }
@@ -18018,6 +18034,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             if((this.HorizonTarget_mc && this.HorizonTarget_mc.visible) || (this.hzTg19 && this.hzTg19.visible) || (this.hzTgHidden != null && this.hzTgHidden.length > 0) || (this.hzTgOrig != null && this.hzTgOrig.length > 0))
             {
                this.hzT19Off();
+               this.hzT19GiveRing();
             }
             return;
          }
@@ -18232,16 +18249,55 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
          catch(eV:Error) { }
       }
 
+      // Purpose: put the live vanilla targeting ring (Reticle_mc + current
+      // leader-line Shapes) in the HideA shown state. Orig can hold stale
+      // Shape children (RolloverReticle recreates them), so restore of the
+      // snapshot list is not enough on a live F11 toggle-off. ObjectRing
+      // OFF hid those clips while Horizon owned the prompt; after ShowTarget
+      // falls they must come back this frame. Not per-frame: the toggle-off
+      // edge, language apply with Hover off, and the first off tick that
+      // still has snapshots. Does not touch the activation widget.
+      // Inputs: HUDRolloverWidget. Outputs: alpha 1 / visible true on the
+      // current ring clips. Author: Moragar. Last modified: 2026-11-27.
+      private function hzT19GiveRing() : void
+      {
+         var rw:Object = null;
+         try { rw = this.RolloverWidget_mc; } catch(e0:Error) { rw = null; }
+         if(rw == null) { return; }
+         try { this.hzT19ShowClip(rw.Reticle_mc as DisplayObject); } catch(e1:Error) { }
+         try
+         {
+            var c:DisplayObjectContainer = rw as DisplayObjectContainer;
+            var i:int = 0;
+            while(c && i < c.numChildren)
+            {
+               var ch:DisplayObject = c.getChildAt(i);
+               if(ch && !(ch is DisplayObjectContainer) && !(ch is TextField)) { this.hzT19ShowClip(ch); }
+               i++;
+            }
+         }
+         catch(e2:Error) { }
+      }
+      private function hzT19ShowClip(d:DisplayObject) : void
+      {
+         if(d == null) { return; }
+         if(d.alpha != 1) { d.alpha = 1; }
+         if(d.visible != true) { d.visible = true; }
+      }
+
       // Purpose: Hover + Container off, on that setting edge only. Restore every snapshotted vanilla
       // prompt property (alpha and visible) and hide Horizon's card. HideA of art that was still at
       // alpha 0 (holder rollOn / Header AnimIn) restores 1 so the name, panel and TALK/TRADE row
       // come back; unused key boxes keep their snapshotted visible=false. Does not hard-code
-      // holder/activation to 1. The per-frame hide walk does not run.
+      // holder/activation to 1. Then force-shows the live ObjectRing clips (circle + leader)
+      // because orig can point at Shape children that RolloverReticle already replaced.
+      // The per-frame hide walk does not run.
       // Inputs: none. Outputs: vanilla prompt shown (leader line plus name and button row); Horizon card off.
-      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap. Author: Moragar. Last modified: 2026-11-27.
+      // Dependencies: hzT19Off, hzTgRestore, hzTgSnap, hzT19GiveRing. Author: Moragar. Last modified: 2026-11-27.
       private function hz38GiveBackVanilla() : void
       {
          this.hzT19Off();
+         this.hzT19GiveRing();
          this.hzT19HcValid = false;
          this.hzT19HcDue = true;
          this.hz38VanShown = true;
@@ -25802,7 +25858,7 @@ private var hzSetFocus:int = 0;   // 0 list, 1 sidebar, 2 search, 3 dropdown, 4 
             var id:String = String(st[i]);
             var f:Number = Number(fr[id]);
             var col:uint = this.hz41VitCol(id,f);
-            var lab:String = String(HZ41_VIT_LBL[HZ41_VIT_IDS.indexOf(id)]);
+            var lab:String = this.hzLt(String(HZ41_VIT_LBL[HZ41_VIT_IDS.indexOf(id)]));
             var val:String = Math.round(f * 100) + "%";
             var lx:Number; var ly:Number; var lw:Number; var vx:Number; var vy:Number; var vw:Number; var bx:Number; var by:Number; var bw:Number; var bh:Number;
             if(cmp && hor) { var x0:Number = 14 + i * (cw + 12); lx = x0; ly = 5; lw = cw; vx = x0; vy = 5; vw = cw; bx = x0; by = 27; bw = cw; bh = 4; }

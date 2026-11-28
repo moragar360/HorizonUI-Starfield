@@ -71,6 +71,11 @@ expect(/hzLt\("MODULE"\)/.test(drawSrc) && /hzLt\("ENABLE"\)/.test(drawSrc) && /
 	"module chrome MODULE / ENABLE / UNAVAILABLE is looked up");
 expect(/hzLt\("LIVE PREVIEW"\)/.test(drawSrc) && /hzLt\("SETTING DETAILS"\)/.test(drawSrc),
 	"LIVE PREVIEW and SETTING DETAILS headers are looked up");
+const head = fnText(draw, "hz51DrawHead").body;
+expect(/hzLt\("HORIZON UI"\)/.test(head) && /hzLt\("SETTINGS"\)/.test(head),
+	"F11 title cluster looks up HORIZON UI and SETTINGS");
+expect(/hzTW\(t1\)/.test(head) && /hzTW\(t2\)/.test(head) && !/16 \+ 128/.test(head) && !/pillX = 250/.test(head),
+	"F11 header places SETTINGS and the version chip from measured text, not a 90px / x=250 clip");
 expect(/hz51HelpOf\(String\(r\.k\)/.test(fnText(draw, "hz51DrawRight").body),
 	"Setting Details body is hz51HelpOf (table lookup), not a raw English literal");
 
@@ -192,6 +197,14 @@ expect(en["settings.line.Language"] && de["settings.line.Language"]
 	"German Horizon Language row help is translated");
 expect(/hzLt\(String\(it\.s\)\)/.test(draw) && /hzLt\(String\(grp\.g\)\)/.test(draw),
 	"sidebar subtitles and group headers go through hzLt");
+expect(de["hud.hud_label.settings"] && de["hud.hud_label.settings"].indexOf("EINSTELL") === 0,
+	"German SETTINGS is EINSTELLUNGEN (the string that used to clip before the version chip)");
+expect(pl["hud.hud_label.settings"] && pl["hud.hud_label.settings"].length > 8,
+	"Polish SETTINGS is a long label the header reflow must fit");
+expect(lookup(de, "ARRANGE SCANNER") && lookup(de, "ARRANGE SCANNER") !== "ARRANGE SCANNER",
+	"German ARRANGE SCANNER is translated");
+expect(lookup(de, "COMPACT MODE (STRIPS)") && lookup(de, "COMPACT MODE (STRIPS)") !== "COMPACT MODE (STRIPS)",
+	"German COMPACT MODE (STRIPS) is translated");
 
 if (failed) {
 	console.error("\n" + failed + " failed, " + passed + " passed");

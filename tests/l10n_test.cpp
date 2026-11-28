@@ -339,6 +339,8 @@ int main()
 		"Comms, Dialogue, and Scanner movies get the same l10n payload");
 	Expect(Has(cpp, "PushL10nModules") && Has(cpp, "PushL10nForMenu"),
 		"module movies are pushed on language apply and on menu open");
+	Expect(Has(cpp, "a_menu->menuObj.Invoke(fn") && Has(cpp, "g_advancingMovie != hzlog::PollMovie::None"),
+		"module create Invokes the created movie when AdvanceFrame is not running");
 
 	Expect(Has(hdr, "kMaxFileBytes = 512 * 1024"), "512 KiB cap matches other JSON reads");
 	Expect(!Has(hdr, "HUSD") && !Has(cpp, "HUSD") && !Has(as, "HUSD"), "no HUSD IT in l10n sources");

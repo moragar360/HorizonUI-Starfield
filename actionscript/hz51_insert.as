@@ -561,7 +561,9 @@
             try { this.hzE19Sync(); } catch(eEq:Error) { }
             try { this.hzPpLayout(); } catch(ePp:Error) { }
             this.hzT19Sig = "";
-            if(!this.hzShowTarget) { this.hzT19Off(); }
+            this.hz41VLay = "";
+            this.hz41VSig = "";
+            if(!this.hzShowTarget) { this.hzT19Off(); this.hzT19GiveRing(); }
          }
          catch(eApp:Error) { }
       }

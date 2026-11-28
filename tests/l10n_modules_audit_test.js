@@ -57,6 +57,15 @@ expect(hzs.indexOf("function hzsTr") >= 0 && hzs.indexOf("GlobalFunc.SetText") >
 expect(hzs.indexOf("function hzsGs") >= 0, "game marker names still go through hzsGs, not hzsLt");
 expect(hzs.indexOf('this.hzsCs("Landing zone")') >= 0 && hzs.indexOf('this.hzsCs("Companion")') >= 0,
 	"scanner Horizon subs (Landing zone / Companion) go through hzsCs");
+expect(hzs.indexOf('this.hzsCs("SURVEYED")') >= 0 && hzs.indexOf('this.hzsCs("IN THIS BIOME")') >= 0,
+	"planet SURVEYED / IN THIS BIOME go through hzsCs");
+expect(/hzsSection\([^)]*"HAZARDS"/.test(hzs) && /hzsSection\([^)]*"BIOSCAN"/.test(hzs)
+	&& /hzsSection\([^)]*"SIGNALS"/.test(hzs) && /hzsSection\([^)]*"CONDITIONS"/.test(hzs),
+	"section titles HAZARDS / BIOSCAN / SIGNALS / CONDITIONS go through hzsSection (hzsCs)");
+expect(hzs.indexOf('this.hzsCs(this.hzsSocialOn() ? "PERSON SCAN" : "PLANET SCAN")') >= 0 && hzs.indexOf('this.hzsCs("AUTO")') >= 0,
+	"mode pill PLANET SCAN / AUTO go through hzsCs");
+expect(/this\.hzLt\(String\(HZ41_VIT_LBL/.test(hud),
+	"scanner vitals strip HEALTH / O2 / BOOST go through hzLt at draw, not per tick");
 
 const tick = fnText(hzs, "hzsTick");
 expect(tick && tick.body.indexOf("hzsLt(") < 0 && tick.body.indexOf("hzsLk(") < 0,
@@ -78,6 +87,8 @@ expect(/hzMsglogKindLab/.test(hud) && hud.indexOf("sel.title") >= 0,
 expect(/PushL10nModules/.test(cpp) && /hzcSetL10n/.test(cpp) && /hzdSetL10n/.test(cpp) && /hzsSetL10n/.test(cpp),
 	"DLL pushes hzc/hzd/hzs SetL10n on language apply");
 expect(/PushL10nForMenu/.test(cpp), "DLL pushes module l10n when Dialogue / Scanner / HUDMessages open");
+expect(/a_menu->menuObj\.Invoke\(fn/.test(cpp) && /g_advancingMovie != hzlog::PollMovie::None/.test(cpp),
+	"scanner/dialogue create Invokes the created movie when no AdvanceFrame is running (MenuLive would refuse)");
 expect(!/new Timer/.test(cpp.match(/void PushL10nModules[\s\S]*?\n\t\}/)[0]),
 	"PushL10nModules has no timer");
 
@@ -116,6 +127,13 @@ const need = [
 	"dlg.hud_label.of",
 	"scan.hud_label.unknown_signal",
 	"scan.hud_label.landing_zone",
+	"scan.hud_label.planet",
+	"scan.hud_label.surveyed",
+	"scan.hud_label.conditions",
+	"scan.hud_label.health",
+	"scan.hud_label.o2",
+	"scan.hud_label.boost",
+	"hud.o2",
 	"settings.ui.horizon_ui_message_log",
 	"hud.hud_label.all_time",
 	"settings.ui.all"
