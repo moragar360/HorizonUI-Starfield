@@ -25,7 +25,7 @@
     },
     "language": {
       "label": "SPRACHE",
-      "help": "Sprache für Horizon-Beschriftungen, Einstellungen und Schnellmenü. Automatisch folgt der Spielsprache. Nach einer Änderung lädt OK die Sprache einmal neu. Gegenstandsnamen und die spielinternen $-Tokens bleiben in der Spielsprache.",
+      "help": "Sprache für Horizon-Beschriftungen, Einstellungen und Schnellmenü. Automatisch folgt der Spielsprache. Nach einer Änderung lädt OK die Sprache einmal neu. Gegenstandsnamen und die spielinternen $-Tokens bleiben in der Spielsprache. Vereinfachtes Chinesisch erfordert, dass Starfield selbst auf Vereinfachtes Chinesisch steht; sonst können CJK-Zeichen nicht dargestellt werden.",
       "auto": "AUTO (SPIEL)",
       "en": "ENGLISCH",
       "de": "DEUTSCH",
@@ -294,7 +294,7 @@
       "TempUnit": "Celsius oder Fahrenheit auf Planetenkarte und Scanner.",
       "StartupIntro": "Zeigt nach dem Laden eines Spielstands eine kurze HORIZON UI-Begrüßung. Sie pausiert das Spiel nicht und fängt keine Eingaben ab.",
       "SettingsKey": "Taste zum Öffnen dieses Fensters. Eine neue Taste wird nach einem Spielneustart wirksam.",
-      "Language": "Sprache für Horizon-Beschriftungen, Einstellungen und das Schnellmenü. Auto folgt der Spielsprache, die beim Start von Horizon erkannt wurde. Eine Änderung und OK lädt die Tabelle einmal neu. Gegenstandsnamen und $-Schlüssel des Spiels bleiben in der Spielsprache.",
+      "Language": "Sprache für Horizon-Beschriftungen, Einstellungen und das Schnellmenü. Auto folgt der Spielsprache, die beim Start von Horizon erkannt wurde. Eine Änderung und OK lädt die Tabelle einmal neu. Gegenstandsnamen und $-Schlüssel des Spiels bleiben in der Spielsprache. Vereinfachtes Chinesisch erfordert, dass Starfield selbst auf Vereinfachtes Chinesisch steht; sonst können CJK-Zeichen nicht dargestellt werden.",
       "_l10nGame": "Die Oberflächensprache, die Starfield beim Start von Horizon verwendet hat. Diese Zeile wird einmal beim Start gelesen und ändert sich erst nach einem Neustart des Spiels. Sie folgt nicht der Überschreibung darunter.",
       "Record": "Ein speichert neue HUD-Meldungen im Protokoll. Aus speichert keine neuen Meldungen. Auf dem Bildschirm erscheinen sie weiterhin.",
       "Persist": "Ein speichert das Protokoll auf dem Datenträger. Aus beendet nur das Schreiben; vorhandene Dateien werden nicht gelöscht.",

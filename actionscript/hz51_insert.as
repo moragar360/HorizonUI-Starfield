@@ -835,7 +835,7 @@
             case "TempUnit": return "Celsius or Fahrenheit on the planet card and scanner.";
             case "StartupIntro": return "Plays a short HORIZON UI welcome after you load a save. It never pauses the game and never takes input.";
             case "SettingsKey": return "The key that opens this window. A new key takes effect after you restart the game.";
-            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language.";
+            case "Language": return "Language for Horizon labels, Settings, and Quick Menu. Auto follows the game language detected when Horizon started. Changing this and pressing OK reloads the table once. Game item names and the game's own $ tokens stay in the game language. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.";
             case "_l10nGame": return "The interface language Starfield was using when Horizon started. This line is read once at init and does not change until you restart the game. It does not follow the override below.";
             case "Record": return "When on, new HUD messages are stored in the log. When off, nothing new is stored. Messages still show on screen.";
             case "Persist": return "When on, the log is saved on disk. Turning this off only stops writing; existing files are not deleted.";

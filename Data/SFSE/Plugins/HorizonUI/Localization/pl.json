@@ -36,7 +36,7 @@
     },
     "language": {
       "label": "JĘZYK",
-      "help": "Język etykiet Horizon, ustawień i Szybkiego menu. Auto podąża za językiem gry. Zmiana i OK przeładowuje język raz. Nazwy przedmiotów i tokeny $ gry zostają w języku gry.",
+      "help": "Język etykiet Horizon, ustawień i Szybkiego menu. Auto podąża za językiem gry. Zmiana i OK przeładowuje język raz. Nazwy przedmiotów i tokeny $ gry zostają w języku gry. Uproszczony chiński wymaga, aby sam Starfield był ustawiony na uproszczony chiński; w przeciwnym razie znaki CJK nie mogą się wyświetlić.",
       "auto": "AUTO (GRA)",
       "en": "ANGIELSKI",
       "de": "NIEMIECKI",
@@ -305,7 +305,7 @@
       "TempUnit": "Celsjusz lub Fahrenheit na karcie planety i skanerze.",
       "StartupIntro": "Odtwarza krótkie powitanie HORIZON UI po wczytaniu zapisu. Nie pauzuje gry i nie przechwytuje sterowania.",
       "SettingsKey": "Klawisz otwierający to okno. Nowy klawisz działa po restarcie gry.",
-      "Language": "Język etykiet Horizon, ustawień i Szybkiego menu. Auto podąża za językiem gry wykrytym przy starcie Horizon. Zmiana i OK przeładowuje tabelę raz. Nazwy przedmiotów i tokeny $ gry zostają w języku gry.",
+      "Language": "Język etykiet Horizon, ustawień i Szybkiego menu. Auto podąża za językiem gry wykrytym przy starcie Horizon. Zmiana i OK przeładowuje tabelę raz. Nazwy przedmiotów i tokeny $ gry zostają w języku gry. Uproszczony chiński wymaga, aby sam Starfield był ustawiony na uproszczony chiński; w przeciwnym razie znaki CJK nie mogą się wyświetlić.",
       "_l10nGame": "Język interfejsu Starfield przy starcie Horizon. Ta linia jest odczytywana raz przy starcie i nie zmienia się do restartu gry. Nie śledzi nadpisania poniżej.",
       "Record": "Gdy wł., nowe wiadomości HUD trafiają do dziennika. Gdy wył., nic nowego nie jest zapisywane. Wiadomości nadal widać na ekranie.",
       "Persist": "Gdy wł., dziennik jest zapisywany na dysku. Wyłączenie tylko przestaje pisać; istniejące pliki nie są usuwane.",

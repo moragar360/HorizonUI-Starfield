@@ -366,6 +366,7 @@ Greek is **below** `0x52F`, so Greek still hits Exo 2 and can tofu. P4 may tight
 - Japanese / Simplified Chinese: official Steam UI languages. Game fontconfig and `fonts_<lang>` already carry the glyphs. Horizon must use `$MAIN_Font` (or `$NB_Grotesk_*`) for those languages’ Horizon chrome **or** per-string `hzcFits`.
 - Per-string is better: a Japanese install still shows Exo 2 for ASCII “12:00” and game font for 日本語. That is what Comms already does.
 - Korean is not a Starfield Steam interface language. v1 does not ship `ko.json`.
+- **Option A (shipped):** probe the game Chinese face `DFZongYi-GB Otf W5 Regular` (and Japanese `JP_NB Architekt Light Regular`) by name. Never embed a CJK font. Never add a FontLib. **Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.**
 
 **P4 ships `fontconfig_de.txt` (and the other official suffixes) only if research confirms the game does not read `fontconfig_en.txt` when `sLanguage=de`.** Today the FOMOD installs **only** `fontconfig_en.txt`. That is an existing Latin-language risk, not introduced by l10n. P4 is the place to copy Horizon’s `$Horizon_Font*` mappings into each `fontconfig_<lang>.txt` (merge, do not replace the whole vanilla file blindly). Until that is proven, Exo 2 on a German install may already be falling back to the game font. **Gate:** one in-game check on `sLanguage=de` with FontFace=1 before writing extra fontconfig files.
 

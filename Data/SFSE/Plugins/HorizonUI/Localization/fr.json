@@ -36,7 +36,7 @@
     },
     "language": {
       "label": "LANGUE",
-      "help": "Langue des textes Horizon, des réglages et du menu rapide. Auto suit la langue du jeu. La changer et appuyer sur OK recharge la langue une fois. Les noms d'objets et les jetons $ du jeu restent dans la langue du jeu.",
+      "help": "Langue des textes Horizon, des réglages et du menu rapide. Auto suit la langue du jeu. La changer et appuyer sur OK recharge la langue une fois. Les noms d'objets et les jetons $ du jeu restent dans la langue du jeu. Le chinois simplifié exige que Starfield lui-même soit en chinois simplifié ; sinon les caractères CJK ne peuvent pas s'afficher.",
       "auto": "Auto (jeu)",
       "en": "ANGLAIS",
       "de": "ALLEMAND",
@@ -305,7 +305,7 @@
       "TempUnit": "Celsius ou Fahrenheit sur la carte planète et le scanner.",
       "StartupIntro": "Joue un court accueil HORIZON UI après le chargement d'une sauvegarde. Il ne met jamais le jeu en pause et ne prend jamais les commandes.",
       "SettingsKey": "La touche qui ouvre cette fenêtre. Une nouvelle touche prend effet après un redémarrage du jeu.",
-      "Language": "Langue des textes Horizon, des réglages et du menu rapide. Auto suit la langue du jeu détectée au démarrage d'Horizon. La changer et appuyer sur OK recharge la table une fois. Les noms d'objets et les jetons $ du jeu restent dans la langue du jeu.",
+      "Language": "Langue des textes Horizon, des réglages et du menu rapide. Auto suit la langue du jeu détectée au démarrage d'Horizon. La changer et appuyer sur OK recharge la table une fois. Les noms d'objets et les jetons $ du jeu restent dans la langue du jeu. Le chinois simplifié exige que Starfield lui-même soit en chinois simplifié ; sinon les caractères CJK ne peuvent pas s'afficher.",
       "_l10nGame": "La langue d'interface que Starfield utilisait au démarrage d'Horizon. Cette ligne est lue une fois à l'init et ne change pas tant que vous ne redémarrez pas le jeu. Elle ne suit pas le remplacement ci-dessous.",
       "Record": "Activé, les nouveaux messages du HUD vont dans le journal. Désactivé, rien de nouveau n'est stocké. Les messages s'affichent encore à l'écran.",
       "Persist": "Activé, le journal est enregistré sur le disque. Le désactiver arrête seulement l'écriture ; les fichiers existants ne sont pas effacés.",

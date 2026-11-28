@@ -10,7 +10,7 @@
         <group name="Compatibility" type="SelectAll">
           <plugins order="Explicit">
             <plugin name="Compatibility note">
-              <description>Not compatible with other mods that replace the HUD (hudmenu.gfx). Disable them before using Horizon's HUD. The optional Quick Menu (Favorites) module replaces Interface\favoritesmenu.swf and favoritesmenu_lrg.swf. If you use another favorites or quick-menu mod, untick Quick Menu (Favorites) on the Optional Modules page. A Vortex update that reuses earlier choices may untick it; re-tick it to keep Horizon's quick menu.</description>
+              <description>Not compatible with other mods that replace the HUD (hudmenu.gfx). Disable them before using Horizon's HUD. The optional Quick Menu (Favorites) module replaces Interface\favoritesmenu.swf and favoritesmenu_lrg.swf. If you use another favorites or quick-menu mod, untick Quick Menu (Favorites) on the Optional Modules page. A Vortex update that reuses earlier choices may untick it; re-tick it to keep Horizon's quick menu. Simplified Chinese text requires Starfield itself to be set to Simplified Chinese; otherwise CJK characters cannot render.</description>
               <conditionFlags>
                 <flag name="CompatNote">Shown</flag>
               </conditionFlags>

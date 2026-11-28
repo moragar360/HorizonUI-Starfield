@@ -38,7 +38,7 @@
     },
     "language": {
       "label": "IDIOMA",
-      "help": "Idioma de los textos de Horizon, los ajustes y el menú rápido. Auto usa el idioma del juego. Al cambiarlo y presionar ACEPTAR, el idioma se recarga una vez. Los nombres de objetos y los tokens $ propios del juego conservan el idioma del juego.",
+      "help": "Idioma de los textos de Horizon, los ajustes y el menú rápido. Auto usa el idioma del juego. Al cambiarlo y presionar ACEPTAR, el idioma se recarga una vez. Los nombres de objetos y los tokens $ propios del juego conservan el idioma del juego. El chino simplificado exige que Starfield esté en chino simplificado; si no, los caracteres CJK no se pueden mostrar.",
       "auto": "AUTO (JUEGO)",
       "en": "INGLÉS",
       "de": "ALEMÁN",
@@ -307,7 +307,7 @@
       "TempUnit": "Celsius o Fahrenheit en la tarjeta del planeta y el escáner.",
       "StartupIntro": "Muestra una breve bienvenida de HORIZON UI tras cargar una partida. Nunca pausa el juego ni captura las entradas.",
       "SettingsKey": "Tecla que abre esta ventana. Una tecla nueva se aplica después de reiniciar el juego.",
-      "Language": "Idioma de los textos de Horizon, los ajustes y el menú rápido. Auto usa el idioma del juego detectado al iniciar Horizon. Al cambiarlo y presionar ACEPTAR, la tabla se recarga una vez. Los nombres de objetos y los tokens $ propios del juego conservan el idioma del juego.",
+      "Language": "Idioma de los textos de Horizon, los ajustes y el menú rápido. Auto usa el idioma del juego detectado al iniciar Horizon. Al cambiarlo y presionar ACEPTAR, la tabla se recarga una vez. Los nombres de objetos y los tokens $ propios del juego conservan el idioma del juego. El chino simplificado exige que Starfield esté en chino simplificado; si no, los caracteres CJK no se pueden mostrar.",
       "_l10nGame": "El idioma de la interfaz que Starfield usaba al iniciar Horizon. Esta línea se lee una vez al inicio y no cambia hasta que reinicies el juego. No sigue la anulación de abajo.",
       "Record": "Activado guarda los mensajes nuevos del HUD en el registro. Desactivado no guarda mensajes nuevos. Siguen apareciendo en pantalla.",
       "Persist": "Activado guarda el registro en disco. Desactivarlo solo detiene la escritura; no borra los archivos existentes.",
